@@ -741,7 +741,7 @@ export const PostDetailPage: React.FC = () => {
             }`}
           />
           {/* Image upload button */}
-          <input type="file" ref={imageInputRef} accept="image/*" className="hidden" onChange={handleCommentImageUpload} />
+          <input type="file" ref={imageInputRef} accept="image/*,.jpg,.jpeg,.png,.gif,.webp,.bmp,.svg,.tiff,.avif,.heic,.heif,.ico,.jfif" className="hidden" onChange={handleCommentImageUpload} />
           <button
             type="button"
             onClick={() => imageInputRef.current?.click()}

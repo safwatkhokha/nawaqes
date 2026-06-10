@@ -46,12 +46,16 @@ COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package.json ./
 COPY --from=builder /app/.env.example ./
+COPY --from=builder /app/start.sh ./
+
+# Make start.sh executable
+RUN chmod +x start.sh || true
 
 # Create .env from example
 RUN cp .env.example .env
 
 # Create data directories and set ownership
-RUN mkdir -p /app/data /app/uploads /app/backups && \
+RUN mkdir -p /app/data /app/uploads /app/uploads/videos /app/backups && \
     chown -R 1000:1000 /app
 
 # Switch to non-root user (UID 1000 required by HF Spaces)

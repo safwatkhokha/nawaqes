@@ -367,7 +367,7 @@ export const ComplaintPage: React.FC = () => {
                   </span>
                   <input
                     type="file"
-                    accept="image/*"
+                    accept="image/*,.jpg,.jpeg,.png,.gif,.webp,.bmp,.svg,.tiff,.avif,.heic,.heif,.ico,.jfif"
                     onChange={handleImageUpload}
                     className="hidden"
                   />

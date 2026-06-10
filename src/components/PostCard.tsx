@@ -646,7 +646,7 @@ export const PostCard: React.FC<PostCardProps> = ({ post, onHidePost }) => {
                   <input type="text" placeholder={t('postCard.writeComment')} value={commentText} onChange={(e) => setCommentText(e.target.value)}
                     className={`flex-1 text-sm px-4 py-2 rounded-lg border outline-none transition-colors ${darkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-500 focus:border-orange-500' : 'bg-gray-50 border-gray-200 text-gray-900 placeholder-gray-400 focus:border-orange-400'}`} />
                   {/* Image upload button */}
-                  <input type="file" ref={imageInputRef} accept="image/*" className="hidden" onChange={handleCommentImageUpload} />
+                  <input type="file" ref={imageInputRef} accept="image/*,.jpg,.jpeg,.png,.gif,.webp,.bmp,.svg,.tiff,.avif,.heic,.heif,.ico,.jfif" className="hidden" onChange={handleCommentImageUpload} />
                   <button
                     type="button"
                     onClick={(e) => { e.stopPropagation(); imageInputRef.current?.click(); }}

@@ -339,7 +339,7 @@ export const MyPage: React.FC = () => {
   return (
     <div className="max-w-[900px] w-full mx-auto space-y-5" dir={dir}>
       {/* Hidden file inputs */}
-      <input ref={coverInputRef} type="file" accept="image/*" className="hidden" onChange={handleCoverChange} />
+      <input ref={coverInputRef} type="file" accept="image/*,.jpg,.jpeg,.png,.gif,.webp,.bmp,.svg,.tiff,.avif,.heic,.heif,.ico,.jfif" className="hidden" onChange={handleCoverChange} />
 
       {/* ─── Hero Section - Digital Space Concept ─────────────────── */}
       <motion.div
@@ -545,7 +545,7 @@ export const MyPage: React.FC = () => {
             <input
               ref={fileInputRef}
               type="file"
-              accept="image/*"
+              accept="image/*,.jpg,.jpeg,.png,.gif,.webp,.bmp,.svg,.tiff,.avif,.heic,.heif,.ico,.jfif"
               onChange={handleImageSelect}
               className="hidden"
             />

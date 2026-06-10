@@ -23,12 +23,14 @@ const chatImageStorage = multer.diskStorage({
 });
 const chatImageUpload = multer({
   storage: chatImageStorage,
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
   fileFilter: (_req, file, cb) => {
-    const allowed = /jpeg|jpg|png|gif|webp/;
-    const ext = allowed.test(path.extname(file.originalname).toLowerCase());
-    const mime = allowed.test(file.mimetype.split('/')[1]) || file.mimetype === 'image/jpeg' || file.mimetype === 'image/png';
-    cb(null, ext && mime);
+    // Accept all image formats
+    const allowedExt = /jpeg|jpg|png|gif|webp|bmp|svg|tiff|tif|avif|heic|heif|ico|jfif|pjpeg|pjp/;
+    const allowedMime = /^image\//; // Accept any image/* MIME type
+    const ext = allowedExt.test(path.extname(file.originalname).toLowerCase());
+    const mime = allowedMime.test(file.mimetype);
+    cb(null, ext || mime);
   },
 });
 

@@ -11,9 +11,9 @@ const EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
 const PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/;
 
 export function validateInput(req: Request, res: Response, next: NextFunction) {
-  // Check JSON body size
+  // Check JSON body size (increased for base64-encoded images/videos)
   const contentLength = parseInt(req.headers['content-length'] || '0', 10);
-  if (contentLength > 10 * 1024 * 1024) { // 10MB limit
+  if (contentLength > 50 * 1024 * 1024) { // 50MB limit
     res.status(413).json({ error: 'حجم البيانات كبير جداً' });
     return;
   }
@@ -60,11 +60,12 @@ export function validateInput(req: Request, res: Response, next: NextFunction) {
     // Sanitize string lengths to prevent abuse
     const MAX_STRING_LENGTH = 5000;
     const MAX_CONTENT_LENGTH = 20000;
-    const MAX_IMAGE_LENGTH = 7_000_000; // ~5MB base64 encoded
+    const MAX_IMAGE_LENGTH = 70_000_000; // ~50MB base64 encoded (supports large videos too)
     const IMAGE_FIELDS = new Set([
       'image', 'avatar', 'avatarBase64', 'avatar_base64',
       'coverPhoto', 'cover_photo', 'imageUrl', 'image_url',
-      'receipt_image', 'thumbnail_url', 'video_url',
+      'receipt_image', 'thumbnail_url', 'video_url', 'videoUrl',
+      'video', 'videoUrl', 'media', 'mediaUrl',
     ]);
     for (const key of Object.keys(req.body)) {
       const val = req.body[key];
@@ -166,8 +167,9 @@ export function securityHeaders(req: Request, res: Response, next: NextFunction)
   res.removeHeader('X-Frame-Options');
   res.setHeader('X-XSS-Protection', '1; mode=block');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
-  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(self)');
-  res.setHeader('Content-Security-Policy', `default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' ws: wss: https:; ${frameAncestors};`);
+  // Allow camera and microphone for WebRTC calls — previously blocked which caused permission errors
+  res.setHeader('Permissions-Policy', 'camera=(self), microphone=(self), geolocation=(self)');
+  res.setHeader('Content-Security-Policy', `default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https:; media-src 'self' blob: https:; connect-src 'self' ws: wss: https:; ${frameAncestors};`);
   // Remove server identification
   res.removeHeader('X-Powered-By');
   // Add HSTS header in production

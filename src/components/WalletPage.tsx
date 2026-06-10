@@ -917,7 +917,7 @@ export const WalletPage: React.FC = () => {
                       <span className={`text-[9px] ${textMuted}`}>{t('wallet.maxSize')}</span>
                     </button>
                   )}
-                  <input ref={fileInputRef} type="file" accept="image/*" onChange={handleImageUpload} className="hidden" />
+                  <input ref={fileInputRef} type="file" accept="image/*,.jpg,.jpeg,.png,.gif,.webp,.bmp,.svg,.tiff,.avif,.heic,.heif,.ico,.jfif" onChange={handleImageUpload} className="hidden" />
                 </div>
 
                 {/* Confirm Button */}

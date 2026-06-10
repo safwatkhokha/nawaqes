@@ -183,8 +183,8 @@ export const ProfilePage: React.FC = () => {
 
   return (
     <div className="max-w-2xl mx-auto" dir={dir}>
-      <input ref={avatarInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarChange} />
-      <input ref={coverInputRef} type="file" accept="image/*" className="hidden" onChange={handleCoverChange} />
+      <input ref={avatarInputRef} type="file" accept="image/*,.jpg,.jpeg,.png,.gif,.webp,.bmp,.svg,.tiff,.avif,.heic,.heif,.ico,.jfif" className="hidden" onChange={handleAvatarChange} />
+      <input ref={coverInputRef} type="file" accept="image/*,.jpg,.jpeg,.png,.gif,.webp,.bmp,.svg,.tiff,.avif,.heic,.heif,.ico,.jfif" className="hidden" onChange={handleCoverChange} />
 
       {/* ─── Header ─── */}
       <div className="flex items-center gap-3 mb-6">

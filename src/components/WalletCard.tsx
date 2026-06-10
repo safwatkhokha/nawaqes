@@ -178,7 +178,7 @@ export const WalletCard: React.FC<{ user: User | null }> = ({ user }) => {
       </div>
 
       {/* Hidden file input */}
-      <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
+      <input ref={fileInputRef} type="file" accept="image/*,.jpg,.jpeg,.png,.gif,.webp,.bmp,.svg,.tiff,.avif,.heic,.heif,.ico,.jfif" className="hidden" onChange={handleImageUpload} />
 
       {/* Deposit Form */}
       <AnimatePresence>

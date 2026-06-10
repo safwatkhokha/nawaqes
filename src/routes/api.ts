@@ -20,12 +20,14 @@ const storage = multer.diskStorage({
 });
 const upload = multer({
   storage,
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB for images
+  limits: { fileSize: 100 * 1024 * 1024 }, // 100MB for images (increased)
   fileFilter: (_req, file, cb) => {
-    const allowed = /jpeg|jpg|png|gif|webp/;
-    const ext = allowed.test(path.extname(file.originalname).toLowerCase());
-    const mime = allowed.test(file.mimetype.split('/')[1]) || file.mimetype === 'image/jpeg' || file.mimetype === 'image/png';
-    cb(null, ext && mime);
+    // Accept ALL image and video formats - no restriction on extensions
+    const ext = path.extname(file.originalname).toLowerCase();
+    // Accept any file that has an extension or is an image/video MIME type
+    const isMediaMime = /^(image|video)\//.test(file.mimetype) || file.mimetype === 'application/octet-stream';
+    const hasExt = ext.length > 1; // Has a valid extension (e.g., .jpg, .png)
+    cb(null, isMediaMime || hasExt); // Accept all media files with valid extensions
   },
 });
 
@@ -44,23 +46,31 @@ const videoStorage = multer.diskStorage({
 
 const videoUpload = multer({
   storage: videoStorage,
-  limits: { fileSize: 50 * 1024 * 1024 }, // 50MB for videos
+  limits: { fileSize: 500 * 1024 * 1024 }, // 500MB for videos (increased)
   fileFilter: (_req, file, cb) => {
-    const allowedExt = /mp4|webm|mov|avi|quicktime/;
-    const allowedMime = /video\/|application\/octet-stream/;
-    const ext = allowedExt.test(path.extname(file.originalname).toLowerCase());
-    const mime = allowedMime.test(file.mimetype) ||
-      ['video/mp4', 'video/webm', 'video/quicktime', 'video/x-msvideo'].includes(file.mimetype);
-    if (ext || mime) {
-      cb(null, true);
-    } else {
-      cb(new Error('صيغة الفيديو غير مدعومة. الصيغ المدعومة: MP4, WebM, MOV, AVI'));
-    }
+    // Accept ALL video formats - no restriction on extensions
+    const ext = path.extname(file.originalname).toLowerCase();
+    const isVideoMime = /^video\//.test(file.mimetype) || file.mimetype === 'application/octet-stream';
+    const hasExt = ext.length > 1;
+    // Accept any video file with a valid extension or video MIME type
+    cb(null, isVideoMime || hasExt);
   },
 });
 
-// POST /api/upload
-router.post('/upload', authMiddleware, upload.single('image'), (req: Request, res: Response) => {
+// POST /api/upload — Accept both images and videos
+const mediaUpload = multer({
+  storage,
+  limits: { fileSize: 500 * 1024 * 1024 }, // 500MB for any media (increased)
+  fileFilter: (_req, file, cb) => {
+    // Accept ALL image and video formats - no restriction
+    const ext = path.extname(file.originalname).toLowerCase();
+    const isMediaMime = /^(image|video)\//.test(file.mimetype) || file.mimetype === 'application/octet-stream';
+    const hasExt = ext.length > 1;
+    // Accept any media file with valid extension or media MIME type
+    cb(null, isMediaMime || hasExt);
+  },
+});
+router.post('/upload', authMiddleware, mediaUpload.single('image'), (req: Request, res: Response) => {
   if (!req.file) { res.status(400).json({ error: 'لم يتم رفع أي ملف' }); return; }
   const url = `/uploads/${req.file.filename}`;
   res.json({ url, filename: req.file.filename });
@@ -84,7 +94,7 @@ router.post('/videos/upload', authMiddleware, videoUpload.single('video'), (req:
 // Error handler for multer video upload errors
 router.use('/videos/upload', (err: any, _req: Request, res: Response, _next: any) => {
   if (err.code === 'LIMIT_FILE_SIZE') {
-    res.status(400).json({ error: 'حجم الفيديو يتجاوز الحد المسموح (50 ميجابايت)' });
+    res.status(400).json({ error: 'حجم الفيديو يتجاوز الحد المسموح (500 ميجابايت)' });
     return;
   }
   if (err.message) {

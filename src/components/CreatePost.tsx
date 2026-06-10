@@ -105,8 +105,10 @@ export const CreatePost: React.FC<CreatePostProps> = ({ user, onPostCreated, isM
   const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      if (file.size > 5 * 1024 * 1024) {
-        toast.error(t('createPost.imageSizeError'));
+      const isVideo = file.type.startsWith('video/');
+      const maxSize = isVideo ? 100 * 1024 * 1024 : 10 * 1024 * 1024; // 100MB for video, 10MB for image
+      if (file.size > maxSize) {
+        toast.error(isVideo ? t('marketLive.fileTooLarge') : t('createPost.imageSizeError'));
         return;
       }
       const reader = new FileReader();
@@ -408,7 +410,7 @@ export const CreatePost: React.FC<CreatePostProps> = ({ user, onPostCreated, isM
             </button>
           )}
 
-          <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageSelect} />
+          <input ref={fileInputRef} type="file" accept="image/*,video/*,.jpg,.jpeg,.png,.gif,.webp,.bmp,.svg,.tiff,.tif,.avif,.heic,.heif,.ico,.jfif,.raw,.psd,.mp4,.webm,.mov,.avi,.3gp,.mkv,.flv,.wmv,.m4v,.ogg,.mpeg,.mpg,.ts,.m2ts,.vob,.asf,.rm,.rmvb,.divx,.xvid" className="hidden" onChange={handleImageSelect} />
 
           {/* Selected Feeling/Activity */}
           {(selectedFeeling || selectedActivity) && (
@@ -506,6 +508,9 @@ export const CreatePost: React.FC<CreatePostProps> = ({ user, onPostCreated, isM
             <div className="flex gap-1">
               <button onClick={() => fileInputRef.current?.click()} className={`p-2 ${darkMode ? 'hover:bg-green-900/30' : 'hover:bg-green-50'} rounded-lg transition-colors group`} title={t('createPost.addImage')}>
                 <ImageIcon className="w-5 h-5 text-green-500 group-hover:scale-110 transition-transform" />
+              </button>
+              <button onClick={() => { fileInputRef.current?.click(); }} className={`p-2 ${darkMode ? 'hover:bg-red-900/30' : 'hover:bg-red-50'} rounded-lg transition-colors group`} title="إضافة فيديو">
+                <Video className="w-5 h-5 text-red-500 group-hover:scale-110 transition-transform" />
               </button>
               <button onClick={() => { setShowFeelingPicker(!showFeelingPicker); setShowActivityPicker(false); }} className={`p-2 rounded-lg transition-colors group ${showFeelingPicker ? (darkMode ? 'bg-yellow-900/30' : 'bg-yellow-50') : (darkMode ? 'hover:bg-yellow-900/30' : 'hover:bg-yellow-50')}`} title={t('createPost.feelingBtn')}>
                 <Smile className="w-5 h-5 text-yellow-500 group-hover:scale-110 transition-transform" />

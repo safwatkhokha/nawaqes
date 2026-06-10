@@ -180,7 +180,7 @@ export const EditPostModal: React.FC<EditPostModalProps> = ({ post, onClose, onS
                   <span className="text-xs font-bold">{t('createPost.addImageBtn')}</span>
                 </button>
               )}
-              <input type="file" ref={fileInputRef} accept="image/*" className="hidden" onChange={handleImageUpload} />
+              <input type="file" ref={fileInputRef} accept="image/*,.jpg,.jpeg,.png,.gif,.webp,.bmp,.svg,.tiff,.avif,.heic,.heif,.ico,.jfif" className="hidden" onChange={handleImageUpload} />
             </div>
 
             {/* Ad-specific fields */}

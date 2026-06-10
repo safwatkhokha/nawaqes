@@ -382,8 +382,10 @@ export const MessagesPage: React.FC = () => {
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 5 * 1024 * 1024) {
-      toast.error(t('createPost.imageSizeError'));
+    const isVideo = file.type.startsWith('video/');
+    const maxSize = isVideo ? 100 * 1024 * 1024 : 10 * 1024 * 1024; // 100MB for video, 10MB for image
+    if (file.size > maxSize) {
+      toast.error(isVideo ? t('marketLive.fileTooLarge') : t('createPost.imageSizeError'));
       return;
     }
     setUploadingImage(true);
@@ -1512,7 +1514,7 @@ export const MessagesPage: React.FC = () => {
                 <input
                   ref={imageInputRef}
                   type="file"
-                  accept="image/*"
+                  accept="image/*,video/*,.jpg,.jpeg,.png,.gif,.webp,.bmp,.svg,.tiff,.avif,.heic,.heif,.ico,.jfif,.mp4,.webm,.mov,.avi,.3gp,.mkv,.flv,.wmv,.m4v,.ogg,.mpeg,.mpg,.ts,.m2ts,.vob,.asf,.rm,.rmvb,.divx,.xvid"
                   className="hidden"
                   onChange={handleImageUpload}
                 />

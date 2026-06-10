@@ -31,8 +31,8 @@ interface VideoRecorderProps {
   onLinked: () => void;
 }
 
-const MAX_VIDEO_SIZE = 50 * 1024 * 1024; // 50MB
-const ACCEPTED_FORMATS = ['video/mp4', 'video/webm', 'video/quicktime', 'video/x-msvideo'];
+const MAX_VIDEO_SIZE = 500 * 1024 * 1024; // 500MB (increased)
+const ACCEPTED_FORMATS = ['video/mp4', 'video/webm', 'video/quicktime', 'video/x-msvideo', 'video/3gpp', 'video/x-matroska', 'video/x-flv', 'video/x-ms-wmv', 'video/x-m4v', 'video/ogg', 'video/mpeg', 'video/x-mpeg', 'video/mp2t', 'video/x-msvideo', 'video/avi', 'video/ogv', 'video/x-m4v', 'video/x-ms-asf', 'video/x-realvideo', 'video/vnd.rn-realvideo', 'video/divx', 'video/x-divx', 'video/x-xvid'];
 const MAX_RECORDING_SECONDS = 60;
 
 export const VideoRecorder: React.FC<VideoRecorderProps> = ({ onClose, onLinked }) => {
@@ -214,7 +214,7 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({ onClose, onLinked 
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (!ACCEPTED_FORMATS.includes(file.type) && !file.name.match(/\.(mp4|webm|mov|avi)$/i)) {
+    if (!ACCEPTED_FORMATS.includes(file.type) && !file.name.match(/\.(mp4|webm|mov|avi|3gp|mkv|flv|wmv|m4v|ogg|ogv|mpeg|mpg|mpe|ts|m2ts|vob|asf|rm|rmvb|divx|xvid|hevc|h264|h265|av1|prores|dnxhd)$/i)) {
       toast.error(t('marketLive.invalidFormat'));
       return;
     }
@@ -529,7 +529,7 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({ onClose, onLinked 
           <input
             ref={videoInputRef}
             type="file"
-            accept="video/mp4,video/webm,video/quicktime,.mp4,.webm,.mov"
+            accept="video/*,.mp4,.webm,.mov,.avi,.3gp,.mkv,.flv,.wmv,.m4v,.ogg,.ogv,.mpeg,.mpg,.ts,.m2ts,.vob,.asf,.rm,.rmvb,.divx,.xvid,.hevc,.h264,.h265,.av1,.prores,.dnxhd"
             className="hidden"
             onChange={handleVideoSelect}
           />

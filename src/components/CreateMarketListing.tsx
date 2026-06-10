@@ -456,7 +456,7 @@ export const CreateMarketListing: React.FC<{ editMode?: boolean }> = ({ editMode
           <input
             ref={fileInputRef}
             type="file"
-            accept="image/*"
+            accept="image/*,.jpg,.jpeg,.png,.gif,.webp,.bmp,.svg,.tiff,.avif,.heic,.heif,.ico,.jfif"
             multiple
             className="hidden"
             onChange={handleImageSelect}
