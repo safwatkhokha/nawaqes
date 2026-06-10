@@ -1614,7 +1614,7 @@ router.get('/market-live/stats', optionalAuth, (_req: Request, res: Response) =>
 });
 
 // POST /api/livestream/notify-friends — Send livestream notification to all friends
-router.post('/livestream/notify-friends', auth, (req: Request, res: Response) => {
+router.post('/livestream/notify-friends', authMiddleware, (req: Request, res: Response) => {
   try {
     const uid = (req as any).user?.userId;
     if (!uid) { res.status(401).json({ error: 'غير مصرح' }); return; }
@@ -1647,7 +1647,7 @@ router.post('/livestream/notify-friends', auth, (req: Request, res: Response) =>
 });
 
 // GET /api/livestream/active — Get list of users currently streaming
-router.get('/livestream/active', auth, (req: Request, res: Response) => {
+router.get('/livestream/active', authMiddleware, (req: Request, res: Response) => {
   try {
     const wsManager = (req.app.locals as any).wsManager;
     if (!wsManager) {
