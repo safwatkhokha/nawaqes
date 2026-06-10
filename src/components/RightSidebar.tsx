@@ -280,7 +280,7 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({ user, notifications 
                   } else if (notif.type === 'message') {
                     navigate('/messages');
                   } else if (notif.type === 'friend') {
-                    navigate('/my-page');
+                    navigate('/friends?tab=requests');
                   } else if (notif.type === 'like' || notif.type === 'comment') {
                     navigate('/my-page');
                   } else {

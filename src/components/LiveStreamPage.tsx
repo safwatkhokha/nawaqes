@@ -12,6 +12,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useTranslation } from 'react-i18next';
 import { useWebSocket } from '../hooks/useWebSocket';
+import { api } from '../services/api';
 import { toast } from 'sonner';
 
 // ─── Quality Options ──────────────────────────────────────────────
@@ -194,6 +195,11 @@ export const LiveStreamPage: React.FC = () => {
       userName: currentUser?.name || '',
       userAvatar: currentUser?.avatar || '',
     });
+
+    // Send notification to all friends
+    try {
+      api.notifyFriendsLivestream('').catch(() => {});
+    } catch {}
 
     toast.success(t('livestream.started'));
   };

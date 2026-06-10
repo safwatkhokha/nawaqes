@@ -702,7 +702,7 @@ export const ProfilePage: React.FC = () => {
                 <div className={`p-8 text-center rounded-2xl border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
                   <Users className={`w-10 h-10 mx-auto mb-3 ${darkMode ? 'text-gray-600' : 'text-gray-300'}`} />
                   <p className={`font-bold text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{t('profile.noFriendsYet', 'لا يوجد أصدقاء بعد')}</p>
-                  <button onClick={() => navigate('/friends')} className="mt-3 bg-orange-600 text-white px-4 py-2 rounded-xl text-xs font-bold hover:bg-orange-700 active:scale-95 transition-all">
+                  <button onClick={() => navigate('/friends?tab=suggestions')} className="mt-3 bg-orange-600 text-white px-4 py-2 rounded-xl text-xs font-bold hover:bg-orange-700 active:scale-95 transition-all">
                     {t('profile.findFriends', 'البحث عن أصدقاء')}
                   </button>
                 </div>

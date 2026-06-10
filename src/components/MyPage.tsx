@@ -170,11 +170,13 @@ export const MyPage: React.FC = () => {
       setSentRequests(prev => new Set(prev).add(userId));
       await api.sendFriendRequest(userId);
       toast.success(t('friends.requestSent'));
+      // Redirect to friend requests page so user can see sent requests
+      navigate('/friends?tab=sent');
     } catch {
       setSentRequests(prev => { const next = new Set(prev); next.delete(userId); return next; });
       toast.error(t('friends.requestSendFailed'));
     }
-  }, []);
+  }, [navigate]);
 
   // Filtered friends based on search
   const filteredFriends = useMemo(() => {

@@ -34,7 +34,7 @@ import { PostDetailPage } from './components/PostDetailPage';
 import { LoginPage } from './components/LoginPage';
 import { UserProfilePage } from './components/UserProfilePage';
 import { PromotionAnalytics } from './components/PromotionAnalytics';
-// FriendsPage removed - friends feature is now inside MyPage only
+import { FriendsPage } from './components/FriendsPage';
 import { MyPage } from './components/MyPage';
 import { ComplaintPage } from './components/ComplaintPage';
 import { HelpPage } from './components/HelpPage';
@@ -1359,7 +1359,7 @@ function AppInner() {
             <Route path="/promotion-packages" element={<RequireAuth><PageLayout><PromotionPackagesPage /></PageLayout></RequireAuth>} />
             <Route path="/smart-reach" element={<RequireAuth><PageLayout><SmartReachPage /></PageLayout></RequireAuth>} />
             <Route path="/my-page" element={<RequireAuth><PageLayout><MyPage /></PageLayout></RequireAuth>} />
-            {/* /friends route removed - friends are now only accessible inside MyPage tab */}
+            <Route path="/friends" element={<RequireAuth><PageLayout><FriendsPage /></PageLayout></RequireAuth>} />
             <Route path="/matches" element={<RequireAuth><PageLayout><MatchesPage /></PageLayout></RequireAuth>} />
             <Route path="/complaint" element={<RequireAuth><PageLayout><ComplaintPage /></PageLayout></RequireAuth>} />
             <Route path="/help" element={<RequireAuth><PageLayout><HelpPage /></PageLayout></RequireAuth>} />

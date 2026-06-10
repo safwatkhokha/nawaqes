@@ -1613,4 +1613,53 @@ router.get('/market-live/stats', optionalAuth, (_req: Request, res: Response) =>
   }
 });
 
+// POST /api/livestream/notify-friends — Send livestream notification to all friends
+router.post('/livestream/notify-friends', auth, (req: Request, res: Response) => {
+  try {
+    const uid = (req as any).user?.userId;
+    if (!uid) { res.status(401).json({ error: 'غير مصرح' }); return; }
+
+    const { streamTitle } = req.body || {};
+    const hostName = ((db.prepare('SELECT name FROM users WHERE id = ?').get(uid) as any)?.name) || 'مستخدم';
+    const message = `${hostName} بدأ بثاً مباشراً${streamTitle ? ': ' + streamTitle : ''}! شاهد الآن 🔴`;
+
+    // Get all accepted friends
+    const friends = db.prepare(`
+      SELECT CASE WHEN requester_id = ? THEN addressee_id ELSE requester_id END as friend_id
+      FROM friendships
+      WHERE (requester_id = ? OR addressee_id = ?) AND status = 'accepted'
+    `).all(uid, uid, uid) as any[];
+
+    // Insert notification for each friend
+    const insertNotif = db.prepare('INSERT INTO notifications (user_id, type, message, link, user_id_ref) VALUES (?, ?, ?, ?, ?)');
+    let count = 0;
+    for (const friend of friends) {
+      try {
+        insertNotif.run(friend.friend_id, 'friend', message, `/live-stream`, uid);
+        count++;
+      } catch {}
+    }
+
+    res.json({ success: true, notifiedFriends: count });
+  } catch (err: any) {
+    res.status(500).json({ error: 'فشل إرسال إشعارات البث', details: err.message });
+  }
+});
+
+// GET /api/livestream/active — Get list of users currently streaming
+router.get('/livestream/active', auth, (req: Request, res: Response) => {
+  try {
+    const wsManager = (req.app.locals as any).wsManager;
+    if (!wsManager) {
+      res.json([]);
+      return;
+    }
+    // Get active streamers from the WebSocket manager
+    const activeStreamers = (wsManager as any).activeStreams || [];
+    res.json(activeStreamers);
+  } catch (err: any) {
+    res.json([]);
+  }
+});
+
 export default router;

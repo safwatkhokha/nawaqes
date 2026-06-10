@@ -4,7 +4,7 @@ import { useAppContext } from '../contexts/AppContext';
 import { useAuth } from '../contexts/AuthContext';
 import { api } from '../services/api';
 import {
-  ArrowRight, Search, Send, Phone, MoreVertical, CheckCircle2, Check, Image as ImageIcon, Paperclip, UserPlus, ShoppingBag, RefreshCw, Eye, Info, X, MessageCircle, Video, Reply, Trash2, Copy, Smile, PhoneCall, VideoOff, PhoneOff, Mic, MicOff, CameraOff, Clock, AlertCircle,
+  ArrowRight, Search, Send, Phone, MoreVertical, CheckCircle2, Check, Image as ImageIcon, Paperclip, UserPlus, ShoppingBag, RefreshCw, Eye, Info, X, MessageCircle, Video, Reply, Trash2, Copy, Smile, PhoneCall, VideoOff, PhoneOff, Mic, MicOff, CameraOff, Clock, AlertCircle, Volume2, VolumeX,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ChatMessage, ChatContact } from '../types';
@@ -58,6 +58,7 @@ export const MessagesPage: React.FC = () => {
   const [callDuration, setCallDuration] = useState(0);
   const [isMuted, setIsMuted] = useState(false);
   const [isCameraOff, setIsCameraOff] = useState(false);
+  const [isSpeakerOn, setIsSpeakerOn] = useState(true);
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
   const [incomingCall, setIncomingCall] = useState<{ fromId: string; fromName: string; fromAvatar: string; type: 'audio' | 'video'; offer?: RTCSessionDescriptionInit } | null>(null);
@@ -70,7 +71,17 @@ export const MessagesPage: React.FC = () => {
   const localStreamRef = useRef<MediaStream | null>(null);
 
   const ICE_SERVERS: RTCConfiguration = {
-    iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+    iceServers: [
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' },
+      { urls: 'stun:stun2.l.google.com:19302' },
+      { urls: 'stun:stun3.l.google.com:19302' },
+      { urls: 'stun:stun4.l.google.com:19302' },
+      // Free TURN servers for better NAT traversal (mobile networks)
+      { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+      { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
+      { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
+    ],
   };
 
   // Last seen state
@@ -573,8 +584,17 @@ export const MessagesPage: React.FC = () => {
         newRemoteStream.addTrack(track);
       });
       setRemoteStream(newRemoteStream);
+      // Set remote stream on video element
       if (remoteVideoRef.current) {
         remoteVideoRef.current.srcObject = newRemoteStream;
+        // Ensure video plays (browsers may block autoplay without user interaction)
+        remoteVideoRef.current.play().catch(() => {});
+      }
+      // Also set remote audio on a dedicated audio element for reliable audio playback
+      const remoteAudioEl = document.getElementById('remote-call-audio') as HTMLAudioElement | null;
+      if (remoteAudioEl) {
+        remoteAudioEl.srcObject = newRemoteStream;
+        remoteAudioEl.play().catch(() => {});
       }
     };
 
@@ -1295,6 +1315,8 @@ export const MessagesPage: React.FC = () => {
                                   await api.sendFriendRequest(selectedContactId!);
                                   setFriendshipStatus('pending');
                                   toast.success(t('messages.friendRequestSent', 'تم إرسال طلب الصداقة'));
+                                  // Redirect to friend requests page so user can see sent requests
+                                  navigate('/friends?tab=sent');
                                 } catch (err: any) {
                                   toast.error(err.message || t('messages.sendFailed', 'فشل إرسال طلب الصداقة'));
                                 } finally {
@@ -1773,6 +1795,9 @@ export const MessagesPage: React.FC = () => {
             className="fixed inset-0 z-[300] flex flex-col"
             dir={dir}
           >
+            {/* Hidden audio element for reliable remote audio playback */}
+            <audio id="remote-call-audio" autoPlay style={{ display: 'none' }} />
+
             {/* Full-screen background */}
             <div className="absolute inset-0 bg-gray-900">
               {/* Animated gradient circles (shown when no remote video) */}
@@ -1892,7 +1917,14 @@ export const MessagesPage: React.FC = () => {
             <div className="relative z-[5] flex items-center justify-center gap-5 py-8 pb-10 bg-gradient-to-t from-black/60 to-transparent">
               {/* Mute */}
               <button
-                onClick={() => setIsMuted(!isMuted)}
+                onClick={() => {
+                  const newMuted = !isMuted;
+                  setIsMuted(newMuted);
+                  // Actually toggle mic track
+                  if (localStreamRef.current) {
+                    localStreamRef.current.getAudioTracks().forEach(track => { track.enabled = !newMuted; });
+                  }
+                }}
                 className={`w-14 h-14 rounded-full flex items-center justify-center transition-all active:scale-90 ${
                   isMuted ? 'bg-red-500 text-white' : 'bg-white/20 text-white hover:bg-white/30'
                 }`}
@@ -1903,7 +1935,14 @@ export const MessagesPage: React.FC = () => {
               {/* Camera toggle (video call only) */}
               {activeCall.type === 'video' && (
                 <button
-                  onClick={() => setIsCameraOff(!isCameraOff)}
+                  onClick={() => {
+                    const newCamOff = !isCameraOff;
+                    setIsCameraOff(newCamOff);
+                    // Actually toggle video track
+                    if (localStreamRef.current) {
+                      localStreamRef.current.getVideoTracks().forEach(track => { track.enabled = !newCamOff; });
+                    }
+                  }}
                   className={`w-14 h-14 rounded-full flex items-center justify-center transition-all active:scale-90 ${
                     isCameraOff ? 'bg-red-500 text-white' : 'bg-white/20 text-white hover:bg-white/30'
                   }`}
@@ -1920,9 +1959,34 @@ export const MessagesPage: React.FC = () => {
                 <PhoneOff className="w-7 h-7 text-white" />
               </button>
 
-              {/* Speaker */}
-              <button className="w-14 h-14 rounded-full bg-white/20 text-white flex items-center justify-center hover:bg-white/30 transition-all">
-                <Phone className="w-6 h-6" />
+              {/* Speaker toggle */}
+              <button
+                onClick={() => {
+                  const newSpeaker = !isSpeakerOn;
+                  setIsSpeakerOn(newSpeaker);
+                  // Toggle audio output on remote video/audio elements
+                  const remoteVid = remoteVideoRef.current;
+                  const remoteAud = document.getElementById('remote-call-audio') as HTMLAudioElement | null;
+                  if (remoteVid) {
+                    try {
+                      // @ts-ignore - setSinkId is not in all TS definitions
+                      remoteVid.setSinkId?.(newSpeaker ? '' : 'default');
+                    } catch {}
+                    remoteVid.volume = newSpeaker ? 1 : 0.3;
+                  }
+                  if (remoteAud) {
+                    try {
+                      // @ts-ignore
+                      remoteAud.setSinkId?.(newSpeaker ? '' : 'default');
+                    } catch {}
+                    remoteAud.volume = newSpeaker ? 1 : 0.3;
+                  }
+                }}
+                className={`w-14 h-14 rounded-full flex items-center justify-center transition-all active:scale-90 ${
+                  isSpeakerOn ? 'bg-white/20 text-white hover:bg-white/30' : 'bg-orange-500 text-white'
+                }`}
+              >
+                {isSpeakerOn ? <Volume2 className="w-6 h-6" /> : <VolumeX className="w-6 h-6" />}
               </button>
             </div>
           </motion.div>

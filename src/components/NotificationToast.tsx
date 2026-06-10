@@ -223,7 +223,7 @@ export const NotificationToast: React.FC = () => {
         case 'payment': navigate('/wallet'); break;
         case 'promotion': navigate('/promotions'); break;
         case 'message': navigate('/messages'); break;
-        case 'friend': navigate('/friends'); break;
+        case 'friend': navigate('/friends?tab=requests'); break;
         case 'alert': navigate('/market-pulse'); break;
         case 'like': navigate('/'); break;
         case 'comment': navigate('/'); break;

@@ -1,7 +1,7 @@
 // ─── Mobile Bottom Navigation Bar ─ شريط التنقل السفلي للجوال ────────
 import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Home, ShoppingBag, PlusCircle, MessageCircle, Bell, Brain } from 'lucide-react';
+import { Home, ShoppingBag, PlusCircle, MessageCircle, Bell, Users } from 'lucide-react';
 import { useAppContext } from '../contexts/AppContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useTranslation } from 'react-i18next';
@@ -9,7 +9,7 @@ import { useTranslation } from 'react-i18next';
 export const MobileBottomNav: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { chatUnreadCount, notifications, readNotificationIds, darkMode } = useAppContext();
+  const { chatUnreadCount, notifications, readNotificationIds, darkMode, friendRequests } = useAppContext();
   const { dir } = useLanguage();
   const { t } = useTranslation();
 
@@ -18,11 +18,14 @@ export const MobileBottomNav: React.FC = () => {
     (n) => !readNotificationIds.has(n.id)
   ).length;
 
+  // Count friend requests
+  const friendRequestCount = friendRequests?.length || 0;
+
   // Determine active tab based on current route
   const currentPath = location.pathname;
 
   // Hide bottom nav on pages that have their own full-screen controls
-  const hiddenRoutes = ['/livestream', '/messages'];
+  const hiddenRoutes = ['/livestream', '/live-stream', '/messages'];
   if (hiddenRoutes.some(route => currentPath.startsWith(route))) return null;
 
   const isActive = (path: string) => {
@@ -53,10 +56,11 @@ export const MobileBottomNav: React.FC = () => {
       isCenter: true,
     },
     {
-      id: 'ai-assistant',
-      path: '/ai-assistant',
-      icon: Brain,
-      label: t('navbar.aiAssistant') || 'ذكاء',
+      id: 'friends',
+      path: '/friends',
+      icon: Users,
+      label: t('navbar.friends') || 'أصدقاء',
+      badge: friendRequestCount,
       isCenter: false,
     },
     {

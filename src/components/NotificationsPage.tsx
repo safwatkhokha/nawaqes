@@ -246,7 +246,7 @@ export const NotificationsPage: React.FC = () => {
         if (notif.userId && notif.userId !== currentUser?.id) {
           navigate(`/user/${notif.userId}`);
         } else {
-          navigate('/friends');
+          navigate('/friends?tab=requests');
         }
         return;
       case 'like':

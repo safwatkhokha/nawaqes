@@ -17,6 +17,7 @@ import {
   MessageCircle,
   UserPlus,
   RefreshCw,
+  Radio,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'sonner';
@@ -40,6 +41,7 @@ export const UserProfilePage: React.FC = () => {
   const [sendingFriendRequest, setSendingFriendRequest] = useState(false);
   const [friendshipStatus, setFriendshipStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isUserLive, setIsUserLive] = useState(false);
 
   // Fetch user profile from API
   useEffect(() => {
@@ -95,6 +97,23 @@ export const UserProfilePage: React.FC = () => {
       .finally(() => setLoading(false));
   }, [userId, currentUser]);
 
+  // Check if this user is currently live streaming
+  useEffect(() => {
+    if (!userId) return;
+    const checkLiveStatus = async () => {
+      try {
+        const activeStreams = await api.getActiveLivestreams();
+        if (Array.isArray(activeStreams)) {
+          setIsUserLive(activeStreams.some((s: any) => s.hostId === userId));
+        }
+      } catch {}
+    };
+    checkLiveStatus();
+    // Poll every 15 seconds
+    const interval = setInterval(checkLiveStatus, 15000);
+    return () => clearInterval(interval);
+  }, [userId]);
+
   const handleSendFriendRequest = async () => {
     if (!userId) return;
     setSendingFriendRequest(true);
@@ -102,6 +121,8 @@ export const UserProfilePage: React.FC = () => {
       await api.sendFriendRequest(userId);
       setFriendshipStatus('pending');
       toast.success(t('userProfile.friendRequestSent'));
+      // Redirect to friend requests page so user can see sent requests
+      navigate('/friends?tab=sent');
     } catch (err: any) {
       toast.error(err.message || t('userProfile.friendRequestFailed'));
     } finally {
@@ -195,6 +216,15 @@ export const UserProfilePage: React.FC = () => {
         {/* Action Buttons */}
         {currentUser && currentUser.id !== targetUser.id && (
           <div className="absolute top-4 left-4 flex gap-2 z-10">
+            {isUserLive && (
+              <button
+                onClick={() => navigate('/live-stream')}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold bg-red-500 text-white hover:bg-red-600 transition-all active:scale-95 backdrop-blur-md shadow-lg animate-pulse"
+              >
+                <Radio className="w-3.5 h-3.5" />
+                {t('userProfile.watchLive', 'شاهد البث')}
+              </button>
+            )}
             <button
               onClick={handleMessage}
               className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all active:scale-95 ${
@@ -231,6 +261,18 @@ export const UserProfilePage: React.FC = () => {
         <div className="flex items-center gap-2 mb-1">
           <h2 className={`text-xl font-black ${darkMode ? 'text-white' : 'text-gray-900'}`}>{targetUser.name}</h2>
           {targetUser.is_verified && <CheckCircle2 className="w-5 h-5 text-orange-600 fill-orange-600/10" />}
+          {isUserLive && (
+            <motion.button
+              onClick={() => navigate('/live-stream')}
+              animate={{ scale: [1, 1.05, 1] }}
+              transition={{ duration: 1.5, repeat: Infinity, ease: 'easeInOut' }}
+              className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-red-500 text-white text-[11px] font-black shadow-lg shadow-red-500/30 hover:bg-red-600 transition-colors"
+            >
+              <span className="w-2 h-2 bg-white rounded-full animate-pulse" />
+              <Radio className="w-3 h-3" />
+              {t('userProfile.liveNow', 'مباشر')}
+            </motion.button>
+          )}
         </div>
         <div className="flex items-center gap-3 mb-3">
           {targetUser.trust_score && (

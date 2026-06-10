@@ -103,7 +103,7 @@ const SidebarContent: React.FC<SidebarProps & { onClose?: () => void }> = ({
   const location = useLocation();
   const { t, i18n } = useTranslation();
   const { dir, language, toggleLanguage } = useLanguage();
-  const { darkMode, toggleDarkMode, smartAlertsEnabled, enableSmartAlerts, notifications, readNotificationIds, chatUnreadCount, posts } =
+  const { darkMode, toggleDarkMode, smartAlertsEnabled, enableSmartAlerts, notifications, readNotificationIds, chatUnreadCount, posts, friendRequests } =
     useAppContext();
   const { currentUser } = useAuth();
 
@@ -121,6 +121,7 @@ const SidebarContent: React.FC<SidebarProps & { onClose?: () => void }> = ({
   }, [currentUser?.id]);
 
   const unreadNotifications = notifications.filter(n => !readNotificationIds.has(n.id)).length;
+  const friendRequestCount = friendRequests?.length || 0;
   const walletBalance = currentUser?.walletBalance || 0;
 
   const navSections: NavSection[] = useMemo(() => [
@@ -154,6 +155,7 @@ const SidebarContent: React.FC<SidebarProps & { onClose?: () => void }> = ({
       defaultOpen: true,
       items: [
         { id: 'messages', label: t('sidebar.conversations'), icon: MessageCircle, path: '/messages', badge: chatUnreadCount, badgeColor: 'bg-blue-500' },
+        { id: 'friends', label: t('sidebar.friends'), icon: Users, path: '/friends', badge: friendRequestCount, badgeColor: 'bg-indigo-500' },
         { id: 'notifications', label: t('sidebar.notifications'), icon: Bell, path: '/notifications', badge: unreadNotifications, badgeColor: 'bg-red-500' },
       ],
     },
@@ -181,7 +183,7 @@ const SidebarContent: React.FC<SidebarProps & { onClose?: () => void }> = ({
         { id: 'settings', label: t('sidebar.settings'), icon: Settings, path: '/settings' },
       ],
     },
-  ], [t, chatUnreadCount, unreadNotifications]);
+  ], [t, chatUnreadCount, unreadNotifications, friendRequestCount]);
 
   const quickTools = [
     { id: 'market-pulse', label: t('sidebar.marketPulse'), icon: TrendingUp, path: '/market-pulse', color: darkMode ? 'text-green-400 bg-green-900/30' : 'text-green-600 bg-green-50' },
