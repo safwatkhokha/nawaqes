@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAppContext } from '../contexts/AppContext';
 import { useAuth } from '../contexts/AuthContext';
 import { api } from '../services/api';
@@ -17,6 +17,8 @@ const REACTION_EMOJIS = ['❤️', '👍', '😂', '😮', '😢', '🎉'];
 
 export const MessagesPage: React.FC = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const chatParam = searchParams.get('chat');
   const { darkMode, chatMessages, sendMessage, getChatContacts, markMessagesRead, posts, wsConnected, sendTyping, sendReadReceipt, sendCallSignal, isUserOnlineWs } = useAppContext();
   const { currentUser } = useAuth();
   const { t } = useTranslation();
@@ -130,7 +132,10 @@ export const MessagesPage: React.FC = () => {
 
   // Close context menu on click outside
   useEffect(() => {
-    const handleClick = () => {
+    const handleClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      // Don't close header menu if clicking inside the menu or its toggle button
+      if (showHeaderMenu && target.closest('[data-header-menu]')) return;
       setContextMenu(null);
       setShowReactionPicker(null);
       setShowHeaderMenu(false);
@@ -216,6 +221,13 @@ export const MessagesPage: React.FC = () => {
       }
     }).catch(() => {});
   }, [loadContacts]);
+
+  // Auto-select contact from URL ?chat=userId parameter
+  useEffect(() => {
+    if (chatParam && !selectedContactId) {
+      setSelectedContactId(chatParam);
+    }
+  }, [chatParam]);
 
   // Load messages when contact is selected
   useEffect(() => {
@@ -471,15 +483,14 @@ export const MessagesPage: React.FC = () => {
 
   const handleStartChat = async (userId: string, userName: string, userAvatar: string) => {
     try {
-      const result = await api.sendMessage(userId, 'مرحباً!');
-      // Add to contacts
+      // Just select the contact and open the chat — don't send any auto-message
       setApiContacts(prev => {
         if (prev.find(c => c.id === userId)) return prev;
         return [...prev, {
           id: userId,
           name: userName,
           avatar: userAvatar,
-          lastMessage: 'مرحباً!',
+          lastMessage: '',
           lastTime: new Date().toISOString(),
           unread: 0,
           online: false,
@@ -1208,25 +1219,26 @@ export const MessagesPage: React.FC = () => {
                   </div>
                 </div>
                 <div className="flex items-center gap-1">
-                  {/* Call buttons - visible on md+ screens */}
+                  {/* Audio call button - visible on all screens */}
                   <button
                     onClick={() => startCall('audio')}
                     title={t('messages.audioCall')}
-                    className={`hidden md:flex w-9 h-9 rounded-full items-center justify-center transition-colors ${darkMode ? 'hover:bg-gray-700 text-green-400' : 'hover:bg-green-50 text-green-600'}`}
+                    className={`w-9 h-9 rounded-full flex items-center justify-center transition-colors ${darkMode ? 'hover:bg-gray-700 text-green-400' : 'hover:bg-green-50 text-green-600'}`}
                   >
                     <Phone className="w-4 h-4" />
                   </button>
+                  {/* Video call button - visible on all screens */}
                   <button
                     onClick={() => startCall('video')}
                     title={t('messages.videoCall')}
-                    className={`hidden md:flex w-9 h-9 rounded-full items-center justify-center transition-colors ${darkMode ? 'hover:bg-gray-700 text-blue-400' : 'hover:bg-blue-50 text-blue-600'}`}
+                    className={`w-9 h-9 rounded-full flex items-center justify-center transition-colors ${darkMode ? 'hover:bg-gray-700 text-blue-400' : 'hover:bg-blue-50 text-blue-600'}`}
                   >
                     <Video className="w-4 h-4" />
                   </button>
                   {/* More menu button */}
-                  <div className="relative">
+                  <div className="relative" data-header-menu>
                     <button
-                      onClick={() => setShowHeaderMenu(!showHeaderMenu)}
+                      onClick={(e) => { e.stopPropagation(); setShowHeaderMenu(!showHeaderMenu); }}
                       title="مزيد من الخيارات"
                       className={`w-9 h-9 rounded-full flex items-center justify-center ${darkMode ? 'hover:bg-gray-700 text-gray-400' : 'hover:bg-gray-100 text-gray-500'}`}
                     >
@@ -1243,20 +1255,20 @@ export const MessagesPage: React.FC = () => {
                           }`}
                           onClick={() => setShowHeaderMenu(false)}
                         >
-                          {/* Audio call - mobile only */}
+                          {/* Audio call */}
                           <button
                             onClick={() => startCall('audio')}
-                            className={`w-full flex items-center gap-2.5 px-4 py-2.5 text-sm transition-colors md:hidden ${
+                            className={`w-full flex items-center gap-2.5 px-4 py-2.5 text-sm transition-colors ${
                               darkMode ? 'text-gray-200 hover:bg-gray-700' : 'text-gray-700 hover:bg-gray-50'
                             }`}
                           >
                             <Phone className="w-4 h-4 text-green-500" />
                             {t('messages.audioCall', 'مكالمة صوتية')}
                           </button>
-                          {/* Video call - mobile only */}
+                          {/* Video call */}
                           <button
                             onClick={() => startCall('video')}
-                            className={`w-full flex items-center gap-2.5 px-4 py-2.5 text-sm transition-colors md:hidden ${
+                            className={`w-full flex items-center gap-2.5 px-4 py-2.5 text-sm transition-colors ${
                               darkMode ? 'text-gray-200 hover:bg-gray-700' : 'text-gray-700 hover:bg-gray-50'
                             }`}
                           >
@@ -1758,20 +1770,22 @@ export const MessagesPage: React.FC = () => {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[300] flex items-center justify-center"
+            className="fixed inset-0 z-[300] flex flex-col"
             dir={dir}
           >
-            {/* Background */}
-            <div className={`absolute inset-0 ${darkMode ? 'bg-gray-900' : 'bg-gradient-to-b from-gray-800 to-gray-900'}`}>
-              {/* Animated gradient circles */}
-              <div className="absolute inset-0 overflow-hidden">
-                <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-orange-500/10 rounded-full blur-3xl animate-pulse" />
-                <div className="absolute bottom-1/4 right-1/4 w-80 h-80 bg-blue-500/10 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1s' }} />
-                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-purple-500/5 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '2s' }} />
-              </div>
+            {/* Full-screen background */}
+            <div className="absolute inset-0 bg-gray-900">
+              {/* Animated gradient circles (shown when no remote video) */}
+              {!(activeCall.type === 'video' && remoteStream) && (
+                <div className="absolute inset-0 overflow-hidden">
+                  <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-orange-500/10 rounded-full blur-3xl animate-pulse" />
+                  <div className="absolute bottom-1/4 right-1/4 w-80 h-80 bg-blue-500/10 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1s' }} />
+                  <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-purple-500/5 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '2s' }} />
+                </div>
+              )}
             </div>
 
-            {/* Remote video (full screen behind content) */}
+            {/* Remote video (full screen) */}
             {activeCall.type === 'video' && remoteStream && (
               <video
                 ref={remoteVideoRef}
@@ -1781,15 +1795,32 @@ export const MessagesPage: React.FC = () => {
               />
             )}
 
-            {/* Call Content */}
-            <div className="relative z-10 flex flex-col items-center text-center px-6">
-              {/* Avatar — shown when no remote video */}
-              {!(activeCall.type === 'video' && remoteStream) && (
+            {/* Local video PIP (top-right corner, draggable feel) */}
+            {activeCall.type === 'video' && !isCameraOff && localStream && (
+              <div className="absolute top-16 right-4 z-[10] w-28 h-40 sm:w-36 sm:h-52 rounded-2xl overflow-hidden border-2 border-white/20 shadow-2xl bg-gray-800">
+                <video
+                  ref={localVideoRef}
+                  autoPlay
+                  playsInline
+                  muted
+                  className="w-full h-full object-cover"
+                  style={{ transform: 'scaleX(-1)' }}
+                />
+                {/* Self label */}
+                <div className="absolute bottom-1 left-1 right-1 bg-black/50 rounded-lg px-1.5 py-0.5 text-center">
+                  <span className="text-white text-[9px] font-bold">{t('common.you', 'أنت')}</span>
+                </div>
+              </div>
+            )}
+
+            {/* Remote user avatar (shown when no remote video) */}
+            {!(activeCall.type === 'video' && remoteStream) && (
+              <div className="relative z-[5] flex-1 flex flex-col items-center justify-center px-6">
                 <div className="relative mb-6">
                   <motion.div
                     animate={{ scale: [1, 1.05, 1] }}
                     transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
-                    className="w-28 h-28 rounded-full overflow-hidden border-4 border-white/20 shadow-2xl"
+                    className="w-32 h-32 rounded-full overflow-hidden border-4 border-white/20 shadow-2xl"
                   >
                     <img src={activeCall.contactAvatar} alt="" className="w-full h-full object-cover" />
                   </motion.div>
@@ -1813,83 +1844,86 @@ export const MessagesPage: React.FC = () => {
                     {activeCall.type === 'audio' ? <PhoneCall className="w-5 h-5 text-white" /> : <Video className="w-5 h-5 text-white" />}
                   </div>
                 </div>
-              )}
 
-              {/* Name & Status */}
-              <h2 className="text-2xl font-black text-white mb-2">{activeCall.contactName}</h2>
-              <p className="text-green-300 text-sm font-bold mb-1">
-                {callState === 'outgoing'
-                  ? t('messages.calling', 'جاري الاتصال...')
-                  : activeCall.type === 'video'
-                    ? t('messages.videoCall', 'مكالمة فيديو')
-                    : t('messages.audioCall', 'مكالمة صوتية')}
-              </p>
-              <p className="text-white/60 text-lg font-mono font-bold">
-                {formatCallDuration(callDuration)}
-              </p>
+                {/* Name & Status */}
+                <h2 className="text-2xl font-black text-white mb-2">{activeCall.contactName}</h2>
+                <p className="text-green-300 text-sm font-bold mb-1">
+                  {callState === 'outgoing'
+                    ? t('messages.calling', 'جاري الاتصال...')
+                    : activeCall.type === 'video'
+                      ? t('messages.videoCall', 'مكالمة فيديو')
+                      : t('messages.audioCall', 'مكالمة صوتية')}
+                </p>
+              </div>
+            )}
 
-              {/* Call error message */}
-              {callError && (
-                <div className="mt-3 px-4 py-2 bg-red-500/20 rounded-xl border border-red-500/30">
+            {/* When remote video IS showing, overlay the name at top */}
+            {activeCall.type === 'video' && remoteStream && (
+              <div className="relative z-[5] pt-4 px-4">
+                <div className="inline-flex items-center gap-2 bg-black/50 backdrop-blur-sm px-3 py-1.5 rounded-xl">
+                  <h2 className="text-sm font-bold text-white">{activeCall.contactName}</h2>
+                  <span className="text-green-300 text-[10px] font-bold">
+                    {callState === 'outgoing' ? t('messages.calling', 'جاري الاتصال...') : t('messages.videoCall', 'مكالمة فيديو')}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* Call error message */}
+            {callError && (
+              <div className="relative z-[5] flex justify-center mt-2">
+                <div className="px-4 py-2 bg-red-500/20 rounded-xl border border-red-500/30">
                   <p className="text-red-300 text-sm font-bold">{callError}</p>
                 </div>
-              )}
+              </div>
+            )}
 
-              {/* Local video preview (small PIP) */}
-              {activeCall.type === 'video' && !isCameraOff && (
-                <div className="mt-4 w-40 h-30 rounded-2xl bg-gray-800/50 border border-white/10 overflow-hidden shadow-lg">
-                  <video
-                    ref={localVideoRef}
-                    autoPlay
-                    playsInline
-                    muted
-                    className="w-full h-full object-cover"
-                  />
-                </div>
-              )}
+            {/* Duration display */}
+            <div className="relative z-[5] flex justify-center mt-1">
+              <p className="text-white/80 text-lg font-mono font-bold">
+                {formatCallDuration(callDuration)}
+              </p>
+            </div>
 
-              {/* Call Controls */}
-              <div className="flex items-center gap-6 mt-8">
-                {/* Mute */}
+            {/* Spacer to push controls to bottom */}
+            <div className="relative z-[5] flex-1" />
+
+            {/* Call Controls — bottom bar */}
+            <div className="relative z-[5] flex items-center justify-center gap-5 py-8 pb-10 bg-gradient-to-t from-black/60 to-transparent">
+              {/* Mute */}
+              <button
+                onClick={() => setIsMuted(!isMuted)}
+                className={`w-14 h-14 rounded-full flex items-center justify-center transition-all active:scale-90 ${
+                  isMuted ? 'bg-red-500 text-white' : 'bg-white/20 text-white hover:bg-white/30'
+                }`}
+              >
+                {isMuted ? <MicOff className="w-6 h-6" /> : <Mic className="w-6 h-6" />}
+              </button>
+
+              {/* Camera toggle (video call only) */}
+              {activeCall.type === 'video' && (
                 <button
-                  onClick={() => setIsMuted(!isMuted)}
+                  onClick={() => setIsCameraOff(!isCameraOff)}
                   className={`w-14 h-14 rounded-full flex items-center justify-center transition-all active:scale-90 ${
-                    isMuted ? 'bg-red-500 text-white' : 'bg-white/20 text-white hover:bg-white/30'
+                    isCameraOff ? 'bg-red-500 text-white' : 'bg-white/20 text-white hover:bg-white/30'
                   }`}
                 >
-                  {isMuted ? <MicOff className="w-6 h-6" /> : <Mic className="w-6 h-6" />}
+                  {isCameraOff ? <CameraOff className="w-6 h-6" /> : <Video className="w-6 h-6" />}
                 </button>
+              )}
 
-                {/* Camera toggle (video call only) */}
-                {activeCall.type === 'video' && (
-                  <button
-                    onClick={() => setIsCameraOff(!isCameraOff)}
-                    className={`w-14 h-14 rounded-full flex items-center justify-center transition-all active:scale-90 ${
-                      isCameraOff ? 'bg-red-500 text-white' : 'bg-white/20 text-white hover:bg-white/30'
-                    }`}
-                  >
-                    {isCameraOff ? <CameraOff className="w-6 h-6" /> : <Video className="w-6 h-6" />}
-                  </button>
-                )}
+              {/* End Call */}
+              <button
+                onClick={endCall}
+                className="w-16 h-16 rounded-full bg-red-500 flex items-center justify-center transition-all active:scale-90 hover:bg-red-600 shadow-lg shadow-red-500/30"
+              >
+                <PhoneOff className="w-7 h-7 text-white" />
+              </button>
 
-                {/* End Call */}
-                <button
-                  onClick={endCall}
-                  className="w-16 h-16 rounded-full bg-red-500 flex items-center justify-center transition-all active:scale-90 hover:bg-red-600 shadow-lg shadow-red-500/30"
-                >
-                  <PhoneOff className="w-7 h-7 text-white" />
-                </button>
-
-                {/* Speaker */}
-                <button className="w-14 h-14 rounded-full bg-white/20 text-white flex items-center justify-center hover:bg-white/30 transition-all">
-                  <Phone className="w-6 h-6" />
-                </button>
-              </div>
-
-              {/* Call Duration Info */}
-              <p className="text-white/40 text-[10px] mt-6">
-                {activeCall.type === 'video' ? t('messages.videoCallActive') : t('messages.audioCallActive')}
-              </p>
+              {/* Speaker */}
+              <button className="w-14 h-14 rounded-full bg-white/20 text-white flex items-center justify-center hover:bg-white/30 transition-all">
+                <Phone className="w-6 h-6" />
+              </button>
             </div>
           </motion.div>
         )}

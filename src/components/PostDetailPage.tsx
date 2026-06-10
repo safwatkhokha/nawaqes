@@ -343,8 +343,7 @@ export const PostDetailPage: React.FC = () => {
     if (!currentUser) { toast.error(t('postCard.mustLogin')); return; }
     if (isMyPost) { toast.info(t('postCard.yourAd')); return; }
     try {
-      await sendMessage(post.author.id, `${t('postCard.interestedMsg')} "${post.content.slice(0, 40)}..."`, post.id);
-      navigate('/messages');
+      navigate(`/messages?chat=${post.author.id}`);
     } catch (err: any) {
       toast.error(err.message || t('common.error'));
     }

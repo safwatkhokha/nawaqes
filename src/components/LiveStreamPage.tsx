@@ -1,16 +1,17 @@
-// ─── Live Stream Page - Video Broadcasting with Chat ──────────────
+// ─── Live Stream Page - Real Video Broadcasting with WebSocket Chat ─
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
 import {
   Video, VideoOff, Mic, MicOff, Radio, Eye, MessageCircle,
   Settings, RotateCcw, PhoneOff, Send, Link2, X, Check,
-  Clock, Users, ChevronDown, AlertCircle, Megaphone
+  Clock, Users, ChevronDown, AlertCircle, Megaphone, ArrowRight
 } from 'lucide-react';
 import { useAppContext } from '../contexts/AppContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useTranslation } from 'react-i18next';
+import { useWebSocket } from '../hooks/useWebSocket';
 import { toast } from 'sonner';
 
 // ─── Quality Options ──────────────────────────────────────────────
@@ -27,23 +28,8 @@ interface LiveChatMsg {
   avatar: string;
   text: string;
   time: Date;
+  isSelf?: boolean;
 }
-
-// ─── Simulated message translation keys ───────────────────────────
-const SIMULATED_MESSAGE_KEYS = [
-  'livestream.simMsg1',
-  'livestream.simMsg2',
-  'livestream.simMsg3',
-  'livestream.simMsg4',
-  'livestream.simMsg5',
-  'livestream.simMsg6',
-  'livestream.simMsg7',
-  'livestream.simMsg8',
-  'livestream.simMsg9',
-  'livestream.simMsg10',
-];
-
-const SIMULATED_USERS = ['أحمد', 'سارة', 'محمد', 'نور', 'خالد', 'فاطمة', 'علي', 'هدى'];
 
 // ─── LiveStreamPage Component ─────────────────────────────────────
 export const LiveStreamPage: React.FC = () => {
@@ -75,8 +61,42 @@ export const LiveStreamPage: React.FC = () => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const durationTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const viewerTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
+
+  // Stream ID = current user ID (each user has one active stream)
+  const streamId = currentUser?.id || '';
+
+  // ─── WebSocket for livestream events ────────────────────────────
+  const {
+    sendLivestreamStart,
+    sendLivestreamEnd,
+    sendLivestreamChat,
+    sendLivestreamJoin,
+    sendLivestreamLeave,
+    onLivestreamChat,
+    onLivestreamViewerJoined,
+    onLivestreamViewerLeft,
+  } = useWebSocket({
+    autoConnect: true,
+    onLivestreamChat: (data: any) => {
+      // Receive chat messages from other users
+      const msg: LiveChatMsg = {
+        id: `msg_${Date.now()}_${Math.random()}`,
+        user: data.userName || 'مستخدم',
+        avatar: data.userAvatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${data.userId}`,
+        text: data.text,
+        time: new Date(data.time || Date.now()),
+        isSelf: data.userId === currentUser?.id,
+      };
+      setChatMessages(prev => [...prev, msg]);
+    },
+    onLivestreamViewerJoined: () => {
+      setViewerCount(prev => prev + 1);
+    },
+    onLivestreamViewerLeft: () => {
+      setViewerCount(prev => Math.max(0, prev - 1));
+    },
+  });
 
   // ─── Start Camera ───────────────────────────────────────────────
   const startCamera = useCallback(async () => {
@@ -162,9 +182,18 @@ export const LiveStreamPage: React.FC = () => {
 
     setIsLive(true);
     setDuration(0);
-    setViewerCount(Math.floor(Math.random() * 5) + 1);
-    setPeakViewers(1);
+    setViewerCount(0);
+    setPeakViewers(0);
     setShowSummary(false);
+    setChatMessages([]);
+
+    // Notify all users via WebSocket that livestream started
+    sendLivestreamStart({
+      streamId,
+      title: '',
+      userName: currentUser?.name || '',
+      userAvatar: currentUser?.avatar || '',
+    });
 
     toast.success(t('livestream.started'));
   };
@@ -180,8 +209,10 @@ export const LiveStreamPage: React.FC = () => {
     setShowEndConfirm(false);
     setShowSummary(true);
 
+    // Notify all users via WebSocket that livestream ended
+    sendLivestreamEnd(streamId);
+
     if (durationTimerRef.current) clearInterval(durationTimerRef.current);
-    if (viewerTimerRef.current) clearInterval(viewerTimerRef.current);
   };
 
   // ─── Toggle Mic ─────────────────────────────────────────────────
@@ -197,13 +228,11 @@ export const LiveStreamPage: React.FC = () => {
   // ─── Toggle Camera ──────────────────────────────────────────────
   const toggleCamera = async () => {
     if (isCamOn) {
-      // Turn off camera - stop video track but keep audio
       if (streamRef.current) {
         streamRef.current.getVideoTracks().forEach(track => track.stop());
       }
       setIsCamOn(false);
     } else {
-      // Turn on camera - restart
       const stream = await startCamera();
       if (stream) {
         setIsCamOn(true);
@@ -234,49 +263,12 @@ export const LiveStreamPage: React.FC = () => {
     };
   }, [isLive]);
 
-  // ─── Simulated Viewer Count ─────────────────────────────────────
-  useEffect(() => {
-    if (isLive) {
-      viewerTimerRef.current = setInterval(() => {
-        setViewerCount(prev => {
-          const change = Math.floor(Math.random() * 5) - 2; // -2 to +2
-          const next = Math.max(1, prev + change);
-          return next;
-        });
-      }, 3000);
-    }
-    return () => {
-      if (viewerTimerRef.current) clearInterval(viewerTimerRef.current);
-    };
-  }, [isLive]);
-
   // ─── Track Peak Viewers ─────────────────────────────────────────
   useEffect(() => {
     if (viewerCount > peakViewers) {
       setPeakViewers(viewerCount);
     }
   }, [viewerCount, peakViewers]);
-
-  // ─── Simulated Chat Messages ────────────────────────────────────
-  useEffect(() => {
-    if (!isLive) return;
-
-    const chatTimer = setInterval(() => {
-      const user = SIMULATED_USERS[Math.floor(Math.random() * SIMULATED_USERS.length)];
-      const msgKey = SIMULATED_MESSAGE_KEYS[Math.floor(Math.random() * SIMULATED_MESSAGE_KEYS.length)];
-      const text = t(msgKey);
-      const msg: LiveChatMsg = {
-        id: `msg_${Date.now()}_${Math.random()}`,
-        user,
-        avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${user}`,
-        text,
-        time: new Date(),
-      };
-      setChatMessages(prev => [...prev, msg]);
-    }, 4000 + Math.random() * 3000);
-
-    return () => clearInterval(chatTimer);
-  }, [isLive, t]);
 
   // ─── Auto-scroll chat ───────────────────────────────────────────
   useEffect(() => {
@@ -292,8 +284,13 @@ export const LiveStreamPage: React.FC = () => {
       avatar: currentUser?.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=self`,
       text: chatInput.trim(),
       time: new Date(),
+      isSelf: true,
     };
     setChatMessages(prev => [...prev, msg]);
+
+    // Send via WebSocket to all viewers
+    sendLivestreamChat(streamId, chatInput.trim());
+
     setChatInput('');
   };
 
@@ -314,29 +311,35 @@ export const LiveStreamPage: React.FC = () => {
     return () => {
       stopCamera();
       if (durationTimerRef.current) clearInterval(durationTimerRef.current);
-      if (viewerTimerRef.current) clearInterval(viewerTimerRef.current);
+      // Notify end if still live
+      if (isLive) {
+        sendLivestreamEnd(streamId);
+      }
     };
   }, [stopCamera]);
+
+  const bgMain = darkMode ? 'bg-gray-900' : 'bg-[#f8f9fa]';
+  const bgCard = darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200';
+  const textPrimary = darkMode ? 'text-white' : 'text-gray-900';
+  const textMuted = darkMode ? 'text-gray-400' : 'text-gray-500';
 
   // ─── Broadcast Summary ──────────────────────────────────────────
   if (showSummary) {
     return (
-      <div className={`min-h-screen flex items-center justify-center p-4 ${darkMode ? 'bg-gray-900' : 'bg-[#f8f9fa]'}`} dir={dir}>
+      <div className={`min-h-screen flex items-center justify-center p-4 ${bgMain}`} dir={dir}>
         <motion.div
           initial={{ scale: 0.9, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
-          className={`w-full max-w-md rounded-3xl p-6 shadow-xl ${
-            darkMode ? 'bg-gray-800 border border-gray-700' : 'bg-white border border-gray-100'
-          }`}
+          className={`w-full max-w-md rounded-3xl p-6 shadow-xl ${bgCard}`}
         >
           <div className="text-center mb-6">
             <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
               <Check className="w-10 h-10 text-green-600" />
             </div>
-            <h2 className={`text-2xl font-black ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+            <h2 className={`text-2xl font-black ${textPrimary}`}>
               {t('livestream.ended')}
             </h2>
-            <p className={`text-sm mt-1 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+            <p className={`text-sm mt-1 ${textMuted}`}>
               {t('livestream.summaryDesc')}
             </p>
           </div>
@@ -344,32 +347,32 @@ export const LiveStreamPage: React.FC = () => {
           <div className="space-y-3">
             <div className={`flex items-center justify-between p-3 rounded-xl ${darkMode ? 'bg-gray-700/50' : 'bg-gray-50'}`}>
               <div className="flex items-center gap-2">
-                <Clock className={`w-5 h-5 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`} />
+                <Clock className={`w-5 h-5 ${textMuted}`} />
                 <span className={`text-sm font-bold ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>{t('livestream.duration')}</span>
               </div>
-              <span className={`text-sm font-black ${darkMode ? 'text-white' : 'text-gray-900'}`}>{formatDuration(duration)}</span>
+              <span className={`text-sm font-black ${textPrimary}`}>{formatDuration(duration)}</span>
             </div>
             <div className={`flex items-center justify-between p-3 rounded-xl ${darkMode ? 'bg-gray-700/50' : 'bg-gray-50'}`}>
               <div className="flex items-center gap-2">
-                <Eye className={`w-5 h-5 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`} />
+                <Eye className={`w-5 h-5 ${textMuted}`} />
                 <span className={`text-sm font-bold ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>{t('livestream.peakViewers')}</span>
               </div>
-              <span className={`text-sm font-black ${darkMode ? 'text-white' : 'text-gray-900'}`}>{peakViewers}</span>
+              <span className={`text-sm font-black ${textPrimary}`}>{peakViewers}</span>
             </div>
             <div className={`flex items-center justify-between p-3 rounded-xl ${darkMode ? 'bg-gray-700/50' : 'bg-gray-50'}`}>
               <div className="flex items-center gap-2">
-                <MessageCircle className={`w-5 h-5 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`} />
+                <MessageCircle className={`w-5 h-5 ${textMuted}`} />
                 <span className={`text-sm font-bold ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>{t('livestream.chatMessages')}</span>
               </div>
-              <span className={`text-sm font-black ${darkMode ? 'text-white' : 'text-gray-900'}`}>{chatMessages.length}</span>
+              <span className={`text-sm font-black ${textPrimary}`}>{chatMessages.length}</span>
             </div>
             {linkedAdId && (
               <div className={`flex items-center justify-between p-3 rounded-xl ${darkMode ? 'bg-gray-700/50' : 'bg-gray-50'}`}>
                 <div className="flex items-center gap-2">
-                  <Link2 className={`w-5 h-5 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`} />
+                  <Link2 className={`w-5 h-5 ${textMuted}`} />
                   <span className={`text-sm font-bold ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>{t('livestream.linkedAd')}</span>
                 </div>
-                <span className={`text-sm font-black ${darkMode ? 'text-white' : 'text-gray-900'}`}>{t('livestream.linked')}</span>
+                <span className={`text-sm font-black ${textPrimary}`}>{t('livestream.linked')}</span>
               </div>
             )}
           </div>
@@ -398,39 +401,42 @@ export const LiveStreamPage: React.FC = () => {
   }
 
   return (
-    <div className={`min-h-screen flex flex-col ${darkMode ? 'bg-gray-900' : 'bg-[#f8f9fa]'}`} dir={dir}>
+    <div className={`min-h-screen flex flex-col ${bgMain}`} dir={dir}>
       {/* ─── Top Bar ───────────────────────────────────────────────── */}
-      <div className={`flex items-center justify-between px-4 py-3 border-b ${
+      <div className={`flex items-center justify-between px-3 py-2.5 border-b ${
         darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'
       }`}>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
+          <button onClick={() => navigate('/')} className={`w-8 h-8 rounded-full flex items-center justify-center ${darkMode ? 'hover:bg-gray-700 text-gray-400' : 'hover:bg-gray-100 text-gray-500'}`}>
+            <ArrowRight className="w-4 h-4" />
+          </button>
           {isLive && (
             <motion.div
               animate={{ scale: [1, 1.2, 1] }}
               transition={{ duration: 1.5, repeat: Infinity }}
-              className="flex items-center gap-1.5 bg-red-500 px-2.5 py-1 rounded-full"
+              className="flex items-center gap-1 bg-red-500 px-2 py-0.5 rounded-full"
             >
               <Radio className="w-3 h-3 text-white" />
               <span className="text-white text-[10px] font-black">{t('livestream.live')}</span>
             </motion.div>
           )}
-          <h1 className={`text-lg font-black ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+          <h1 className={`text-base font-black ${textPrimary}`}>
             {t('livestream.liveStream')}
           </h1>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           {isLive && (
             <>
-              <div className="flex items-center gap-1.5">
-                <Eye className={`w-4 h-4 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`} />
-                <span className={`text-sm font-bold ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+              <div className="flex items-center gap-1">
+                <Eye className={`w-3.5 h-3.5 ${textMuted}`} />
+                <span className={`text-xs font-bold ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
                   {viewerCount}
                 </span>
               </div>
-              <div className="flex items-center gap-1.5">
-                <Clock className={`w-4 h-4 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`} />
-                <span className={`text-sm font-bold tabular-nums ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+              <div className="flex items-center gap-1">
+                <Clock className={`w-3.5 h-3.5 ${textMuted}`} />
+                <span className={`text-xs font-bold tabular-nums ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
                   {formatDuration(duration)}
                 </span>
               </div>
@@ -477,12 +483,20 @@ export const LiveStreamPage: React.FC = () => {
             {/* Not live placeholder */}
             {!isLive && !streamRef.current && (
               <div className="absolute inset-0 flex items-center justify-center">
-                <div className="text-center">
+                <div className="text-center px-6">
                   <div className="w-24 h-24 bg-gray-800 rounded-full flex items-center justify-center mx-auto mb-4">
                     <Video className="w-12 h-12 text-gray-600" />
                   </div>
                   <p className="text-gray-400 font-bold text-lg mb-2">{t('livestream.readyToStream')}</p>
-                  <p className="text-gray-500 text-sm">{t('livestream.readyToStreamDesc')}</p>
+                  <p className="text-gray-500 text-sm mb-6">{t('livestream.readyToStreamDesc')}</p>
+                  {/* Start button directly on the video area for mobile visibility */}
+                  <button
+                    onClick={startBroadcast}
+                    className="px-8 py-3.5 rounded-2xl bg-gradient-to-l from-green-500 to-green-600 text-white font-bold text-base shadow-lg shadow-green-500/30 active:scale-95 transition-transform flex items-center gap-2 mx-auto"
+                  >
+                    <Radio className="w-5 h-5" />
+                    {t('livestream.liveStream')}
+                  </button>
                 </div>
               </div>
             )}
@@ -493,19 +507,19 @@ export const LiveStreamPage: React.FC = () => {
                 <motion.div
                   animate={{ opacity: [1, 0.5, 1] }}
                   transition={{ duration: 2, repeat: Infinity }}
-                  className="flex items-center gap-1.5 bg-red-600/90 backdrop-blur-sm px-2.5 py-1 lg:px-3 lg:py-1.5 rounded-lg"
+                  className="flex items-center gap-1.5 bg-red-600/90 backdrop-blur-sm px-2.5 py-1 rounded-lg"
                 >
-                  <div className="w-1.5 h-1.5 lg:w-2 lg:h-2 bg-white rounded-full" />
-                  <span className="text-white text-[10px] lg:text-xs font-black">{t('livestream.live')}</span>
+                  <div className="w-1.5 h-1.5 bg-white rounded-full" />
+                  <span className="text-white text-[10px] font-black">{t('livestream.live')}</span>
                 </motion.div>
               </div>
             )}
 
             {/* Viewers badge overlay */}
             {isLive && (
-              <div className="absolute top-3 left-3 lg:top-4 lg:left-4 flex items-center gap-1.5 bg-black/50 backdrop-blur-sm px-2.5 py-1 lg:px-3 lg:py-1.5 rounded-lg">
-                <Eye className="w-3 h-3 lg:w-3.5 lg:h-3.5 text-white" />
-                <span className="text-white text-[10px] lg:text-xs font-bold">{viewerCount}</span>
+              <div className="absolute top-3 left-3 lg:top-4 lg:left-4 flex items-center gap-1.5 bg-black/50 backdrop-blur-sm px-2.5 py-1 rounded-lg">
+                <Eye className="w-3 h-3 text-white" />
+                <span className="text-white text-[10px] font-bold">{viewerCount}</span>
               </div>
             )}
 
@@ -526,75 +540,77 @@ export const LiveStreamPage: React.FC = () => {
 
             {/* Linked ad badge */}
             {isLive && linkedAdId && (
-              <div className="absolute bottom-3 left-3 lg:bottom-4 lg:left-4 flex items-center gap-1.5 bg-orange-600/80 backdrop-blur-sm px-2.5 py-1.5 rounded-lg">
+              <div className="absolute bottom-3 left-3 flex items-center gap-1.5 bg-orange-600/80 backdrop-blur-sm px-2.5 py-1.5 rounded-lg">
                 <Link2 className="w-3.5 h-3.5 text-white" />
-                <span className="text-white text-[10px] lg:text-xs font-bold">{t('livestream.linkedAd')}</span>
+                <span className="text-white text-[10px] font-bold">{t('livestream.linkedAd')}</span>
               </div>
             )}
           </div>
 
-          {/* Controls bar — always visible, responsive */}
-          <div className={`flex items-center justify-center gap-2 sm:gap-3 px-2 sm:px-4 py-2.5 sm:py-3 border-t safe-bottom ${
+          {/* Controls bar — always visible, mobile-friendly */}
+          <div className={`flex items-center justify-center gap-2 sm:gap-3 px-2 sm:px-4 py-3 sm:py-3 border-t ${
             darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'
-          }`}>
+          }`} style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}>
             {/* Mic toggle */}
             <button
               onClick={toggleMic}
-              className={`w-10 h-10 sm:w-11 sm:h-11 rounded-full flex items-center justify-center transition-all ${
+              className={`w-11 h-11 sm:w-12 sm:h-12 rounded-full flex items-center justify-center transition-all active:scale-90 ${
                 isMicOn
-                  ? 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'
+                  ? (darkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-200 text-gray-700 hover:bg-gray-300')
                   : 'bg-red-500 text-white hover:bg-red-600'
               }`}
             >
-              {isMicOn ? <Mic className="w-4 h-4 sm:w-5 sm:h-5" /> : <MicOff className="w-4 h-4 sm:w-5 sm:h-5" />}
+              {isMicOn ? <Mic className="w-5 h-5" /> : <MicOff className="w-5 h-5" />}
             </button>
 
             {/* Camera toggle */}
             <button
               onClick={toggleCamera}
-              className={`w-10 h-10 sm:w-11 sm:h-11 rounded-full flex items-center justify-center transition-all ${
+              className={`w-11 h-11 sm:w-12 sm:h-12 rounded-full flex items-center justify-center transition-all active:scale-90 ${
                 isCamOn
-                  ? 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'
+                  ? (darkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-200 text-gray-700 hover:bg-gray-300')
                   : 'bg-red-500 text-white hover:bg-red-600'
               }`}
             >
-              {isCamOn ? <Video className="w-4 h-4 sm:w-5 sm:h-5" /> : <VideoOff className="w-4 h-4 sm:w-5 sm:h-5" />}
+              {isCamOn ? <Video className="w-5 h-5" /> : <VideoOff className="w-5 h-5" />}
             </button>
 
             {/* Flip camera */}
             <button
               onClick={flipCamera}
-              className={`w-10 h-10 sm:w-11 sm:h-11 rounded-full flex items-center justify-center transition-all ${
+              className={`w-11 h-11 sm:w-12 sm:h-12 rounded-full flex items-center justify-center transition-all active:scale-90 ${
                 darkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
               }`}
             >
-              <RotateCcw className="w-4 h-4 sm:w-5 sm:h-5" />
+              <RotateCcw className="w-5 h-5" />
             </button>
 
             {/* Link ad */}
             <button
               onClick={() => setShowAdLinker(true)}
-              className={`w-10 h-10 sm:w-11 sm:h-11 rounded-full flex items-center justify-center transition-all ${
+              className={`w-11 h-11 sm:w-12 sm:h-12 rounded-full flex items-center justify-center transition-all active:scale-90 ${
                 linkedAdId
                   ? 'bg-orange-500 text-white hover:bg-orange-600'
                   : darkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
               }`}
             >
-              <Link2 className="w-4 h-4 sm:w-5 sm:h-5" />
+              <Link2 className="w-5 h-5" />
             </button>
 
             {/* Start/End Broadcast */}
             {isLive ? (
               <button
                 onClick={endBroadcast}
-                className="w-12 h-12 sm:w-14 sm:h-14 rounded-full flex items-center justify-center bg-red-600 text-white hover:bg-red-700 transition-all shadow-lg active:scale-95"
+                className="w-13 h-13 sm:w-14 sm:h-14 rounded-full flex items-center justify-center bg-red-600 text-white hover:bg-red-700 transition-all shadow-lg active:scale-90"
+                style={{ width: '3.25rem', height: '3.25rem' }}
               >
                 <PhoneOff className="w-5 h-5 sm:w-6 sm:h-6" />
               </button>
             ) : (
               <button
                 onClick={startBroadcast}
-                className="w-12 h-12 sm:w-14 sm:h-14 rounded-full flex items-center justify-center bg-green-600 text-white hover:bg-green-700 transition-all shadow-lg active:scale-95"
+                className="w-13 h-13 sm:w-14 sm:h-14 rounded-full flex items-center justify-center bg-green-600 text-white hover:bg-green-700 transition-all shadow-lg active:scale-90"
+                style={{ width: '3.25rem', height: '3.25rem' }}
               >
                 <Radio className="w-5 h-5 sm:w-6 sm:h-6" />
               </button>
@@ -613,16 +629,14 @@ export const LiveStreamPage: React.FC = () => {
                 darkMode ? 'border-gray-700' : 'border-gray-100'
               }`}>
                 <div className="flex items-center gap-2">
-                  <MessageCircle className={`w-4 h-4 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`} />
-                  <span className={`text-sm font-black ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                  <MessageCircle className={`w-4 h-4 ${textMuted}`} />
+                  <span className={`text-sm font-black ${textPrimary}`}>
                     {t('livestream.liveChat')}
                   </span>
                 </div>
                 <div className="flex items-center gap-1.5">
-                  <Users className={`w-3.5 h-3.5 ${darkMode ? 'text-gray-500' : 'text-gray-400'}`} />
-                  <span className={`text-xs font-bold ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                    {viewerCount}
-                  </span>
+                  <Users className={`w-3.5 h-3.5 ${textMuted}`} />
+                  <span className={`text-xs font-bold ${textMuted}`}>{viewerCount}</span>
                 </div>
               </div>
 
@@ -630,29 +644,19 @@ export const LiveStreamPage: React.FC = () => {
               <div className="flex-1 overflow-y-auto p-3 space-y-2">
                 {chatMessages.length === 0 ? (
                   <div className="flex items-center justify-center h-full">
-                    <p className={`text-xs ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
-                      {t('livestream.noMessagesYet')}
-                    </p>
+                    <p className={`text-xs ${textMuted}`}>{t('livestream.noMessagesYet')}</p>
                   </div>
-                ) : (
-                  chatMessages.map(msg => (
-                    <div key={msg.id} className="flex items-start gap-2">
-                      <img
-                        src={msg.avatar}
-                        alt={msg.user}
-                        className="w-6 h-6 rounded-full shrink-0 mt-0.5"
-                      />
-                      <div className="min-w-0">
-                        <span className={`text-[10px] font-black ${darkMode ? 'text-orange-400' : 'text-orange-600'}`}>
-                          {msg.user}
-                        </span>
-                        <p className={`text-xs leading-relaxed ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                          {msg.text}
-                        </p>
-                      </div>
+                ) : chatMessages.map(msg => (
+                  <div key={msg.id} className="flex items-start gap-2">
+                    <img src={msg.avatar} alt={msg.user} className="w-6 h-6 rounded-full shrink-0 mt-0.5" />
+                    <div className="min-w-0">
+                      <span className={`text-[10px] font-black ${msg.isSelf ? 'text-blue-400' : (darkMode ? 'text-orange-400' : 'text-orange-600')}`}>
+                        {msg.user}
+                      </span>
+                      <p className={`text-xs leading-relaxed ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>{msg.text}</p>
                     </div>
-                  ))
-                )}
+                  </div>
+                ))}
                 <div ref={chatEndRef} />
               </div>
 
@@ -665,19 +669,15 @@ export const LiveStreamPage: React.FC = () => {
                     value={chatInput}
                     onChange={e => setChatInput(e.target.value)}
                     onKeyDown={e => { if (e.key === 'Enter') sendChatMessage(); }}
-                    className={`flex-1 px-3 py-2 rounded-xl text-sm ${
-                      darkMode
-                        ? 'bg-gray-700 text-white placeholder-gray-400 border-gray-600'
-                        : 'bg-gray-50 text-gray-900 placeholder-gray-400 border-gray-200'
-                    } border focus:outline-none focus:ring-2 focus:ring-orange-400`}
+                    className={`flex-1 px-3 py-2 rounded-xl text-sm border focus:outline-none focus:ring-2 focus:ring-orange-400 ${
+                      darkMode ? 'bg-gray-700 text-white placeholder-gray-400 border-gray-600' : 'bg-gray-50 text-gray-900 placeholder-gray-400 border-gray-200'
+                    }`}
                   />
                   <button
                     onClick={sendChatMessage}
                     disabled={!chatInput.trim()}
                     className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all ${
-                      chatInput.trim()
-                        ? 'bg-orange-500 text-white hover:bg-orange-600 active:scale-95'
-                        : darkMode ? 'bg-gray-700 text-gray-500' : 'bg-gray-100 text-gray-400'
+                      chatInput.trim() ? 'bg-orange-500 text-white hover:bg-orange-600 active:scale-95' : darkMode ? 'bg-gray-700 text-gray-500' : 'bg-gray-100 text-gray-400'
                     }`}
                   >
                     <Send className="w-4 h-4" />
@@ -697,56 +697,37 @@ export const LiveStreamPage: React.FC = () => {
                   className="lg:hidden fixed inset-x-0 bottom-0 z-[200] flex flex-col"
                   style={{ maxHeight: '60vh' }}
                 >
-                  {/* Handle bar */}
                   <div
-                    className={`flex items-center justify-between px-4 py-2.5 border-b cursor-pointer ${
-                      darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'
-                    }`}
+                    className={`flex items-center justify-between px-4 py-2.5 border-b cursor-pointer ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}
                     onClick={() => setShowMobileChat(false)}
                   >
                     <div className="flex items-center gap-2">
-                      <MessageCircle className={`w-4 h-4 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`} />
-                      <span className={`text-sm font-black ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                        {t('livestream.liveChat')}
-                      </span>
+                      <MessageCircle className={`w-4 h-4 ${textMuted}`} />
+                      <span className={`text-sm font-black ${textPrimary}`}>{t('livestream.liveChat')}</span>
                     </div>
-                    <X className={`w-4 h-4 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`} />
+                    <X className={`w-4 h-4 ${textMuted}`} />
                   </div>
 
-                  {/* Messages */}
-                  <div className={`flex-1 overflow-y-auto p-3 space-y-2 ${
-                    darkMode ? 'bg-gray-900' : 'bg-gray-50'
-                  }`}>
+                  <div className={`flex-1 overflow-y-auto p-3 space-y-2 ${darkMode ? 'bg-gray-900' : 'bg-gray-50'}`}>
                     {chatMessages.length === 0 ? (
                       <div className="flex items-center justify-center h-20">
-                        <p className={`text-xs ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
-                          {t('livestream.noMessagesYet')}
-                        </p>
+                        <p className={`text-xs ${textMuted}`}>{t('livestream.noMessagesYet')}</p>
                       </div>
-                    ) : (
-                      chatMessages.map(msg => (
-                        <div key={msg.id} className="flex items-start gap-2">
-                          <img
-                            src={msg.avatar}
-                            alt={msg.user}
-                            className="w-6 h-6 rounded-full shrink-0 mt-0.5"
-                          />
-                          <div className="min-w-0">
-                            <span className={`text-[10px] font-black ${darkMode ? 'text-orange-400' : 'text-orange-600'}`}>
-                              {msg.user}
-                            </span>
-                            <p className={`text-xs leading-relaxed ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                              {msg.text}
-                            </p>
-                          </div>
+                    ) : chatMessages.map(msg => (
+                      <div key={msg.id} className="flex items-start gap-2">
+                        <img src={msg.avatar} alt={msg.user} className="w-6 h-6 rounded-full shrink-0 mt-0.5" />
+                        <div className="min-w-0">
+                          <span className={`text-[10px] font-black ${msg.isSelf ? 'text-blue-400' : (darkMode ? 'text-orange-400' : 'text-orange-600')}`}>
+                            {msg.user}
+                          </span>
+                          <p className={`text-xs leading-relaxed ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>{msg.text}</p>
                         </div>
-                      ))
-                    )}
+                      </div>
+                    ))}
                     <div ref={chatEndRef} />
                   </div>
 
-                  {/* Chat input */}
-                  <div className={`p-3 border-t safe-bottom ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
+                  <div className={`p-3 border-t ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
                     <div className="flex items-center gap-2">
                       <input
                         type="text"
@@ -754,19 +735,15 @@ export const LiveStreamPage: React.FC = () => {
                         value={chatInput}
                         onChange={e => setChatInput(e.target.value)}
                         onKeyDown={e => { if (e.key === 'Enter') sendChatMessage(); }}
-                        className={`flex-1 px-3 py-2 rounded-xl text-sm ${
-                          darkMode
-                            ? 'bg-gray-700 text-white placeholder-gray-400 border-gray-600'
-                            : 'bg-gray-50 text-gray-900 placeholder-gray-400 border-gray-200'
-                        } border focus:outline-none focus:ring-2 focus:ring-orange-400`}
+                        className={`flex-1 px-3 py-2 rounded-xl text-sm border focus:outline-none focus:ring-2 focus:ring-orange-400 ${
+                          darkMode ? 'bg-gray-700 text-white placeholder-gray-400 border-gray-600' : 'bg-gray-50 text-gray-900 placeholder-gray-400 border-gray-200'
+                        }`}
                       />
                       <button
                         onClick={sendChatMessage}
                         disabled={!chatInput.trim()}
                         className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all ${
-                          chatInput.trim()
-                            ? 'bg-orange-500 text-white hover:bg-orange-600 active:scale-95'
-                            : darkMode ? 'bg-gray-700 text-gray-500' : 'bg-gray-100 text-gray-400'
+                          chatInput.trim() ? 'bg-orange-500 text-white hover:bg-orange-600 active:scale-95' : darkMode ? 'bg-gray-700 text-gray-500' : 'bg-gray-100 text-gray-400'
                         }`}
                       >
                         <Send className="w-4 h-4" />
@@ -787,7 +764,7 @@ export const LiveStreamPage: React.FC = () => {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 20 }}
-            className={`fixed inset-0 z-[250] flex items-end justify-center`}
+            className="fixed inset-0 z-[250] flex items-end justify-center"
             onClick={() => setShowSettings(false)}
           >
             <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
@@ -795,59 +772,36 @@ export const LiveStreamPage: React.FC = () => {
               initial={{ y: 300 }}
               animate={{ y: 0 }}
               exit={{ y: 300 }}
-              className={`relative w-full max-w-lg rounded-t-3xl p-5 shadow-xl ${
-                darkMode ? 'bg-gray-800 border border-gray-700' : 'bg-white border border-gray-100'
-              }`}
+              className={`relative w-full max-w-lg rounded-t-3xl p-5 shadow-xl ${bgCard}`}
               onClick={e => e.stopPropagation()}
               dir={dir}
             >
               <div className="flex items-center justify-between mb-5">
-                <h3 className={`text-lg font-black ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                  {t('livestream.settings')}
-                </h3>
-                <button
-                  onClick={() => setShowSettings(false)}
-                  className={`w-8 h-8 rounded-full flex items-center justify-center ${
-                    darkMode ? 'bg-gray-700 hover:bg-gray-600 text-gray-400' : 'bg-gray-100 hover:bg-gray-200 text-gray-500'
-                  }`}
-                >
+                <h3 className={`text-lg font-black ${textPrimary}`}>{t('livestream.settings')}</h3>
+                <button onClick={() => setShowSettings(false)} className={`w-8 h-8 rounded-full flex items-center justify-center ${darkMode ? 'bg-gray-700 hover:bg-gray-600 text-gray-400' : 'bg-gray-100 hover:bg-gray-200 text-gray-500'}`}>
                   <X className="w-4 h-4" />
                 </button>
               </div>
 
-              {/* Quality selector */}
               <div className="mb-4">
-                <p className={`text-xs font-black mb-2 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                  {t('livestream.streamQuality')}
-                </p>
+                <p className={`text-xs font-black mb-2 ${textMuted}`}>{t('livestream.streamQuality')}</p>
                 <div className="flex gap-2">
                   {qualityOptions.map(q => (
-                    <button
-                      key={q.id}
-                      onClick={() => setSelectedQuality(q.id)}
+                    <button key={q.id} onClick={() => setSelectedQuality(q.id)}
                       className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition-all ${
-                        selectedQuality === q.id
-                          ? 'bg-orange-500 text-white shadow-md'
-                          : darkMode
-                            ? 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                        selectedQuality === q.id ? 'bg-orange-500 text-white shadow-md' : darkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                       }`}
-                    >
-                      {q.label}
-                    </button>
+                    >{q.label}</button>
                   ))}
                 </div>
               </div>
 
-              {/* Camera info */}
               <div className={`p-3 rounded-xl ${darkMode ? 'bg-gray-700/50' : 'bg-gray-50'}`}>
                 <div className="flex items-center gap-2 mb-2">
-                  <Video className={`w-4 h-4 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`} />
+                  <Video className={`w-4 h-4 ${textMuted}`} />
                   <span className={`text-sm font-bold ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>{t('livestream.camera')}</span>
                 </div>
-                <p className={`text-xs ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
-                  {isFacingFront ? t('livestream.frontCamera') : t('livestream.rearCamera')}
-                </p>
+                <p className={`text-xs ${textMuted}`}>{isFacingFront ? t('livestream.frontCamera') : t('livestream.rearCamera')}</p>
               </div>
             </motion.div>
           </motion.div>
@@ -868,9 +822,7 @@ export const LiveStreamPage: React.FC = () => {
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
-              className={`w-full max-w-sm rounded-2xl p-5 shadow-xl ${
-                darkMode ? 'bg-gray-800 border border-gray-700' : 'bg-white border border-gray-100'
-              }`}
+              className={`w-full max-w-sm rounded-2xl p-5 shadow-xl ${bgCard}`}
               onClick={e => e.stopPropagation()}
               dir={dir}
             >
@@ -878,35 +830,25 @@ export const LiveStreamPage: React.FC = () => {
                 <div className="w-14 h-14 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-3">
                   <AlertCircle className="w-7 h-7 text-red-600" />
                 </div>
-                <h3 className={`text-lg font-black ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                  {t('livestream.endStream')}
-                </h3>
-                <p className={`text-sm mt-1 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                  {t('livestream.endStreamConfirm')}
-                </p>
+                <h3 className={`text-lg font-black ${textPrimary}`}>{t('livestream.endStream')}</h3>
+                <p className={`text-sm mt-1 ${textMuted}`}>{t('livestream.endStreamConfirm')}</p>
               </div>
               <div className="flex gap-3">
                 <button
-                  onClick={confirmEndBroadcast}
-                  className="flex-1 py-3 rounded-xl bg-red-600 text-white font-bold text-sm hover:bg-red-700 transition-colors active:scale-95"
-                >
-                  {t('livestream.yesEndStream')}
-                </button>
-                <button
                   onClick={() => setShowEndConfirm(false)}
-                  className={`flex-1 py-3 rounded-xl font-bold text-sm transition-colors active:scale-95 ${
-                    darkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                  }`}
-                >
-                  {t('livestream.cancel')}
-                </button>
+                  className={`flex-1 py-3 rounded-xl font-bold text-sm transition-colors ${darkMode ? 'bg-gray-700 hover:bg-gray-600 text-gray-300' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}
+                >{t('livestream.cancel')}</button>
+                <button
+                  onClick={confirmEndBroadcast}
+                  className="flex-1 py-3 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-sm transition-colors active:scale-95"
+                >{t('livestream.yesEndStream')}</button>
               </div>
             </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* ─── Ad Linker Modal ────────────────────────────────────────── */}
+      {/* ─── Ad Linker Modal ─────────────────────────────────────────── */}
       <AnimatePresence>
         {showAdLinker && (
           <motion.div
@@ -920,76 +862,45 @@ export const LiveStreamPage: React.FC = () => {
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
-              className={`w-full max-w-md rounded-2xl shadow-xl overflow-hidden ${
-                darkMode ? 'bg-gray-800 border border-gray-700' : 'bg-white border border-gray-100'
-              }`}
+              className={`w-full max-w-sm rounded-2xl p-5 shadow-xl ${bgCard}`}
               onClick={e => e.stopPropagation()}
               dir={dir}
             >
-              <div className={`flex items-center justify-between p-4 border-b ${
-                darkMode ? 'border-gray-700' : 'border-gray-100'
-              }`}>
-                <h3 className={`font-black text-lg ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                  {t('livestream.linkAd')}
-                </h3>
-                <button
-                  onClick={() => setShowAdLinker(false)}
-                  className={`w-8 h-8 rounded-full flex items-center justify-center ${
-                    darkMode ? 'bg-gray-700 hover:bg-gray-600 text-gray-400' : 'bg-gray-100 hover:bg-gray-200 text-gray-500'
-                  }`}
-                >
+              <div className="flex items-center justify-between mb-4">
+                <h3 className={`text-lg font-black ${textPrimary}`}>{t('livestream.linkAd')}</h3>
+                <button onClick={() => setShowAdLinker(false)} className={`w-8 h-8 rounded-full flex items-center justify-center ${darkMode ? 'bg-gray-700 hover:bg-gray-600 text-gray-400' : 'bg-gray-100 hover:bg-gray-200 text-gray-500'}`}>
                   <X className="w-4 h-4" />
                 </button>
               </div>
 
-              <div className="max-h-72 overflow-y-auto p-3">
-                {myAds.length === 0 ? (
-                  <div className="text-center py-8">
-                    <Megaphone className={`w-10 h-10 mx-auto mb-2 ${darkMode ? 'text-gray-600' : 'text-gray-300'}`} />
-                    <p className={`text-sm ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
-                      {t('livestream.noAdsToLink')}
-                    </p>
-                  </div>
-                ) : (
-                  myAds.map(ad => (
+              {myAds.length === 0 ? (
+                <div className="text-center py-6">
+                  <Megaphone className={`w-10 h-10 mx-auto mb-2 ${textMuted}`} />
+                  <p className={`text-sm ${textMuted}`}>{t('livestream.noAdsToLink')}</p>
+                </div>
+              ) : (
+                <div className="space-y-2 max-h-60 overflow-y-auto">
+                  {myAds.map(ad => (
                     <button
                       key={ad.id}
-                      onClick={() => { setLinkedAdId(ad.id); setShowAdLinker(false); toast.success(t('livestream.adLinked')); }}
-                      className={`w-full flex items-center gap-3 p-3 rounded-xl transition-colors mb-1 ${
+                      onClick={() => {
+                        setLinkedAdId(prev => prev === ad.id ? null : ad.id);
+                        toast.success(prev => prev === ad.id ? t('livestream.adUnlinked') : t('livestream.adLinked'));
+                      }}
+                      className={`w-full flex items-center gap-3 p-3 rounded-xl transition-colors text-right ${
                         linkedAdId === ad.id
-                          ? 'bg-orange-500/10 border border-orange-500/30'
-                          : darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-50'
+                          ? (darkMode ? 'bg-orange-900/30 border border-orange-500' : 'bg-orange-50 border border-orange-300')
+                          : (darkMode ? 'bg-gray-700/50 hover:bg-gray-700' : 'bg-gray-50 hover:bg-gray-100')
                       }`}
                     >
-                      {ad.image && (
-                        <img src={ad.image} alt="" className="w-12 h-12 rounded-lg object-cover shrink-0" />
-                      )}
-                      <div className="min-w-0 flex-1 text-right">
-                        <p className={`text-sm font-bold truncate ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                          {ad.content.slice(0, 50)}
-                        </p>
-                        {ad.price && (
-                          <p className="text-xs text-orange-600 font-bold">{ad.price} {ad.currency || t('livestream.egp')}</p>
-                        )}
+                      <img src={ad.images?.[0] || ad.author?.avatar || ''} alt="" className="w-10 h-10 rounded-lg object-cover" />
+                      <div className="flex-1 min-w-0">
+                        <p className={`text-sm font-bold truncate ${textPrimary}`}>{ad.content.slice(0, 40)}...</p>
+                        {ad.price && <p className="text-xs text-orange-500 font-bold">{ad.price} {t('livestream.egp')}</p>}
                       </div>
-                      {linkedAdId === ad.id && (
-                        <Check className="w-5 h-5 text-orange-500 shrink-0" />
-                      )}
+                      {linkedAdId === ad.id && <Check className="w-5 h-5 text-orange-500" />}
                     </button>
-                  ))
-                )}
-              </div>
-
-              {linkedAdId && (
-                <div className={`p-3 border-t ${darkMode ? 'border-gray-700' : 'border-gray-100'}`}>
-                  <button
-                    onClick={() => { setLinkedAdId(null); toast.info(t('livestream.adUnlinked')); }}
-                    className={`w-full py-2 rounded-xl text-sm font-bold transition-colors ${
-                      darkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                    }`}
-                  >
-                    {t('livestream.unlinkAd')}
-                  </button>
+                  ))}
                 </div>
               )}
             </motion.div>

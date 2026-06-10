@@ -1,7 +1,7 @@
 // ─── Mobile Bottom Navigation Bar ─ شريط التنقل السفلي للجوال ────────
 import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Home, ShoppingBag, PlusCircle, MessageCircle, Bell } from 'lucide-react';
+import { Home, ShoppingBag, PlusCircle, MessageCircle, Bell, Brain } from 'lucide-react';
 import { useAppContext } from '../contexts/AppContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useTranslation } from 'react-i18next';
@@ -53,6 +53,13 @@ export const MobileBottomNav: React.FC = () => {
       isCenter: true,
     },
     {
+      id: 'ai-assistant',
+      path: '/ai-assistant',
+      icon: Brain,
+      label: t('navbar.aiAssistant') || 'ذكاء',
+      isCenter: false,
+    },
+    {
       id: 'messages',
       path: '/messages',
       icon: MessageCircle,
@@ -90,7 +97,7 @@ export const MobileBottomNav: React.FC = () => {
       } border-t`}
       dir={dir}
     >
-      <div className="flex items-end justify-around h-16 max-w-lg mx-auto px-1">
+      <div className="flex items-end justify-around h-16 mx-auto px-0.5">
         {navItems.map((item) => {
           const active = item.isCenter ? false : isActive(item.path);
           const Icon = item.icon;
@@ -120,12 +127,12 @@ export const MobileBottomNav: React.FC = () => {
             <button
               key={item.id}
               onClick={() => handleNavClick(item.path, item.id)}
-              className="flex flex-col items-center justify-center w-16 h-full relative active:scale-95 transition-transform"
+              className="flex flex-col items-center justify-center h-full relative active:scale-95 transition-transform min-w-0 flex-1"
               aria-label={item.label}
             >
               <div className="relative">
                 <Icon
-                  className={`w-6 h-6 transition-colors ${
+                  className={`w-5 h-5 transition-colors ${
                     active
                       ? 'text-orange-500'
                       : darkMode

@@ -25,6 +25,12 @@ interface UseWebSocketOptions {
   onPostCommentDeleted?: WSEventHandler;
   onStoryCreated?: WSEventHandler;
   onCallSignal?: WSEventHandler;
+  onLivestreamStarted?: WSEventHandler;
+  onLivestreamEnded?: WSEventHandler;
+  onLivestreamChat?: WSEventHandler;
+  onLivestreamViewerJoined?: WSEventHandler;
+  onLivestreamViewerLeft?: WSEventHandler;
+  onLivestreamSignal?: WSEventHandler;
   autoConnect?: boolean;
 }
 
@@ -36,6 +42,12 @@ interface UseWebSocketReturn {
   sendReadReceipt: (contactId: string) => void;
   sendCallSignal: (targetUserId: string, signal: any) => void;
   sendPresenceGetOnline: () => void;
+  sendLivestreamStart: (data: { streamId: string; title?: string; userName?: string; userAvatar?: string }) => void;
+  sendLivestreamEnd: (streamId: string) => void;
+  sendLivestreamChat: (streamId: string, text: string) => void;
+  sendLivestreamJoin: (streamId: string) => void;
+  sendLivestreamLeave: (streamId: string) => void;
+  sendLivestreamSignal: (streamId: string, signal: any) => void;
   reconnect: () => void;
 }
 
@@ -201,6 +213,12 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
     if (options.onPostCommentDeleted) typeToHandler['post:comment_deleted'] = options.onPostCommentDeleted;
     if (options.onStoryCreated) typeToHandler['story:created'] = options.onStoryCreated;
     if (options.onCallSignal) typeToHandler['call:signal'] = options.onCallSignal;
+    if (options.onLivestreamStarted) typeToHandler['livestream:started'] = options.onLivestreamStarted;
+    if (options.onLivestreamEnded) typeToHandler['livestream:ended'] = options.onLivestreamEnded;
+    if (options.onLivestreamChat) typeToHandler['livestream:chat'] = options.onLivestreamChat;
+    if (options.onLivestreamViewerJoined) typeToHandler['livestream:viewer-joined'] = options.onLivestreamViewerJoined;
+    if (options.onLivestreamViewerLeft) typeToHandler['livestream:viewer-left'] = options.onLivestreamViewerLeft;
+    if (options.onLivestreamSignal) typeToHandler['livestream:signal'] = options.onLivestreamSignal;
 
     // Register each handler
     for (const [type, handler] of Object.entries(typeToHandler)) {
@@ -268,6 +286,12 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
     options.onPostCommentDeleted,
     options.onStoryCreated,
     options.onCallSignal,
+    options.onLivestreamStarted,
+    options.onLivestreamEnded,
+    options.onLivestreamChat,
+    options.onLivestreamViewerJoined,
+    options.onLivestreamViewerLeft,
+    options.onLivestreamSignal,
   ]);
 
   // Auto-connect when logged in
@@ -308,6 +332,36 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
     send('presence:get-online', {});
   }, [send]);
 
+  // Send livestream start notification
+  const sendLivestreamStart = useCallback((data: { streamId: string; title?: string; userName?: string; userAvatar?: string }) => {
+    send('livestream:start', data);
+  }, [send]);
+
+  // Send livestream end notification
+  const sendLivestreamEnd = useCallback((streamId: string) => {
+    send('livestream:end', { streamId });
+  }, [send]);
+
+  // Send livestream chat message
+  const sendLivestreamChat = useCallback((streamId: string, text: string) => {
+    send('livestream:chat', { streamId, text });
+  }, [send]);
+
+  // Send livestream viewer join
+  const sendLivestreamJoin = useCallback((streamId: string) => {
+    send('livestream:join', { streamId });
+  }, [send]);
+
+  // Send livestream viewer leave
+  const sendLivestreamLeave = useCallback((streamId: string) => {
+    send('livestream:leave', { streamId });
+  }, [send]);
+
+  // Send livestream WebRTC signal
+  const sendLivestreamSignal = useCallback((streamId: string, signal: any) => {
+    send('livestream:signal', { streamId, signal });
+  }, [send]);
+
   // Force reconnect
   const reconnect = useCallback(() => {
     disconnectWs();
@@ -325,6 +379,12 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
     sendReadReceipt,
     sendCallSignal,
     sendPresenceGetOnline,
+    sendLivestreamStart,
+    sendLivestreamEnd,
+    sendLivestreamChat,
+    sendLivestreamJoin,
+    sendLivestreamLeave,
+    sendLivestreamSignal,
     reconnect,
   };
 }

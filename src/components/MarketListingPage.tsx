@@ -304,8 +304,7 @@ export const MarketListingPage: React.FC = () => {
     }
     setSendingMessage(true);
     try {
-      const msgText = t('marketListing.inquiryMessage', { title: listing.title });
-      await sendMessage(listing.seller.id, msgText, listing.id);
+      // Just navigate to the chat — don't send any auto-message
       // Also fire inquire
       try {
         const result = await api.inquireMarketListing(listing.id);
@@ -315,7 +314,7 @@ export const MarketListingPage: React.FC = () => {
         // Ignore inquire error
       }
       toast.success(t('marketListing.messageSent'));
-      navigate('/messages');
+      navigate(`/messages?chat=${listing.seller.id}`);
     } catch (err: any) {
       toast.error(err.message || t('common.error'));
     } finally {

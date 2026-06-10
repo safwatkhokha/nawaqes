@@ -112,9 +112,7 @@ export const UserProfilePage: React.FC = () => {
   const handleMessage = async () => {
     if (!targetUser) return;
     try {
-      await api.sendMessage(targetUser.id, t('messages.defaultMessage'));
-      navigate('/messages');
-      toast.success(t('userProfile.conversationOpened'));
+      navigate(`/messages?chat=${targetUser.id}`);
     } catch (err: any) {
       toast.error(err.message || t('userProfile.conversationFailed'));
     }
