@@ -134,14 +134,25 @@ router.post('/register', (req: Request, res: Response) => {
 // POST /api/auth/login
 router.post('/login', (req: Request, res: Response) => {
   try {
-    const { email, password } = req.body;
-    if (!email || !password) {
-      res.status(400).json({ error: 'البريد وكلمة المرور مطلوبان' });
+    const { email, phone, password } = req.body;
+    const identifier = email || phone;
+    if (!identifier || !password) {
+      res.status(400).json({ error: 'البريد أو رقم الهاتف وكلمة المرور مطلوبان' });
       return;
     }
 
-    const normalizedEmail = email.toLowerCase().trim();
-    const user = db.prepare('SELECT * FROM users WHERE email = ?').get(normalizedEmail) as any;
+    let user: any;
+    const trimmedIdentifier = identifier.trim();
+
+    // Check if the identifier looks like a phone number (starts with "01" and is 11 digits)
+    if (/^01\d{9}$/.test(trimmedIdentifier)) {
+      user = db.prepare('SELECT * FROM users WHERE phone = ?').get(trimmedIdentifier) as any;
+    } else {
+      // Treat as email
+      const normalizedEmail = trimmedIdentifier.toLowerCase();
+      user = db.prepare('SELECT * FROM users WHERE email = ?').get(normalizedEmail) as any;
+    }
+
     if (!user || !bcrypt.compareSync(password, user.password_hash)) {
       res.status(401).json({ error: 'بيانات الدخول غير صحيحة' });
       return;
@@ -156,6 +167,18 @@ router.post('/login', (req: Request, res: Response) => {
     res.json({ user: parseUser(user), token });
   } catch (err: any) {
     res.status(500).json({ error: 'فشل تسجيل الدخول', details: err.message });
+  }
+});
+
+// GET /api/auth/stats
+router.get('/stats', (_req: Request, res: Response) => {
+  try {
+    const totalUsers = (db.prepare('SELECT COUNT(*) as count FROM users').get() as any).count;
+    const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+    const accountsCreatedToday = (db.prepare("SELECT COUNT(*) as count FROM users WHERE DATE(created_at) = ?").get(today) as any).count;
+    res.json({ totalUsers, accountsCreatedToday });
+  } catch (err: any) {
+    res.status(500).json({ error: 'فشل جلب الإحصائيات', details: err.message });
   }
 });
 

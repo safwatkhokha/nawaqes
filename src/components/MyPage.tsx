@@ -19,6 +19,7 @@ import { isUserOnline } from '../utils/presence';
 import { PromotionWizard } from './PromotionWizard';
 import { promotionPackages } from '../data/promotionPackages';
 import { Post } from '../types';
+import { useImageModal } from './ImageModal';
 
 interface ActivityItem {
   id: string;
@@ -86,6 +87,7 @@ export const MyPage: React.FC = () => {
   const [activeFriendsSection, setActiveFriendsSection] = useState<FriendsSection>('list');
   const [loadingFriends, setLoadingFriends] = useState(false);
   const [sentRequests, setSentRequests] = useState<Set<string>>(new Set());
+  const { openImageModal, imageModalElement } = useImageModal();
 
   // Get current user's posts
   const myPosts = posts.filter(p => currentUser && p.author.id === currentUser.id);
@@ -669,7 +671,10 @@ export const MyPage: React.FC = () => {
 
                 {/* Image */}
                 {post.image && (
-                  <div className={`border-y ${darkMode ? 'border-gray-700' : 'border-gray-100'}`}>
+                  <div
+                    className={`border-y cursor-pointer ${darkMode ? 'border-gray-700' : 'border-gray-100'}`}
+                    onClick={() => openImageModal(post.image!, 'Post image')}
+                  >
                     <img src={post.image} alt="" className="w-full max-h-[300px] object-cover" loading="lazy" />
                   </div>
                 )}
@@ -1541,6 +1546,9 @@ export const MyPage: React.FC = () => {
           />
         )}
       </AnimatePresence>
+
+      {/* Image Modal */}
+      {imageModalElement}
     </div>
   );
 };

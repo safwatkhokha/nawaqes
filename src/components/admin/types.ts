@@ -3,7 +3,8 @@ export type AdminTab =
   | 'overview' | 'users' | 'posts' | 'support' | 'comments'
   | 'charging' | 'promotions' | 'market-promotions' | 'news' | 'publish'
   | 'reports' | 'categories' | 'transactions' | 'stories' | 'messages'
-  | 'smartlinks' | 'activity' | 'broadcast' | 'database' | 'settings';
+  | 'smartlinks' | 'activity' | 'broadcast' | 'database' | 'settings'
+  | 'friends-mgmt' | 'livestream' | 'ai-analytics';
 
 // ─── Interfaces ──────────────────────────────────────────────────────
 export interface AdminUser {
@@ -138,4 +139,5 @@ export interface TabConfig {
   label: string;
   icon: React.ReactNode;
   badge?: number;
+  badgeColor?: 'red' | 'amber' | 'green' | 'blue';
 }

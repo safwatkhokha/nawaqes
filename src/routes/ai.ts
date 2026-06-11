@@ -1717,4 +1717,600 @@ ${postsSummary}`
   }
 });
 
+// ═══════════════════════════════════════════════════════════════════════
+// 11. AI اقتراحات استباقية لنشر المنشورات - Smart Post Suggestions
+// يحلل نشاط المستخدم ويقترح عليه نشر منشورات بناءً على اهتماماته
+// ═══════════════════════════════════════════════════════════════════════
+router.post('/smart-post-suggest', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user?.userId;
+    if (!userId) return res.status(401).json({ error: 'يجب تسجيل الدخول' });
+
+    const user = getUserById(userId);
+    if (!user) return res.status(404).json({ error: 'المستخدم غير موجود' });
+
+    const db = database;
+    const walletBalance = user.wallet_balance || 0;
+
+    // Analyze user activity
+    const userPostsCount = (db.prepare('SELECT COUNT(*) as count FROM posts WHERE author_id = ?').get(userId) as any)?.count || 0;
+    const lastPost = db.prepare('SELECT created_at, category, content FROM posts WHERE author_id = ? ORDER BY created_at DESC LIMIT 1').get(userId) as any;
+    const daysSinceLastPost = lastPost ? Math.floor((Date.now() - new Date(lastPost.created_at).getTime()) / (1000 * 60 * 60 * 24)) : 999;
+
+    // Get trending categories
+    const trendingCategories = db.prepare(`
+      SELECT category, COUNT(*) as count
+      FROM posts
+      WHERE created_at > datetime('now', '-7 days')
+      GROUP BY category
+      ORDER BY count DESC
+      LIMIT 5
+    `).all() as any[];
+
+    // Get user's interests
+    const userInterests = (user.interests || '').split(',').filter((i: string) => i.trim());
+
+    // Build context for AI
+    const contextInfo = `
+معلومات المستخدم:
+- الاسم: ${user.name}
+- عدد المنشورات: ${userPostsCount}
+- أيام منذ آخر منشور: ${daysSinceLastPost}
+- آخر تصنيف: ${lastPost?.category || 'لا يوجد'}
+- الاهتمامات: ${userInterests.join(', ') || 'غير محدد'}
+- رصيد المحفظة: ${walletBalance} ج.م
+- الموقع: ${user.location || 'غير محدد'}
+
+التصنيفات الرائجة هذا الأسبوع:
+${trendingCategories.map((c: any) => `- ${c.category}: ${c.count} منشور`).join('\n')}
+`;
+
+    const aiContent = await tryAICompletion([
+      {
+        role: 'system',
+        content: `أنت مساعد ذكي على منصة "نواقص" - منصة الإعلانات الذكية في مصر.
+مهمتك اقتراح أفكار منشورات للمستخدم بناءً على نشاطه واهتماماته والتصنيفات الرائجة.
+
+أجب بـ JSON فقط بالشكل التالي:
+{
+  "shouldSuggest": true/false,
+  "reason": "سبب الاقتراح بالعربي",
+  "suggestions": [
+    {
+      "category": "phones",
+      "title": "عنوان مقترح",
+      "description": "وصف مختصر للمنشور المقترح",
+      "suggestedContent": "نص المنشور المقترح بالعربي",
+      "suggestedPrice": 0,
+      "suggestedLocation": "القاهرة",
+      "whySuggested": "سبب اقتراح هذا المنشور"
+    }
+  ],
+  "bestTimeToPost": "الوقت المثالي للنشر",
+  "motivationMessage": "رسالة تحفيزية قصيرة"
+}`
+      },
+      {
+        role: 'user',
+        content: contextInfo
+      }
+    ], { max_tokens: 1200, temperature: 0.8 });
+
+    let result;
+    try {
+      const content = aiContent || '';
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      result = jsonMatch ? JSON.parse(jsonMatch[0]) : null;
+    } catch { result = null; }
+
+    // Fallback if AI unavailable
+    if (!result) {
+      const fallbackSuggestions = [];
+      
+      if (daysSinceLastPost > 3) {
+        fallbackSuggestions.push({
+          category: userInterests[0] || lastPost?.category || 'phones',
+          title: 'شارك إعلانك الجديد',
+          description: 'مر وقت طويل منذ آخر منشور - حان وقت النشر!',
+          suggestedContent: `للبيع ${userInterests[0] === 'phones' ? 'موبايل' : userInterests[0] === 'cars' ? 'سيارة' : 'منتج'} بحالة ممتازة - تواصل معي للتفاصيل`,
+          suggestedPrice: 0,
+          suggestedLocation: user.location || 'القاهرة',
+          whySuggested: 'لم تنشر منذ فترة - المنشورات الجديدة تجذب مشتركين أكثر',
+        });
+      }
+
+      if (trendingCategories.length > 0) {
+        const topCat = trendingCategories[0];
+        fallbackSuggestions.push({
+          category: topCat.category,
+          title: `انضم للموضة - ${topCat.category} رائج هذا الأسبوع`,
+          description: `${topCat.count} منشور في هذا التصنيف هذا الأسبوع`,
+          suggestedContent: `عرض خاص في تصنيف ${topCat.category} - لا تفوت الفرصة!`,
+          suggestedPrice: 0,
+          suggestedLocation: user.location || 'القاهرة',
+          whySuggested: `تصنيف ${topCat.category} رائج الآن مع ${topCat.count} منشور جديد`,
+        });
+      }
+
+      if (walletBalance >= 50 && userPostsCount > 0) {
+        fallbackSuggestions.push({
+          category: lastPost?.category || 'other',
+          title: 'روّج إعلانك الحالي',
+          description: 'رصيدك يكفي لباقة ترويج - زد وصول إعلانك!',
+          suggestedContent: '',
+          suggestedPrice: 0,
+          suggestedLocation: '',
+          whySuggested: `رصيد محفظتك ${walletBalance} ج.م يكفي لبدء الترويج`,
+        });
+      }
+
+      result = {
+        shouldSuggest: fallbackSuggestions.length > 0,
+        reason: daysSinceLastPost > 3 ? 'لم تنشر منذ فترة' : 'فرص جديدة متاحة',
+        suggestions: fallbackSuggestions,
+        bestTimeToPost: 'بين الساعة 6-10 مساءً - وقت الذروة في مصر',
+        motivationMessage: daysSinceLastPost > 7 ? 'منصة نواقص تنتظر إعلاناتك! انشر الآن واصل لآلاف المهتمين' : 'استمر في النشر - كل منشور جديد يزيد فرص البيع!',
+      };
+    }
+
+    res.json({ success: true, data: result });
+  } catch (error: any) {
+    console.error('[AI] Smart post suggest error:', error.message);
+    res.status(500).json({ error: 'حدث خطأ في اقتراح المنشورات' });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// 12. AI مساعد كتابة المنشورات - Post Writing Assistant
+// يساعد المستخدم في كتابة منشور جذاب خطوة بخطوة
+// ═══════════════════════════════════════════════════════════════════════
+router.post('/write-assistant', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user?.userId;
+    const { category, description, price, location, type, step } = req.body;
+
+    if (!category) {
+      return res.status(400).json({ error: 'التصنيف مطلوب' });
+    }
+
+    const user = userId ? getUserById(userId) : null;
+    const walletBalance = user?.wallet_balance || 0;
+
+    // Category-specific guidance
+    const categoryGuidance: Record<string, any> = {
+      phones: { keywords: 'موديل، ذاكرة، حالة، لون، ملحقات', tips: 'اذكر الموديل والذاكرة والحالة بدقة', avgPriceRange: '2,000 - 25,000 ج.م' },
+      electronics: { keywords: 'نوع، مواصفات، حالة، ضمان', tips: 'حدد المواصفات التقنية بدقة', avgPriceRange: '500 - 50,000 ج.م' },
+      cars: { keywords: 'موديل، سنة، حالة، كيلومترات، لون', tips: 'اذكر سنة الصنع والمسافة وال حالة', avgPriceRange: '50,000 - 2,000,000 ج.م' },
+      realEstate: { keywords: 'المساحة، الموقع، عدد الغرف، الطابق', tips: 'حدد المساحة والموقع بدقة', avgPriceRange: '500,000 - 15,000,000 ج.م' },
+      games: { keywords: 'اسم اللعبة، المنصة، الحالة', tips: 'حدد المنصة (PS5/Xbox/PC) والحالة', avgPriceRange: '100 - 2,500 ج.م' },
+      fashion: { keywords: 'الماركة، المقاس، اللون، الحالة', tips: 'اذكر الماركة والمقاس بالتفصيل', avgPriceRange: '50 - 5,000 ج.م' },
+      beauty: { keywords: 'المنتج، الماركة، الحجم، الصلاحية', tips: 'تأكد من ذكر تاريخ الصلاحية', avgPriceRange: '50 - 3,000 ج.م' },
+      sports: { keywords: 'النوع، المقاس، الحالة، الماركة', tips: 'حدد النوع والمقاس بدقة', avgPriceRange: '100 - 10,000 ج.م' },
+      food: { keywords: 'النوع، الكمية، السعر، التوصيل', tips: 'حدد إذا كان التوصيل متاح', avgPriceRange: '20 - 500 ج.م' },
+      jobs: { keywords: 'المسمى الوظيفي، الراتب، الموقع، المتطلبات', tips: 'كن واضحاً في المتطلبات والراتب', avgPriceRange: '3,000 - 50,000 ج.م' },
+      services: { keywords: 'نوع الخدمة، السعر، المنطقة', tips: 'حدد سعر الخدمة بوضوح', avgPriceRange: '50 - 10,000 ج.م' },
+      education: { keywords: 'المادة، المستوى، السعر، المدة', tips: 'حدد المستوى الدراسي والمدة', avgPriceRange: '50 - 5,000 ج.م' },
+      books: { keywords: 'العنوان، المؤلف، الحالة، اللغة', tips: 'حدد لغة الكتاب وحالته', avgPriceRange: '20 - 500 ج.م' },
+      animals: { keywords: 'النوع، العمر، السعر، التطعيمات', tips: 'اذكر التطعيمات والعمر', avgPriceRange: '50 - 50,000 ج.م' },
+      travel: { keywords: 'الوجهة، المدة، السعر، الشامل', tips: 'حدد ما يشمله العرض', avgPriceRange: '500 - 20,000 ج.م' },
+      photography: { keywords: 'المناسبة، السعر، المدة', tips: 'حدد نوع التصوير والسعر', avgPriceRange: '200 - 10,000 ج.م' },
+      health: { keywords: 'الخدمة، السعر، الموقع', tips: 'كن واضحاً في الخدمة المعروضة', avgPriceRange: '50 - 5,000 ج.م' },
+    };
+
+    const guidance = categoryGuidance[category] || categoryGuidance.electronics;
+
+    const aiContent = await tryAICompletion([
+      {
+        role: 'system',
+        content: `أنت مساعد كتابة إعلانات ذكي على منصة "نواقص" - منصة الإعلانات الذكية في مصر.
+مهمتك مساعدة المستخدم في كتابة إعلان جذاب وفعال.
+
+التصنيف: ${category}
+الكلمات المفتاحية المهمة: ${guidance.keywords}
+نصائح التصنيف: ${guidance.tips}
+متوسط الأسعار: ${guidance.avgPriceRange}
+
+أجب بـ JSON فقط:
+{
+  "generatedTitle": "عنوان جذاب للإعلان",
+  "generatedContent": "نص الإعلان الكامل والجذاب",
+  "suggestedPrice": 0,
+  "suggestedHashtags": ["هاشتاق1", "هاشتاق2"],
+  "callToAction": "دعوة للإجراء",
+  "qualityScore": 85,
+  "improvementTips": ["نصيحة1", "نصيحة2"],
+  "suggestedPackage": "standard",
+  "estimatedReach": 3000,
+  "priceAnalysis": "تحليل السعر"
+}`
+      },
+      {
+        role: 'user',
+        content: description 
+          ? `أريد كتابة إعلان في تصنيف "${category}": ${description}${price ? `\nالسعر: ${price} ج.م` : ''}${location ? `\nالموقع: ${location}` : ''}`
+          : `أريد كتابة إعلان في تصنيف "${category}"${price ? ` بسعر ${price} ج.م` : ''}${location ? ` في ${location}` : ''} - ساعدني في كتابته`
+      }
+    ], { max_tokens: 1000, temperature: 0.7 });
+
+    let result;
+    try {
+      const content = aiContent || '';
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      result = jsonMatch ? JSON.parse(jsonMatch[0]) : null;
+      if (result?.suggestedPackage) {
+        result.suggestedPackage = arPkg(result.suggestedPackage);
+      }
+    } catch { result = null; }
+
+    // Fallback
+    if (!result) {
+      result = {
+        generatedTitle: `${category === 'phones' ? 'موبايل' : category === 'cars' ? 'سيارة' : category === 'realEstate' ? 'عقار' : 'منتج'} للبيع - عرض مميز`,
+        generatedContent: description || `للبيع ${category === 'phones' ? 'موبايل' : 'منتج'} بحالة ممتازة\n${guidance.keywords.split('، ').map((k: string) => `${k}: [حدد]`).join('\n')}\n\nللتواصل: اترك تعليق أو رسالة\nالموقع: ${location || 'حدد الموقع'}`,
+        suggestedPrice: price || 0,
+        suggestedHashtags: [category, 'بيع', 'مصر', 'نواقص'],
+        callToAction: 'تواصل الآن - العرض لفترة محدودة!',
+        qualityScore: 60,
+        improvementTips: [
+          `أضف التفاصيل: ${guidance.keywords}`,
+          'أضف صورة واضحة عالية الجودة',
+          'حدد السعر بوضوح لزيادة الثقة',
+          'اذكر حالة المنتج بالتفصيل',
+        ],
+        suggestedPackage: arPkg('standard'),
+        estimatedReach: 3000,
+        priceAnalysis: price ? `السعر ${price} ج.م في نطاق ${guidance.avgPriceRange}` : `متوسط الأسعار في هذا التصنيف: ${guidance.avgPriceRange}`,
+      };
+    }
+
+    res.json({ success: true, data: result });
+  } catch (error: any) {
+    console.error('[AI] Write assistant error:', error.message);
+    res.status(500).json({ error: 'حدث خطأ في مساعد الكتابة' });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// 13. AI أفضل وقت للنشر - Best Time to Post
+// ═══════════════════════════════════════════════════════════════════════
+router.get('/best-time', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user?.userId;
+    const db = database;
+
+    // Analyze engagement patterns across all posts
+    const engagementByHour: Record<number, { posts: number; totalLikes: number; totalComments: number }> = {};
+    for (let h = 0; h < 24; h++) {
+      engagementByHour[h] = { posts: 0, totalLikes: 0, totalComments: 0 };
+    }
+
+    try {
+      const postsWithEngagement = db.prepare(`
+        SELECT 
+          CAST(strftime('%H', created_at) AS INTEGER) as hour,
+          COUNT(*) as posts,
+          COALESCE(SUM(likes), 0) as totalLikes,
+          COALESCE(SUM(comments), 0) as totalComments
+        FROM posts
+        WHERE created_at > datetime('now', '-30 days')
+        GROUP BY hour
+        ORDER BY hour
+      `).all() as any[];
+
+      postsWithEngagement.forEach((row: any) => {
+        if (row.hour >= 0 && row.hour < 24) {
+          engagementByHour[row.hour] = {
+            posts: row.posts,
+            totalLikes: row.totalLikes,
+            totalComments: row.totalComments,
+          };
+        }
+      });
+    } catch { /* use defaults */ }
+
+    // Calculate engagement score per hour
+    const hourScores = Object.entries(engagementByHour).map(([hour, data]) => {
+      const engagement = data.totalLikes + data.totalComments * 2;
+      const avgEngagement = data.posts > 0 ? engagement / data.posts : 0;
+      return { hour: parseInt(hour), engagement, avgEngagement, posts: data.posts };
+    });
+
+    // Sort by average engagement
+    hourScores.sort((a, b) => b.avgEngagement - a.avgEngagement);
+    const topHours = hourScores.slice(0, 5);
+
+    // Egyptian time patterns (default wisdom)
+    const defaultBestTimes = [
+      { hour: 20, label: '8 مساءً', reason: 'وقت الذروة - معظم المستخدمين متصلون' },
+      { hour: 21, label: '9 مساءً', reason: 'ثاني أفضل وقت - مستخدمون كثيرون' },
+      { hour: 19, label: '7 مساءً', reason: 'بعد العمل - نشاط جيد' },
+      { hour: 18, label: '6 مساءً', reason: 'بداية المساء - نشاط متوسط' },
+      { hour: 22, label: '10 مساءً', reason: 'وقت متأخر لكن نشاط مستمر' },
+    ];
+
+    const result = {
+      bestTimes: topHours.length > 0 && topHours[0].avgEngagement > 0
+        ? topHours.map((h, i) => ({
+            hour: h.hour,
+            label: `${h.hour > 12 ? h.hour - 12 : h.hour} ${h.hour >= 12 ? 'مساءً' : 'صباحاً'}`,
+            reason: i === 0 ? 'أعلى تفاعل بناءً على بيانات المنصة' : `مرتفع التفاعل`,
+            avgEngagement: Math.round(h.avgEngagement),
+          }))
+        : defaultBestTimes,
+      bestDay: 'الجمعة والسبت',
+      timezone: 'Africa/Cairo',
+      currentHour: new Date().getHours(),
+      recommendation: new Date().getHours() >= 18 && new Date().getHours() <= 22
+        ? 'الآن وقت ممتاز للنشر! المستخدمون نشطون.'
+        : new Date().getHours() < 18
+          ? 'انتظر حتى المساء (6-10 مساءً) لأفضل وصول'
+          : 'الوقت متأخر قليلاً - الصباح الباكر أو المساء أفضل',
+    };
+
+    res.json({ success: true, data: result });
+  } catch (error: any) {
+    console.error('[AI] Best time error:', error.message);
+    res.status(500).json({ error: 'حدث خطأ في تحليل أفضل وقت' });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// 14. AI المواضيع الرائجة - Trending Topics
+// ═══════════════════════════════════════════════════════════════════════
+router.get('/trending-topics', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const db = database;
+
+    // Get trending categories this week vs last week
+    const thisWeek = db.prepare(`
+      SELECT category, COUNT(*) as count, AVG(likes) as avgLikes, AVG(comments) as avgComments
+      FROM posts
+      WHERE created_at > datetime('now', '-7 days')
+      GROUP BY category
+      ORDER BY count DESC
+      LIMIT 10
+    `).all() as any[];
+
+    const lastWeek = db.prepare(`
+      SELECT category, COUNT(*) as count
+      FROM posts
+      WHERE created_at BETWEEN datetime('now', '-14 days') AND datetime('now', '-7 days')
+      GROUP BY category
+    `).all() as any[];
+
+    const lastWeekMap = Object.fromEntries(lastWeek.map((r: any) => [r.category, r.count]));
+
+    const trending = thisWeek.map((item: any) => ({
+      category: item.category,
+      postsThisWeek: item.count,
+      postsLastWeek: lastWeekMap[item.category] || 0,
+      growth: lastWeekMap[item.category] ? Math.round(((item.count - lastWeekMap[item.category]) / lastWeekMap[item.category]) * 100) : 100,
+      avgLikes: Math.round(item.avgLikes || 0),
+      avgComments: Math.round(item.avgComments || 0),
+    }));
+
+    // Get hot keywords from recent posts
+    const recentPosts = db.prepare(`
+      SELECT content FROM posts
+      WHERE created_at > datetime('now', '-3 days')
+      ORDER BY likes DESC
+      LIMIT 50
+    `).all() as any[];
+
+    const aiContent = await tryAICompletion([
+      {
+        role: 'system',
+        content: `أنت محلل اتجاهات على منصة "نواقص". حلل المنشورات الأخيرة وحدد المواضيع الرائجة.
+أجب بـ JSON فقط:
+{
+  "hotTopics": ["موضوع1", "موضوع2", "موضوع3"],
+  "suggestedCategories": [{"category": "phones", "reason": "السبب"}],
+  "trendInsight": "تحليل قصير بالعربي"
+}`
+      },
+      {
+        role: 'user',
+        content: `أحدث المنشورات الشائعة:\n${recentPosts.slice(0, 15).map((p: any) => p.content?.slice(0, 100)).join('\n')}`
+      }
+    ], { max_tokens: 500 });
+
+    let aiTrends = null;
+    try {
+      const content = aiContent || '';
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      aiTrends = jsonMatch ? JSON.parse(jsonMatch[0]) : null;
+    } catch { aiTrends = null; }
+
+    res.json({
+      success: true,
+      data: {
+        trending,
+        hotTopics: aiTrends?.hotTopics || ['إلكترونيات', 'موبايلات', 'سيارات'],
+        suggestedCategories: aiTrends?.suggestedCategories || trending.slice(0, 3).map(t => ({ category: t.category, reason: `${t.postsThisWeek} منشور هذا الأسبوع` })),
+        trendInsight: aiTrends?.trendInsight || trending.length > 0 ? `تصنيف ${trending[0]?.category || 'عام'} هو الأكثر نشاطاً هذا الأسبوع` : 'لا توجد بيانات كافية',
+      },
+    });
+  } catch (error: any) {
+    console.error('[AI] Trending topics error:', error.message);
+    res.status(500).json({ error: 'حدث خطأ في جلب المواضيع الرائجة' });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// 15. AI اقتراح السعر - Smart Price Suggestion
+// ═══════════════════════════════════════════════════════════════════════
+router.post('/price-suggest', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { category, description, condition } = req.body;
+    const db = database;
+
+    // Get price statistics for the category
+    const priceStats = db.prepare(`
+      SELECT 
+        MIN(price) as minPrice,
+        MAX(price) as maxPrice,
+        AVG(price) as avgPrice,
+        COUNT(*) as count
+      FROM posts
+      WHERE category = ? AND price > 0 AND created_at > datetime('now', '-30 days')
+    `).get(category || 'other') as any;
+
+    const aiContent = await tryAICompletion([
+      {
+        role: 'system',
+        content: `أنت خبير تسعير على منصة "نواقص". اقترح سعر مناسب بناءً على البيانات.
+إحصائيات السوق للتصنيف "${category}":
+- أقل سعر: ${priceStats?.minPrice || 0} ج.م
+- أعلى سعر: ${priceStats?.maxPrice || 0} ج.م
+- متوسط السعر: ${Math.round(priceStats?.avgPrice || 0)} ج.م
+- عدد الإعلانات: ${priceStats?.count || 0}
+
+أجب بـ JSON فقط:
+{
+  "suggestedPrice": 0,
+  "priceRange": {"min": 0, "max": 0},
+  "reasoning": "شرح بالعربي",
+  "competitiveness": "low|medium|high",
+  "tips": ["نصيحة1", "نصيحة2"]
+}`
+      },
+      {
+        role: 'user',
+        content: `أريد تسعير منشور في تصنيف "${category}"${description ? `: ${description}` : ''}${condition ? ` | الحالة: ${condition}` : ''}`
+      }
+    ], { max_tokens: 500 });
+
+    let result;
+    try {
+      const content = aiContent || '';
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      result = jsonMatch ? JSON.parse(jsonMatch[0]) : null;
+    } catch { result = null; }
+
+    if (!result) {
+      const avgPrice = Math.round(priceStats?.avgPrice || 0);
+      result = {
+        suggestedPrice: avgPrice,
+        priceRange: {
+          min: Math.round((priceStats?.minPrice || avgPrice * 0.5)),
+          max: Math.round((priceStats?.maxPrice || avgPrice * 2)),
+        },
+        reasoning: `متوسط السعر في تصنيف ${category} هو ${avgPrice} ج.م بناءً على ${priceStats?.count || 0} إعلان`,
+        competitiveness: 'medium',
+        tips: [
+          'حدد سعر تنافسي لجذب المشترين',
+          'السعر المعقول يزيد فرصة البيع بنسبة 60%',
+          'يمكنك التفاوض - اترك هامش بسيط',
+        ],
+      };
+    }
+
+    res.json({ success: true, data: result });
+  } catch (error: any) {
+    console.error('[AI] Price suggest error:', error.message);
+    res.status(500).json({ error: 'حدث خطأ في اقتراح السعر' });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// 16. AI مستشار الباقات الذكي - Package Advisor
+// يقارن الباقات ويساعد المستخدم في اختيار الأنسب
+// ═══════════════════════════════════════════════════════════════════════
+router.post('/package-advisor', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { category, budget, goal, postId } = req.body;
+    const userId = (req as any).user?.userId;
+
+    const user = userId ? getUserById(userId) : null;
+    const walletBalance = user?.wallet_balance || 0;
+    const actualBudget = budget || walletBalance || 0;
+
+    const packages = [
+      { id: 'basic', name: 'أساسي', nameEn: 'basic', price: 50, reach: 900, days: 3, notifications: 30, costPerReach: (50/900).toFixed(2), features: ['3 أيام ترويج', '900 وصول', '30 إشعار ترويجي'] },
+      { id: 'standard', name: 'قياسي', nameEn: 'standard', price: 120, reach: 3000, days: 5, notifications: 100, costPerReach: (120/3000).toFixed(2), features: ['5 أيام ترويج', '3,000 وصول', '100 إشعار ترويجي', 'إحصائيات أساسية'] },
+      { id: 'premium', name: 'مميز', nameEn: 'premium', price: 250, reach: 8000, days: 7, notifications: 250, costPerReach: (250/8000).toFixed(2), features: ['7 أيام ترويج', '8,000 وصول', '250 إشعار ترويجي', 'إحصائيات متقدمة', 'الأكثر طلباً'] },
+      { id: 'vip', name: 'VIP', nameEn: 'vip', price: 500, reach: 25000, days: 10, notifications: 600, costPerReach: (500/25000).toFixed(2), features: ['10 أيام ترويج', '25,000 وصول', '600 إشعار ترويجي', 'إحصائيات شاملة', 'أولوية في الظهور', 'دعم مميز'] },
+      { id: 'city_target', name: 'استهداف مدن', nameEn: 'city_target', price: 120, reach: 4500, days: 5, notifications: 150, costPerReach: (120/4500).toFixed(2), features: ['5 أيام ترويج', '4,500 وصول', '150 إشعار', 'اختيار 1-27 مدينة'] },
+      { id: 'interest_target', name: 'استهداف اهتمامات', nameEn: 'interest_target', price: 200, reach: 7000, days: 5, notifications: 200, costPerReach: (200/7000).toFixed(2), features: ['5 أيام ترويج', '7,000 وصول', '200 إشعار', 'استهداف دقيق بالاهتمامات'] },
+    ];
+
+    // Calculate best value
+    const bestValue = packages.reduce((best, p) => (parseFloat(p.costPerReach) < parseFloat(best.costPerReach)) ? p : best, packages[0]);
+
+    // Get user's promotion history for context
+    let promotionHistory = '';
+    if (userId) {
+      try {
+        const prevPromos = database.prepare(`
+          SELECT promotion_tier, COUNT(*) as count
+          FROM posts
+          WHERE author_id = ? AND is_promoted = 1
+          GROUP BY promotion_tier
+        `).all(userId) as any[];
+        promotionHistory = prevPromos.map((p: any) => `${arPkg(p.promotion_tier || 'basic')}: ${p.count} مرة`).join(', ');
+      } catch { /* ignore */ }
+    }
+
+    const aiContent = await tryAICompletion([
+      {
+        role: 'system',
+        content: `أنت مستشار باقات ترويج ذكي على منصة "نواقص".
+ميزانية المستخدم: ${actualBudget} ج.م
+هدفه: ${goal || 'زيادة الوصول'}
+تصنيف إعلانه: ${category || 'عام'}
+سابقة الترويج: ${promotionHistory || 'لا يوجد'}
+
+أجب بـ JSON فقط:
+{
+  "recommendedPackage": "basic|standard|premium|vip|city_target|interest_target",
+  "reasoning": "شرح مفصل بالعربي لماذا هذه الباقة الأنسب",
+  "alternativePackage": "باقة بديلة",
+  "alternativeReasoning": "سبب البديل",
+  "roi": "العائد المتوقع",
+  "tips": ["نصيحة1", "نصيحة2", "نصيحة3"]
+}`
+      },
+      {
+        role: 'user',
+        content: `اقترح لي أفضل باقة ترويج. ميزانيتي ${actualBudget} ج.م وأريد ${goal || 'زيادة الوصول'}`
+      }
+    ], { max_tokens: 800 });
+
+    let aiAdvice = null;
+    try {
+      const content = aiContent || '';
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      aiAdvice = jsonMatch ? JSON.parse(jsonMatch[0]) : null;
+      if (aiAdvice?.recommendedPackage) {
+        aiAdvice.recommendedPackage = arPkg(aiAdvice.recommendedPackage);
+      }
+      if (aiAdvice?.alternativePackage) {
+        aiAdvice.alternativePackage = arPkg(aiAdvice.alternativePackage);
+      }
+    } catch { aiAdvice = null; }
+
+    res.json({
+      success: true,
+      data: {
+        packages,
+        bestValue,
+        walletBalance: actualBudget,
+        canAfford: packages.filter(p => p.price <= actualBudget),
+        needsCharging: actualBudget < 50,
+        aiAdvice: aiAdvice || {
+          recommendedPackage: actualBudget >= 250 ? 'مميز' : actualBudget >= 120 ? 'قياسي' : actualBudget >= 50 ? 'أساسي' : 'شحن المحفظة أولاً',
+          reasoning: actualBudget >= 250 ? 'باقة مميزة - الأكثر طلباً وأفضل عائد. 8,000 وصول و7 أيام ترويج' : actualBudget >= 120 ? 'باقة قياسية جيدة - 3,000 وصول و5 أيام' : 'ابدأ بباقة أساسية أو اشحن محفظتك',
+          alternativePackage: actualBudget >= 500 ? 'VIP' : actualBudget >= 200 ? 'استهداف اهتمامات' : null,
+          alternativeReasoning: actualBudget >= 500 ? 'باقة VIP تعطي أقصى وصول 25,000 مستخدم' : actualBudget >= 200 ? 'استهداف الاهتمامات يوفر وصول دقيق' : '',
+          roi: `كل 1 ج.م = ${actualBudget >= 250 ? '32 وصول' : actualBudget >= 120 ? '25 وصول' : '18 وصول'} تقريباً`,
+          tips: ['أضف صورة لزيادة التفاعل بنسبة 40%', 'حدد السعر بوضوح', 'اكتب عنواناً جذاباً'],
+        },
+      },
+    });
+  } catch (error: any) {
+    console.error('[AI] Package advisor error:', error.message);
+    res.status(500).json({ error: 'حدث خطأ في مستشار الباقات' });
+  }
+});
+
 export default router;

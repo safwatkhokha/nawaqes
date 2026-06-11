@@ -4,8 +4,9 @@ import { User, Post } from '../types';
 import { useAppContext } from '../contexts/AppContext';
 import { useAuth } from '../contexts/AuthContext';
 import { api } from '../services/api';
-import { Video, Image as ImageIcon, Smile, X, MapPin, Tag, Camera, Type, Palette, Send, Loader2 } from 'lucide-react';
+import { Video, Image as ImageIcon, Smile, X, MapPin, Tag, Camera, Type, Palette, Send, Loader2, Brain, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
+import { motion } from 'motion/react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { interestCategories } from '../config/interests';
 
@@ -78,6 +79,9 @@ export const CreatePost: React.FC<CreatePostProps> = ({ user, onPostCreated, isM
   const [postType, setPostType] = useState<'ad' | 'status'>('ad');
   const [postCategory, setPostCategory] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showAIHelper, setShowAIHelper] = useState(false);
+  const [aiSuggestion, setAiSuggestion] = useState<any>(null);
+  const [aiLoading, setAiLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const storyImageRef = useRef<HTMLInputElement>(null);
   const [storyImage, setStoryImage] = useState<string | null>(null);
@@ -268,6 +272,38 @@ export const CreatePost: React.FC<CreatePostProps> = ({ user, onPostCreated, isM
 
   const handleLiveVideo = () => {
     toast.info(t('createPost.liveStreamComing'), { duration: 3000 });
+  };
+
+  const handleAIHelper = async () => {
+    if (showAIHelper) {
+      setShowAIHelper(false);
+      return;
+    }
+    setShowAIHelper(true);
+    if (!content && !postCategory) return;
+    setAiLoading(true);
+    try {
+      const result = await api.aiWriteAssistant({
+        category: postCategory || postType === 'ad' ? 'other' : 'other',
+        description: content,
+        price: postPrice ? parseInt(postPrice) : undefined,
+        location: postLocation || undefined,
+        type: postType,
+      });
+      setAiSuggestion(result.data);
+    } catch {
+      toast.error(t('aiPromotion.errorWrite'));
+    }
+    setAiLoading(false);
+  };
+
+  const applyAISuggestion = () => {
+    if (aiSuggestion) {
+      if (aiSuggestion.generatedContent) setContent(aiSuggestion.generatedContent);
+      if (aiSuggestion.suggestedPrice && !postPrice) setPostPrice(String(aiSuggestion.suggestedPrice));
+      toast.success(t('aiPromotion.suggestionApplied'));
+      setShowAIHelper(false);
+    }
   };
 
   // Validation: can submit if content or image provided
@@ -491,6 +527,47 @@ export const CreatePost: React.FC<CreatePostProps> = ({ user, onPostCreated, isM
             </div>
           )}
 
+          {/* AI Helper Panel */}
+          {showAIHelper && (
+            <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="mb-3 overflow-hidden">
+              <div className={`rounded-xl p-3 border ${darkMode ? 'bg-gradient-to-br from-orange-900/20 to-amber-900/10 border-orange-800/20' : 'bg-gradient-to-br from-orange-50 to-amber-50 border-orange-100'}`}>
+                <div className="flex items-center gap-2 mb-2">
+                  <Brain className={`w-4 h-4 ${darkMode ? 'text-orange-400' : 'text-orange-600'}`} />
+                  <span className={`text-[11px] font-black ${darkMode ? 'text-orange-400' : 'text-orange-600'}`}>{t('aiPromotion.writePost')}</span>
+                  {aiLoading && <Loader2 className="w-3.5 h-3.5 animate-spin text-orange-500" />}
+                </div>
+                {aiSuggestion ? (
+                  <div className="space-y-2">
+                    {aiSuggestion.generatedTitle && (
+                      <div>
+                        <p className={`text-[9px] font-bold ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{t('aiPromotion.suggestedTitle')}</p>
+                        <p className={`text-[11px] font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>{aiSuggestion.generatedTitle}</p>
+                      </div>
+                    )}
+                    <div>
+                      <p className={`text-[9px] font-bold ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{t('aiPromotion.suggestedContent')}</p>
+                      <p className={`text-[10px] leading-relaxed ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>{aiSuggestion.generatedContent?.slice(0, 200)}...</p>
+                    </div>
+                    {aiSuggestion.improvementTips?.length > 0 && (
+                      <div className="space-y-0.5">
+                        {aiSuggestion.improvementTips.slice(0, 2).map((tip: string, i: number) => (
+                          <p key={i} className={`text-[9px] ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>💡 {tip}</p>
+                        ))}
+                      </div>
+                    )}
+                    <button onClick={applyAISuggestion}
+                      className="w-full py-2 bg-gradient-to-l from-orange-500 to-amber-500 text-white rounded-lg text-[10px] font-bold flex items-center justify-center gap-1.5 active:scale-95 transition-transform"
+                    >
+                      <Sparkles className="w-3 h-3" /> {t('aiPromotion.applyAndCreate')}
+                    </button>
+                  </div>
+                ) : !aiLoading && (
+                  <p className={`text-[10px] ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{t('aiPromotion.aiHelperHint')}</p>
+                )}
+              </div>
+            </motion.div>
+          )}
+
           {/* Price & Location */}
           <div className="grid grid-cols-2 gap-2 mb-3">
             <div className="relative">
@@ -520,6 +597,9 @@ export const CreatePost: React.FC<CreatePostProps> = ({ user, onPostCreated, isM
               </button>
               <button onClick={() => setShowStoryCreator(true)} className={`p-2 ${darkMode ? 'hover:bg-purple-900/30' : 'hover:bg-purple-50'} rounded-lg transition-colors group`} title={t('createPost.createStory')}>
                 <Type className="w-5 h-5 text-purple-500 group-hover:scale-110 transition-transform" />
+              </button>
+              <button onClick={handleAIHelper} className={`p-2 rounded-lg transition-colors group ${showAIHelper ? (darkMode ? 'bg-orange-900/30' : 'bg-orange-50') : (darkMode ? 'hover:bg-orange-900/30' : 'hover:bg-orange-50')}`} title={t('aiPromotion.writePost')}>
+                <Brain className={`w-5 h-5 group-hover:scale-110 transition-transform ${showAIHelper ? 'text-orange-500' : 'text-orange-400'}`} />
               </button>
             </div>
             <div className="flex gap-2">

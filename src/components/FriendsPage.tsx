@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAppContext } from '../contexts/AppContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -11,11 +11,13 @@ import {
   Zap, Globe, CheckCircle2, Image, ThumbsUp, Share2, Bookmark,
   BookmarkCheck, ShoppingBag, ChevronDown, Eye, Clock, RefreshCw,
   Activity, Handshake, Compass, UserX, Inbox, SendHorizonal, Ban,
+  ChevronLeft, ChevronRight, Link2, Flag, EyeOff, AlertTriangle,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 import { isUserOnline, formatLastSeen, initializeMockPresence, updatePresence } from '../utils/presence';
+import { useImageModal } from './ImageModal';
 
 // ─── Friend User Type ────────────────────────────────
 interface FriendUser extends User {
@@ -24,6 +26,7 @@ interface FriendUser extends User {
   mutualFriends?: number;
   friendSince?: string;
   recentActivity?: string;
+  friendshipId?: string;
 }
 
 // ─── Friend Post Type ────────────────────────────────
@@ -46,6 +49,7 @@ interface FriendPost {
 
 type ViewMode = 'feed' | 'grid' | 'list';
 type FriendFilter = 'all' | 'online' | 'nearby' | 'recent';
+type SectionType = 'feed' | 'friends' | 'suggestions' | 'requests' | 'sent' | 'blocked';
 
 // ─── Interest Translation Map ──────────────────────────
 const INTEREST_MAP: Record<string, string> = {
@@ -68,6 +72,24 @@ const INTEREST_COLORS: Record<string, string> = {
   animals: 'bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300',
   jobs: 'bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-300',
   other: 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300',
+};
+
+// ─── Helper: Format friend-since duration ─────────────
+const formatFriendSince = (dateStr: string, t: (key: string, opts?: any) => string): string | null => {
+  if (!dateStr) return null;
+  try {
+    const date = new Date(dateStr);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    if (diffDays < 1) return t('friends.friendSinceToday');
+    if (diffDays < 7) return t('friends.friendSinceDays', { count: diffDays });
+    if (diffDays < 30) return t('friends.friendSinceWeeks', { count: Math.floor(diffDays / 7) });
+    if (diffDays < 365) return t('friends.friendSinceMonths', { count: Math.floor(diffDays / 30) });
+    return t('friends.friendSinceYears', { count: Math.floor(diffDays / 365) });
+  } catch {
+    return null;
+  }
 };
 
 // ─── Trust Score Badge Component ───────────────────────
@@ -133,6 +155,167 @@ const MutualInterestsBadges: React.FC<{
   );
 };
 
+// ─── Friend Quick View Popup Component ─────────────────
+const FriendQuickView: React.FC<{
+  friend: FriendUser;
+  darkMode: boolean;
+  onClose: () => void;
+  onMessage: () => void;
+  onViewProfile: () => void;
+  onRemoveFriend: () => void;
+  onBlock: () => void;
+  position: { top: number; left: number };
+}> = ({ friend, darkMode, onClose, onMessage, onViewProfile, onRemoveFriend, onBlock, position }) => {
+  const { t } = useTranslation();
+  const popupRef = useRef<HTMLDivElement>(null);
+  const [showBlockConfirm, setShowBlockConfirm] = useState(false);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (popupRef.current && !popupRef.current.contains(e.target as Node)) {
+        onClose();
+      }
+    };
+    const timer = setTimeout(() => document.addEventListener('mousedown', handleClickOutside), 100);
+    return () => { clearTimeout(timer); document.removeEventListener('mousedown', handleClickOutside); };
+  }, [onClose]);
+
+  const mutualInterests = [] as string[]; // will be computed from parent context
+
+  const cardBg = darkMode ? 'bg-gray-800 border-gray-600' : 'bg-white border-gray-200';
+  const textPrimary = darkMode ? 'text-white' : 'text-gray-900';
+  const textMuted = darkMode ? 'text-gray-400' : 'text-gray-500';
+
+  return (
+    <motion.div
+      ref={popupRef}
+      initial={{ opacity: 0, scale: 0.9, y: -10 }}
+      animate={{ opacity: 1, scale: 1, y: 0 }}
+      exit={{ opacity: 0, scale: 0.9, y: -10 }}
+      transition={{ duration: 0.15 }}
+      className={`fixed z-[100] w-72 rounded-2xl border shadow-2xl ${cardBg} overflow-hidden`}
+      style={{ top: Math.min(position.top, window.innerHeight - 400), left: Math.max(8, Math.min(position.left, window.innerWidth - 300)) }}
+    >
+      {/* Header gradient */}
+      <div className="h-16 bg-gradient-to-l from-orange-400 to-rose-500 relative">
+        <button onClick={onClose} className="absolute top-2 right-2 w-6 h-6 bg-black/20 rounded-full flex items-center justify-center text-white hover:bg-black/40 transition-colors">
+          <X className="w-3 h-3" />
+        </button>
+      </div>
+      <div className="px-4 pb-4">
+        {/* Avatar */}
+        <div className="relative -mt-8 mb-2">
+          <div className="relative inline-block">
+            <img src={friend.avatar} alt={friend.name} className="w-16 h-16 rounded-xl border-3 border-white shadow-lg object-cover" />
+            {friend.isOnline && (
+              <div className="absolute -bottom-0.5 -left-0.5 w-4 h-4 bg-green-500 rounded-full border-2 border-white" />
+            )}
+          </div>
+        </div>
+        {/* Name & verified */}
+        <div className="flex items-center gap-1.5 mb-1">
+          <h4 className={`font-bold text-sm ${textPrimary}`}>{friend.name}</h4>
+          {friend.isVerified && <CheckCircle2 className="w-3.5 h-3.5 text-orange-600 fill-orange-600/10" />}
+        </div>
+        {/* Online status */}
+        <div className="flex items-center gap-1.5 mb-2">
+          {friend.isOnline ? (
+            <span className="text-[10px] font-bold text-green-600">{t('friends.activeNow')}</span>
+          ) : (
+            <span className={`text-[10px] ${textMuted}`}>{friend.lastSeen || t('friends.offline')}</span>
+          )}
+        </div>
+        {/* Trust score */}
+        {friend.trustScore !== undefined && (
+          <div className="flex items-center gap-1.5 mb-2">
+            <Shield className={`w-3 h-3 ${friend.trustScore >= 70 ? 'text-green-500' : friend.trustScore >= 40 ? 'text-yellow-500' : 'text-red-500'}`} />
+            <TrustScoreBadge score={friend.trustScore} size="sm" darkMode={darkMode} />
+          </div>
+        )}
+        {/* Mutual interests */}
+        {friend.interests && friend.interests.length > 0 && (
+          <div className="mb-2">
+            <MutualInterestsBadges
+              currentInterests={friend.interests}
+              otherInterests={friend.interests}
+              max={3}
+              darkMode={darkMode}
+              showLabel={true}
+            />
+          </div>
+        )}
+        {/* Location */}
+        {friend.location && (
+          <div className="flex items-center gap-1 mb-2">
+            <MapPin className="w-3 h-3 text-orange-500 flex-shrink-0" />
+            <span className={`text-[10px] ${textMuted}`}>{friend.location}</span>
+          </div>
+        )}
+        {/* Friend since */}
+        {friend.friendSince && (
+          <div className="flex items-center gap-1 mb-3">
+            <Clock className={`w-3 h-3 ${textMuted} flex-shrink-0`} />
+            <span className={`text-[10px] ${textMuted}`}>{formatFriendSince(friend.friendSince, t)}</span>
+          </div>
+        )}
+        {/* Actions */}
+        <div className="space-y-1.5">
+          <button
+            onClick={onMessage}
+            className="w-full py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-1.5"
+          >
+            <MessageCircle className="w-3.5 h-3.5" />
+            {t('friends.message')}
+          </button>
+          <button
+            onClick={onViewProfile}
+            className={`w-full py-2 rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-1.5 ${darkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+          >
+            <Eye className="w-3.5 h-3.5" />
+            {t('friends.viewProfile')}
+          </button>
+          {!showBlockConfirm ? (
+            <div className="flex gap-1.5">
+              <button
+                onClick={onRemoveFriend}
+                className={`flex-1 py-2 rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-1 ${
+                  darkMode ? 'bg-red-900/20 text-red-400 hover:bg-red-900/40' : 'bg-red-50 text-red-600 hover:bg-red-100'
+                }`}
+              >
+                <UserX className="w-3 h-3" />
+                {t('friends.removeFriend')}
+              </button>
+              <button
+                onClick={() => setShowBlockConfirm(true)}
+                className={`px-3 py-2 rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-1 ${
+                  darkMode ? 'bg-gray-700 text-gray-400 hover:bg-gray-600' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                }`}
+              >
+                <Ban className="w-3 h-3" />
+              </button>
+            </div>
+          ) : (
+            <div className={`p-2 rounded-xl border ${darkMode ? 'bg-red-900/20 border-red-800/50' : 'bg-red-50 border-red-100'}`}>
+              <p className={`text-[10px] font-bold mb-1.5 ${darkMode ? 'text-red-300' : 'text-red-700'}`}>
+                <AlertTriangle className="w-3 h-3 inline ml-1" />
+                {t('friends.blockConfirmText')}
+              </p>
+              <div className="flex gap-1.5">
+                <button onClick={onBlock} className="flex-1 py-1.5 bg-red-600 text-white rounded-lg text-[10px] font-bold">
+                  {t('friends.block')}
+                </button>
+                <button onClick={() => setShowBlockConfirm(false)} className={`flex-1 py-1.5 rounded-lg text-[10px] font-bold ${darkMode ? 'bg-gray-700 text-gray-300' : 'bg-gray-200 text-gray-600'}`}>
+                  {t('friends.cancel')}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </motion.div>
+  );
+};
+
 export const FriendsPage: React.FC = () => {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -155,18 +338,36 @@ export const FriendsPage: React.FC = () => {
   // Track which sent requests are being cancelled
   const [cancellingIds, setCancellingIds] = useState<Set<string>>(new Set());
 
+  // ─── Confirmation dialog for unfriending (Improvement #2) ───
+  const [confirmUnfriend, setConfirmUnfriend] = useState<FriendUser | null>(null);
+
+  // ─── Quick view popup state (Improvement #3) ───
+  const [quickViewFriend, setQuickViewFriend] = useState<FriendUser | null>(null);
+  const [quickViewPosition, setQuickViewPosition] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
+
+  // ─── Blocked users state (Improvement #5) ───
+  const [blockedUsers, setBlockedUsers] = useState<any[]>([]);
+
+  // ─── Post menu state (Improvement #7) ───
+  const [postMenuOpen, setPostMenuOpen] = useState<string | null>(null);
+
+  // ─── Online strip scroll ref (Improvement #6) ───
+  const onlineStripRef = useRef<HTMLDivElement>(null);
+
   // Read tab from URL params
   const tabParam = searchParams.get('tab');
-  const getInitialSection = (): 'feed' | 'friends' | 'suggestions' | 'requests' | 'sent' => {
+  const getInitialSection = (): SectionType => {
     if (tabParam === 'requests') return 'requests';
     if (tabParam === 'sent') return 'sent';
     if (tabParam === 'suggestions') return 'suggestions';
     if (tabParam === 'feed') return 'feed';
+    if (tabParam === 'blocked') return 'blocked';
     return 'friends';
   };
-  const [activeSection, setActiveSection] = useState<'feed' | 'friends' | 'suggestions' | 'requests' | 'sent'>(getInitialSection);
+  const [activeSection, setActiveSection] = useState<SectionType>(getInitialSection);
   const [showFilterMenu, setShowFilterMenu] = useState(false);
   const [loadingFriends, setLoadingFriends] = useState(false);
+  const { openImageModal, imageModalElement } = useImageModal();
 
   // ─── Compute Mutual Interests Helper ────────────────
   const getMutualInterests = useCallback((otherInterests?: string[]): string[] => {
@@ -213,6 +414,35 @@ export const FriendsPage: React.FC = () => {
     return activities.slice(0, 6);
   }, [friendPosts]);
 
+  // ─── Friend Stats (Improvement #8) ──────────────────
+  const friendStats = useMemo(() => {
+    const now = new Date();
+    const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const newThisWeek = friends.filter(f => {
+      if (!f.friendSince) return false;
+      try { return new Date(f.friendSince) >= weekAgo; } catch { return false; }
+    }).length;
+
+    // Top 3 interests among friends
+    const interestCount: Record<string, number> = {};
+    friends.forEach(f => {
+      (f.interests || []).forEach(i => {
+        interestCount[i] = (interestCount[i] || 0) + 1;
+      });
+    });
+    const topInterests = Object.entries(interestCount)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([key]) => key);
+
+    return {
+      totalFriends: friends.length,
+      onlineFriends: friends.filter(f => f.isOnline).length,
+      newThisWeek,
+      topInterests,
+    };
+  }, [friends]);
+
   // Load friends list from API
   const loadFriends = useCallback(async () => {
     setLoadingFriends(true);
@@ -236,6 +466,7 @@ export const FriendsPage: React.FC = () => {
             mutualFriends: f.mutualFriends || 0,
             friendSince: f.friendSince || f.friend_since || '',
             recentActivity: '',
+            friendshipId: f.friendshipId || f.friendship_id || '',
           };
         });
         setFriends(mapped);
@@ -315,6 +546,18 @@ export const FriendsPage: React.FC = () => {
     }
   }, []);
 
+  // ─── Load blocked users (Improvement #5) ───
+  const loadBlockedUsers = useCallback(async () => {
+    try {
+      const blocked = await api.getBlockedUsers();
+      if (Array.isArray(blocked)) {
+        setBlockedUsers(blocked);
+      }
+    } catch (err) {
+      console.error('Error loading blocked users:', err);
+    }
+  }, []);
+
   // Load friends and suggestions on mount + update current user presence
   useEffect(() => {
     if (currentUser?.id) {
@@ -322,7 +565,8 @@ export const FriendsPage: React.FC = () => {
     }
     loadFriends();
     loadSuggestions();
-  }, [loadFriends, loadSuggestions, currentUser?.id]);
+    loadBlockedUsers();
+  }, [loadFriends, loadSuggestions, loadBlockedUsers, currentUser?.id]);
 
   // Also load friend requests from API
   const [apiFriendRequests, setApiFriendRequests] = useState<any[]>([]);
@@ -439,20 +683,23 @@ export const FriendsPage: React.FC = () => {
     }
   };
 
-  const handleRemoveFriend = async (friendId: string) => {
+  // ─── Fix: handleRemoveFriend uses api.unfriend with friendshipId (Improvement #1) ───
+  const handleRemoveFriend = async (friend: FriendUser) => {
     try {
-      // Find the friendship ID - check if this friend is in the friends list
-      // We need to get the friendship ID from the API. Use unfriend endpoint.
-      // First, we need to find the friendship record. The friends list data includes friendSince but not friendshipId.
-      // We'll use the rejectFriendRequest as a fallback, but ideally should use a proper unfriend endpoint.
-      await api.rejectFriendRequest(friendId);
-      setFriends(prev => prev.filter(f => f.id !== friendId));
+      if (friend.friendshipId) {
+        await api.unfriend(friend.friendshipId);
+      } else {
+        // Fallback: use the friend's user id if no friendshipId
+        await api.unfriend(friend.id);
+      }
+      setFriends(prev => prev.filter(f => f.id !== friend.id));
       toast.info(t('friends.friendshipRemoved'));
     } catch {
       // Fallback: remove locally if API fails
-      setFriends(prev => prev.filter(f => f.id !== friendId));
+      setFriends(prev => prev.filter(f => f.id !== friend.id));
       toast.info(t('friends.friendshipRemoved'));
     }
+    setConfirmUnfriend(null);
   };
 
   const handleCancelSentRequest = async (requestId: string) => {
@@ -478,6 +725,31 @@ export const FriendsPage: React.FC = () => {
     }
   };
 
+  // ─── Block user handler (Improvement #5) ───
+  const handleBlockUser = async (userId: string) => {
+    try {
+      await api.blockUser(userId);
+      // Remove from friends list
+      setFriends(prev => prev.filter(f => f.id !== userId));
+      // Reload blocked users
+      loadBlockedUsers();
+      toast.info(t('friends.userBlocked'));
+    } catch (err: any) {
+      toast.error(err.message || t('friends.blockFailed'));
+    }
+    setQuickViewFriend(null);
+  };
+
+  const handleUnblockUser = async (userId: string) => {
+    try {
+      await api.unblockUser(userId);
+      setBlockedUsers(prev => prev.filter(u => u.id !== userId));
+      toast.info(t('friends.userUnblocked'));
+    } catch (err: any) {
+      toast.error(err.message || t('friends.unblockFailed'));
+    }
+  };
+
   const handleLikePost = (postId: string) => {
     setFriendPosts(prev => prev.map(p =>
       p.id === postId ? { ...p, isLiked: !p.isLiked, likes: p.isLiked ? p.likes - 1 : p.likes + 1 } : p
@@ -492,21 +764,74 @@ export const FriendsPage: React.FC = () => {
     toast.success(t('friends.postSaved'));
   };
 
+  // ─── Post menu handlers (Improvement #7) ───
+  const handleCopyLink = (postId: string) => {
+    const url = `${window.location.origin}/post/${postId}`;
+    navigator.clipboard.writeText(url).then(() => {
+      toast.success(t('friends.linkCopied'));
+    }).catch(() => {
+      toast.error(t('friends.linkCopyFailed'));
+    });
+    setPostMenuOpen(null);
+  };
+
+  const handleSharePost = (post: FriendPost) => {
+    openShareModal({ ...post, author: post.author, type: post.type, paymentMethods: [] });
+    setPostMenuOpen(null);
+  };
+
+  const handleReportPost = (postId: string) => {
+    toast.info(t('friends.postReported'));
+    setPostMenuOpen(null);
+  };
+
+  const handleHidePost = (postId: string) => {
+    setFriendPosts(prev => prev.filter(p => p.id !== postId));
+    toast.info(t('friends.postHidden'));
+    setPostMenuOpen(null);
+  };
+
+  // ─── Online strip scroll (Improvement #6) ───
+  const scrollOnlineStrip = (direction: 'left' | 'right') => {
+    if (onlineStripRef.current) {
+      const scrollAmount = 150;
+      onlineStripRef.current.scrollBy({
+        left: direction === 'left' ? -scrollAmount : scrollAmount,
+        behavior: 'smooth',
+      });
+    }
+  };
+
+  // ─── Quick view handler (Improvement #3) ───
+  const openQuickView = (friend: FriendUser, event: React.MouseEvent) => {
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    setQuickViewPosition({
+      top: rect.bottom + 8,
+      left: rect.left,
+    });
+    setQuickViewFriend(friend);
+  };
+
   // ─── Section Tabs ─────────────────────────────
   const allRequests = [...friendRequests, ...apiFriendRequests.map((r: any) => ({
     id: r.id,
     user: r.user || { id: r.user_id, name: r.name || '', avatar: r.avatar || '' },
     timestamp: r.timestamp || r.created_at || '',
+    mutualFriends: r.mutualFriends || r.mutual_friends || 0,
+    trustScore: r.trustScore || r.trust_score,
+    location: r.location || r.user?.location || '',
+    interests: r.interests || r.user?.interests || [],
   }))];
   // Deduplicate by id
   const uniqueRequests = allRequests.filter((r, i, arr) => arr.findIndex(x => x.id === r.id) === i);
 
-  const sections = [
-    { id: 'feed' as const, label: t('friends.sectionLatestNews'), icon: <Sparkles className="w-4 h-4" />, badge: friendPosts.length },
-    { id: 'friends' as const, label: t('friends.sectionMyFriends'), icon: <Users className="w-4 h-4" />, badge: friends.length },
-    { id: 'requests' as const, label: t('friends.sectionIncoming'), icon: <UserCheck className="w-4 h-4" />, badge: uniqueRequests.length },
-    { id: 'sent' as const, label: t('friends.sectionSent'), icon: <SendHorizonal className="w-4 h-4" />, badge: sentRequests.length },
-    { id: 'suggestions' as const, label: t('friends.sectionSuggestions'), icon: <UserPlus className="w-4 h-4" />, badge: suggested.length },
+  const sections: { id: SectionType; label: string; icon: React.ReactNode; badge: number }[] = [
+    { id: 'feed', label: t('friends.sectionLatestNews'), icon: <Sparkles className="w-4 h-4" />, badge: friendPosts.length },
+    { id: 'friends', label: t('friends.sectionMyFriends'), icon: <Users className="w-4 h-4" />, badge: friends.length },
+    { id: 'requests', label: t('friends.sectionIncoming'), icon: <UserCheck className="w-4 h-4" />, badge: uniqueRequests.length },
+    { id: 'sent', label: t('friends.sectionSent'), icon: <SendHorizonal className="w-4 h-4" />, badge: sentRequests.length },
+    { id: 'suggestions', label: t('friends.sectionSuggestions'), icon: <UserPlus className="w-4 h-4" />, badge: suggested.length },
+    { id: 'blocked', label: t('friends.sectionBlocked'), icon: <Ban className="w-4 h-4" />, badge: blockedUsers.length },
   ];
 
   return (
@@ -557,7 +882,7 @@ export const FriendsPage: React.FC = () => {
           </div>
           <div className="flex items-center gap-2">
             <button
-              onClick={() => { loadFriends(); loadSuggestions(); loadFriendRequests(); loadSentRequests(); }}
+              onClick={() => { loadFriends(); loadSuggestions(); loadFriendRequests(); loadSentRequests(); loadBlockedUsers(); }}
               className={`w-9 h-9 rounded-xl flex items-center justify-center transition-colors ${darkMode ? 'bg-gray-700 hover:bg-gray-600 text-gray-300' : 'bg-gray-100 hover:bg-gray-200 text-gray-600'}`}
             >
               <RefreshCw className={`w-4 h-4 ${loadingFriends ? 'animate-spin' : ''}`} />
@@ -634,12 +959,12 @@ export const FriendsPage: React.FC = () => {
       </motion.div>
 
       {/* ─── Section Navigation ────────────────── */}
-      <div className={`flex gap-2 p-1.5 rounded-2xl mb-6 ${darkMode ? 'bg-gray-800' : 'bg-white'} border ${darkMode ? 'border-gray-700' : 'border-gray-100'}`}>
+      <div className={`flex gap-1.5 p-1.5 rounded-2xl mb-6 overflow-x-auto hide-scrollbar ${darkMode ? 'bg-gray-800' : 'bg-white'} border ${darkMode ? 'border-gray-700' : 'border-gray-100'}`}>
         {sections.map(section => (
           <button
             key={section.id}
             onClick={() => setActiveSection(section.id)}
-            className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-xs font-bold transition-all ${
+            className={`flex-1 min-w-fit flex items-center justify-center gap-1.5 py-3 px-3 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
               activeSection === section.id
                 ? 'bg-gradient-to-l from-orange-500 to-orange-600 text-white shadow-lg shadow-orange-200/30'
                 : darkMode
@@ -672,23 +997,83 @@ export const FriendsPage: React.FC = () => {
             exit={{ opacity: 0, y: -15 }}
             className="space-y-4"
           >
-            {/* Online Friends Strip */}
+            {/* ─── Friend Stats Summary Card (Improvement #8) ─── */}
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className={`rounded-2xl border p-4 ${cardBg}`}
+            >
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className={`p-3 rounded-xl text-center ${darkMode ? 'bg-gray-700/50' : 'bg-gray-50'}`}>
+                  <Users className="w-5 h-5 mx-auto mb-1 text-orange-500" />
+                  <p className={`text-lg font-black ${textPrimary}`}>{friendStats.totalFriends}</p>
+                  <p className={`text-[9px] font-bold ${textMuted}`}>{t('friends.totalFriends')}</p>
+                </div>
+                <div className={`p-3 rounded-xl text-center ${darkMode ? 'bg-gray-700/50' : 'bg-gray-50'}`}>
+                  <div className="w-5 h-5 mx-auto mb-1 flex items-center justify-center">
+                    <div className="w-2.5 h-2.5 bg-green-500 rounded-full animate-pulse" />
+                  </div>
+                  <p className={`text-lg font-black ${textPrimary}`}>{friendStats.onlineFriends}</p>
+                  <p className={`text-[9px] font-bold ${textMuted}`}>{t('friends.onlineFriends')}</p>
+                </div>
+                <div className={`p-3 rounded-xl text-center ${darkMode ? 'bg-gray-700/50' : 'bg-gray-50'}`}>
+                  <TrendingUp className="w-5 h-5 mx-auto mb-1 text-green-500" />
+                  <p className={`text-lg font-black ${textPrimary}`}>{friendStats.newThisWeek}</p>
+                  <p className={`text-[9px] font-bold ${textMuted}`}>{t('friends.newThisWeek')}</p>
+                </div>
+                <div className={`p-3 rounded-xl text-center ${darkMode ? 'bg-gray-700/50' : 'bg-gray-50'}`}>
+                  <Sparkles className="w-5 h-5 mx-auto mb-1 text-purple-500" />
+                  <div className="flex flex-wrap justify-center gap-0.5 mt-1">
+                    {friendStats.topInterests.length > 0 ? (
+                      friendStats.topInterests.map(interest => (
+                        <span key={interest} className={`text-[7px] px-1 py-0.5 rounded-full font-bold ${
+                          darkMode
+                            ? (INTEREST_COLORS[interest]?.replace('dark:', '').split(' ').filter(c => c.startsWith('dark:')).join(' ').replace('dark:', '') || 'bg-gray-700 text-gray-300')
+                            : (INTEREST_COLORS[interest]?.split(' ').filter(c => !c.startsWith('dark:')).join(' ') || 'bg-gray-100 text-gray-600')
+                        }`}>
+                          {t(INTEREST_MAP[interest] || interest)}
+                        </span>
+                      ))
+                    ) : (
+                      <span className={`text-[8px] ${textMuted}`}>—</span>
+                    )}
+                  </div>
+                  <p className={`text-[9px] font-bold ${textMuted}`}>{t('friends.topInterests')}</p>
+                </div>
+              </div>
+            </motion.div>
+
+            {/* Online Friends Strip (Improvement #6 - improved) */}
             <div className={`rounded-2xl border p-4 ${cardBg}`}>
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
                   <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
                   <span className={`text-xs font-black ${textPrimary}`}>{t('friends.onlineNow')}</span>
                 </div>
-                <button onClick={() => setActiveSection('friends')} className="text-[10px] font-bold text-orange-600 hover:underline">{t('friends.viewAll')}</button>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => scrollOnlineStrip('right')}
+                    className={`w-6 h-6 rounded-lg flex items-center justify-center transition-colors ${darkMode ? 'bg-gray-700 hover:bg-gray-600 text-gray-300' : 'bg-gray-100 hover:bg-gray-200 text-gray-600'}`}
+                  >
+                    <ChevronRight className="w-3 h-3" />
+                  </button>
+                  <button
+                    onClick={() => scrollOnlineStrip('left')}
+                    className={`w-6 h-6 rounded-lg flex items-center justify-center transition-colors ${darkMode ? 'bg-gray-700 hover:bg-gray-600 text-gray-300' : 'bg-gray-100 hover:bg-gray-200 text-gray-600'}`}
+                  >
+                    <ChevronLeft className="w-3 h-3" />
+                  </button>
+                  <button onClick={() => setActiveSection('friends')} className="text-[10px] font-bold text-orange-600 hover:underline mr-2">{t('friends.viewAll')}</button>
+                </div>
               </div>
-              <div className="flex gap-3 overflow-x-auto hide-scrollbar pb-1">
+              <div ref={onlineStripRef} className="flex gap-3 overflow-x-auto hide-scrollbar pb-1 scroll-smooth">
                 {friends.filter(f => f.isOnline).map(friend => (
                   <div
                     key={friend.id}
                     className="flex flex-col items-center gap-1.5 min-w-[64px] group relative"
                   >
                     <button
-                      onClick={() => navigate(`/user/${friend.id}`)}
+                      onClick={(e) => openQuickView(friend, e)}
                       className="relative"
                     >
                       <img
@@ -698,19 +1083,25 @@ export const FriendsPage: React.FC = () => {
                       />
                       <div className="absolute -bottom-0.5 -left-0.5 w-4 h-4 bg-green-500 rounded-full border-2 border-white" />
                     </button>
-                    {/* Quick Message Button */}
+                    {/* Quick Message Button - Navigate to messages with friend pre-selected (Improvement #6) */}
                     <motion.button
                       whileHover={{ scale: 1.15 }}
                       whileTap={{ scale: 0.9 }}
                       onClick={(e) => {
                         e.stopPropagation();
-                        sendMessage(friend.id, t('friends.hello')).then(() => navigate('/messages')).catch(() => toast.error(t('friends.messageSendFailed')));
+                        navigate(`/messages?chat=${friend.id}`);
                       }}
                       className="absolute top-0 left-0 w-6 h-6 bg-orange-500 rounded-full flex items-center justify-center shadow-lg opacity-0 group-hover:opacity-100 transition-opacity border-2 border-white z-10"
                       title={t("friends.sendMessage")}
                     >
                       <Send className="w-3 h-3 text-white" />
                     </motion.button>
+                    {/* Status tooltip on hover (Improvement #6) */}
+                    <div className="absolute -bottom-7 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-20">
+                      <span className={`text-[8px] px-2 py-1 rounded-lg shadow-lg ${darkMode ? 'bg-gray-700 text-gray-200' : 'bg-gray-800 text-white'}`}>
+                        {friend.isOnline ? t('friends.activeNow') : friend.lastSeen || t('friends.offline')}
+                      </span>
+                    </div>
                     <span className="text-[10px] font-bold text-gray-600 truncate w-16 text-center">{friend.name.split(' ')[0]}</span>
                   </div>
                 ))}
@@ -789,9 +1180,56 @@ export const FriendsPage: React.FC = () => {
                       </div>
                     </div>
                   </div>
-                  <button className={`p-2 rounded-lg ${darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-50'} transition-colors`} onClick={() => toast.info(t('friends.moreOptions'))}>
-                    <MoreHorizontal className={`w-4 h-4 ${textMuted}`} />
-                  </button>
+                  {/* ─── Real "more options" menu (Improvement #7) ─── */}
+                  <div className="relative">
+                    <button
+                      className={`p-2 rounded-lg ${darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-50'} transition-colors`}
+                      onClick={() => setPostMenuOpen(postMenuOpen === post.id ? null : post.id)}
+                    >
+                      <MoreHorizontal className={`w-4 h-4 ${textMuted}`} />
+                    </button>
+                    <AnimatePresence>
+                      {postMenuOpen === post.id && (
+                        <motion.div
+                          initial={{ opacity: 0, scale: 0.9, y: -5 }}
+                          animate={{ opacity: 1, scale: 1, y: 0 }}
+                          exit={{ opacity: 0, scale: 0.9, y: -5 }}
+                          transition={{ duration: 0.1 }}
+                          className={`absolute left-0 top-full mt-1 w-40 rounded-xl border shadow-xl z-50 overflow-hidden ${darkMode ? 'bg-gray-800 border-gray-600' : 'bg-white border-gray-200'}`}
+                        >
+                          <button
+                            onClick={() => handleCopyLink(post.id)}
+                            className={`w-full flex items-center gap-2 px-3 py-2.5 text-xs font-bold transition-colors text-right ${darkMode ? 'text-gray-300 hover:bg-gray-700' : 'text-gray-700 hover:bg-gray-50'}`}
+                          >
+                            <Link2 className="w-3.5 h-3.5" />
+                            {t('friends.copyLink')}
+                          </button>
+                          <button
+                            onClick={() => handleSharePost(post)}
+                            className={`w-full flex items-center gap-2 px-3 py-2.5 text-xs font-bold transition-colors text-right ${darkMode ? 'text-gray-300 hover:bg-gray-700' : 'text-gray-700 hover:bg-gray-50'}`}
+                          >
+                            <Share2 className="w-3.5 h-3.5" />
+                            {t('friends.share')}
+                          </button>
+                          <button
+                            onClick={() => handleReportPost(post.id)}
+                            className={`w-full flex items-center gap-2 px-3 py-2.5 text-xs font-bold transition-colors text-right ${darkMode ? 'text-gray-300 hover:bg-gray-700' : 'text-gray-700 hover:bg-gray-50'}`}
+                          >
+                            <Flag className="w-3.5 h-3.5" />
+                            {t('friends.report')}
+                          </button>
+                          <div className={`border-t ${darkMode ? 'border-gray-700' : 'border-gray-100'}`} />
+                          <button
+                            onClick={() => handleHidePost(post.id)}
+                            className={`w-full flex items-center gap-2 px-3 py-2.5 text-xs font-bold transition-colors text-right ${darkMode ? 'text-red-400 hover:bg-gray-700' : 'text-red-600 hover:bg-red-50'}`}
+                          >
+                            <EyeOff className="w-3.5 h-3.5" />
+                            {t('friends.hidePost')}
+                          </button>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
                 </div>
 
                 {/* Post Content */}
@@ -825,7 +1263,10 @@ export const FriendsPage: React.FC = () => {
 
                 {/* Post Image */}
                 {post.image && (
-                  <div className={`max-h-[300px] overflow-hidden border-y ${darkMode ? 'border-gray-700' : 'border-gray-100'}`}>
+                  <div
+                    className={`max-h-[300px] overflow-hidden border-y cursor-pointer ${darkMode ? 'border-gray-700' : 'border-gray-100'}`}
+                    onClick={() => openImageModal(post.image!, 'Post image')}
+                  >
                     <img src={post.image} alt="" className="w-full h-full object-cover" loading="lazy" />
                   </div>
                 )}
@@ -956,6 +1397,7 @@ export const FriendsPage: React.FC = () => {
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                 {filteredFriends.map((friend, i) => {
                   const mutualInterests = getMutualInterests(friend.interests);
+                  const friendSinceText = formatFriendSince(friend.friendSince || '', t);
                   return (
                     <motion.div
                       key={friend.id}
@@ -986,11 +1428,24 @@ export const FriendsPage: React.FC = () => {
                         <img
                           src={friend.avatar}
                           alt={friend.name}
-                          className="w-14 h-14 rounded-xl border-3 border-white mx-auto mb-2 shadow-lg object-cover"
+                          className="w-14 h-14 rounded-xl border-3 border-white mx-auto mb-2 shadow-lg object-cover cursor-pointer"
+                          onClick={(e) => { e.stopPropagation(); openQuickView(friend, e); }}
                         />
                         <h4 className={`font-bold text-xs mb-0.5 ${textPrimary} group-hover:text-orange-600 transition-colors`}>{friend.name}</h4>
                         {friend.isVerified && <CheckCircle2 className="w-3 h-3 text-orange-600 inline-block mr-1" />}
                         <p className={`text-[9px] ${textMuted}`}>{t('friends.mutualFriendCount', { count: friend.mutualFriends })}</p>
+
+                        {/* ─── Friend-since indicator (Improvement #9) ─── */}
+                        {friendSinceText && (
+                          <div className="mt-0.5">
+                            <span className={`inline-flex items-center gap-0.5 text-[8px] px-1.5 py-0.5 rounded-full font-bold ${
+                              darkMode ? 'bg-gray-700 text-gray-400' : 'bg-orange-50 text-orange-600'
+                            }`}>
+                              <Clock className="w-2 h-2" />
+                              {friendSinceText}
+                            </span>
+                          </div>
+                        )}
 
                         {/* Trust Score Progress Bar */}
                         {friend.trustScore !== undefined && (
@@ -1015,7 +1470,7 @@ export const FriendsPage: React.FC = () => {
                         {/* Quick Actions */}
                         <div className="flex gap-1.5 mt-2">
                           <button
-                            onClick={(e) => { e.stopPropagation(); sendMessage(friend.id, t('friends.hello')).then(() => navigate('/messages')).catch(() => toast.error(t('friends.messageSendFailed'))); }}
+                            onClick={(e) => { e.stopPropagation(); navigate(`/messages?chat=${friend.id}`); }}
                             className={`flex-1 py-1.5 rounded-lg text-[9px] font-bold transition-colors flex items-center justify-center gap-1 ${
                               darkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                             }`}
@@ -1024,7 +1479,7 @@ export const FriendsPage: React.FC = () => {
                             {t('friends.message')}
                           </button>
                           <button
-                            onClick={(e) => { e.stopPropagation(); handleRemoveFriend(friend.id); }}
+                            onClick={(e) => { e.stopPropagation(); setConfirmUnfriend(friend); }}
                             className={`py-1.5 px-2 rounded-lg text-[9px] font-bold transition-colors ${
                               darkMode ? 'bg-gray-700 text-gray-400 hover:bg-red-900/30 hover:text-red-400' : 'bg-gray-100 text-gray-400 hover:bg-red-50 hover:text-red-500'
                             }`}
@@ -1044,6 +1499,7 @@ export const FriendsPage: React.FC = () => {
               <div className="space-y-2">
                 {filteredFriends.map((friend, i) => {
                   const mutualInterests = getMutualInterests(friend.interests);
+                  const friendSinceText = formatFriendSince(friend.friendSince || '', t);
                   return (
                     <motion.div
                       key={friend.id}
@@ -1055,7 +1511,12 @@ export const FriendsPage: React.FC = () => {
                     >
                       <div className="flex items-center gap-3">
                         <div className="relative">
-                          <img src={friend.avatar} alt={friend.name} className="w-12 h-12 rounded-xl object-cover" />
+                          <img
+                            src={friend.avatar}
+                            alt={friend.name}
+                            className="w-12 h-12 rounded-xl object-cover cursor-pointer"
+                            onClick={(e) => { e.stopPropagation(); openQuickView(friend, e); }}
+                          />
                           {friend.isOnline && (
                             <div className="absolute -bottom-0.5 -left-0.5 w-3.5 h-3.5 bg-green-500 border-2 border-white rounded-full" />
                           )}
@@ -1074,6 +1535,15 @@ export const FriendsPage: React.FC = () => {
                             <span>·</span>
                             <span>{t('friends.mutualCount', { count: friend.mutualFriends })}</span>
                           </div>
+                          {/* ─── Friend-since indicator in list view (Improvement #9) ─── */}
+                          {friendSinceText && (
+                            <span className={`inline-flex items-center gap-0.5 text-[8px] px-1.5 py-0.5 rounded-full font-bold mt-0.5 ${
+                              darkMode ? 'bg-gray-700 text-gray-400' : 'bg-orange-50 text-orange-600'
+                            }`}>
+                              <Clock className="w-2 h-2" />
+                              {friendSinceText}
+                            </span>
+                          )}
                           {friend.recentActivity && (
                             <p className={`text-[9px] mt-0.5 ${textMuted}`}>
                               <Zap className="w-2.5 h-2.5 inline text-orange-500" /> {friend.recentActivity}
@@ -1098,7 +1568,7 @@ export const FriendsPage: React.FC = () => {
                       </div>
                       <div className="flex items-center gap-2">
                         <button
-                          onClick={(e) => { e.stopPropagation(); sendMessage(friend.id, t('friends.hello')).then(() => navigate('/messages')).catch(() => toast.error(t('friends.messageSendFailed'))); }}
+                          onClick={(e) => { e.stopPropagation(); navigate(`/messages?chat=${friend.id}`); }}
                           className={`p-2 rounded-xl transition-colors ${darkMode ? 'bg-gray-700 hover:bg-gray-600 text-gray-300' : 'bg-gray-100 hover:bg-gray-200 text-gray-600'}`}
                         >
                           <MessageCircle className="w-4 h-4" />
@@ -1108,6 +1578,13 @@ export const FriendsPage: React.FC = () => {
                           className="p-2 rounded-xl bg-orange-600 text-white hover:bg-orange-700 transition-colors"
                         >
                           <Eye className="w-4 h-4" />
+                        </button>
+                        {/* Block option in list view (Improvement #5) */}
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setConfirmUnfriend(friend); }}
+                          className={`p-2 rounded-xl transition-colors ${darkMode ? 'bg-gray-700 hover:bg-gray-600 text-gray-400' : 'bg-gray-100 hover:bg-gray-200 text-gray-500'}`}
+                        >
+                          <MoreHorizontal className="w-4 h-4" />
                         </button>
                       </div>
                     </motion.div>
@@ -1347,7 +1824,7 @@ export const FriendsPage: React.FC = () => {
           </motion.div>
         )}
 
-        {/* ─── Friend Requests Section ──────────── */}
+        {/* ─── Friend Requests Section (Improved #4) ─── */}
         {activeSection === 'requests' && (
           <motion.div
             key="requests"
@@ -1357,52 +1834,99 @@ export const FriendsPage: React.FC = () => {
             className="space-y-3"
           >
             {uniqueRequests.length > 0 ? (
-              uniqueRequests.map((req, i) => (
-                <motion.div
-                  key={req.id}
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: i * 0.08 }}
-                  className={`rounded-2xl border p-4 transition-all ${cardBg}`}
-                >
-                  <div className="flex items-start gap-3">
-                    <img
-                      src={req.user.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${req.user.id}`}
-                      alt={req.user.name}
-                      className="w-16 h-16 rounded-xl object-cover cursor-pointer hover:opacity-80 transition-opacity"
-                      onClick={() => navigate(`/user/${req.user.id}`)}
-                    />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-0.5">
-                        <h4 className={`font-bold text-sm ${textPrimary}`}>{req.user.name}</h4>
-                        {req.user.isVerified && <CheckCircle2 className="w-3.5 h-3.5 text-orange-600" />}
-                      </div>
-                      <p className={`text-[10px] ${textMuted} mb-2`}>
-                        <Clock className="w-3 h-3 inline ml-1" />
-                        {req.timestamp || t('friends.recently')}
-                      </p>
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => handleAcceptFriend(req.id)}
-                          className="flex-1 bg-orange-600 hover:bg-orange-700 text-white py-2 rounded-xl text-xs font-bold transition-colors active:scale-[0.98] flex items-center justify-center gap-1"
-                        >
-                          <Check className="w-3.5 h-3.5" />
-                          {t('friends.confirm')}
-                        </button>
-                        <button
-                          onClick={() => handleRejectFriend(req.id)}
-                          className={`flex-1 py-2 rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-1 ${
-                            darkMode ? 'bg-gray-700 text-gray-300 hover:bg-red-900/30 hover:text-red-400' : 'bg-gray-100 text-gray-600 hover:bg-red-50 hover:text-red-500'
-                          }`}
-                        >
-                          <X className="w-3.5 h-3.5" />
-                          {t('friends.reject')}
-                        </button>
+              uniqueRequests.map((req, i) => {
+                const reqUser = req.user || {};
+                const reqMutualFriends = (req as any).mutualFriends || reqUser.mutualFriends || 0;
+                const reqTrustScore = (req as any).trustScore || reqUser.trustScore || reqUser.trust_score;
+                const reqLocation = (req as any).location || reqUser.location || '';
+                const reqInterests: string[] = (req as any).interests || reqUser.interests || [];
+                const mutualInterests = getMutualInterests(reqInterests);
+
+                return (
+                  <motion.div
+                    key={req.id}
+                    initial={{ opacity: 0, x: -20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: i * 0.08 }}
+                    className={`rounded-2xl border p-4 transition-all ${cardBg}`}
+                  >
+                    <div className="flex items-start gap-3">
+                      <img
+                        src={reqUser.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${reqUser.id}`}
+                        alt={reqUser.name}
+                        className="w-16 h-16 rounded-xl object-cover cursor-pointer hover:opacity-80 transition-opacity"
+                        onClick={() => navigate(`/user/${reqUser.id}`)}
+                      />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-0.5">
+                          <h4 className={`font-bold text-sm ${textPrimary}`}>{reqUser.name}</h4>
+                          {reqUser.isVerified && <CheckCircle2 className="w-3.5 h-3.5 text-orange-600" />}
+                        </div>
+                        <p className={`text-[10px] ${textMuted} mb-1`}>
+                          <Clock className="w-3 h-3 inline ml-1" />
+                          {req.timestamp || t('friends.recently')}
+                        </p>
+
+                        {/* ─── Mutual friends count (Improvement #4) ─── */}
+                        {reqMutualFriends > 0 && (
+                          <div className="flex items-center gap-1 mb-1">
+                            <Users className={`w-3 h-3 ${textMuted}`} />
+                            <span className={`text-[10px] font-bold ${textMuted}`}>{t('friends.mutualFriendCount', { count: reqMutualFriends })}</span>
+                          </div>
+                        )}
+
+                        {/* ─── Trust score if available (Improvement #4) ─── */}
+                        {reqTrustScore !== undefined && (
+                          <div className="flex items-center gap-1.5 mb-1">
+                            <Shield className={`w-3 h-3 ${reqTrustScore >= 70 ? 'text-green-500' : reqTrustScore >= 40 ? 'text-yellow-500' : 'text-red-500'}`} />
+                            <TrustScoreBadge score={reqTrustScore} size="sm" darkMode={darkMode} />
+                          </div>
+                        )}
+
+                        {/* ─── Location if available (Improvement #4) ─── */}
+                        {reqLocation && (
+                          <div className="flex items-center gap-1 mb-1">
+                            <MapPin className="w-3 h-3 text-orange-500 flex-shrink-0" />
+                            <span className={`text-[10px] ${textMuted}`}>{reqLocation}</span>
+                          </div>
+                        )}
+
+                        {/* ─── Mutual interests badges (Improvement #4) ─── */}
+                        {mutualInterests.length > 0 && (
+                          <div className="mb-2">
+                            <MutualInterestsBadges
+                              currentInterests={currentUser?.interests}
+                              otherInterests={reqInterests}
+                              max={3}
+                              darkMode={darkMode}
+                              showLabel={true}
+                            />
+                          </div>
+                        )}
+
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => handleAcceptFriend(req.id)}
+                            className="flex-1 bg-orange-600 hover:bg-orange-700 text-white py-2 rounded-xl text-xs font-bold transition-colors active:scale-[0.98] flex items-center justify-center gap-1"
+                          >
+                            <Check className="w-3.5 h-3.5" />
+                            {t('friends.confirm')}
+                          </button>
+                          <button
+                            onClick={() => handleRejectFriend(req.id)}
+                            className={`flex-1 py-2 rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-1 ${
+                              darkMode ? 'bg-gray-700 text-gray-300 hover:bg-red-900/30 hover:text-red-400' : 'bg-gray-100 text-gray-600 hover:bg-red-50 hover:text-red-500'
+                            }`}
+                          >
+                            <X className="w-3.5 h-3.5" />
+                            {t('friends.reject')}
+                          </button>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                </motion.div>
-              ))
+                  </motion.div>
+                );
+              })
             ) : (
               <motion.div
                 initial={{ opacity: 0, scale: 0.95 }}
@@ -1542,7 +2066,175 @@ export const FriendsPage: React.FC = () => {
             )}
           </motion.div>
         )}
+
+        {/* ─── Blocked Users Section (Improvement #5) ─── */}
+        {activeSection === 'blocked' && (
+          <motion.div
+            key="blocked"
+            initial={{ opacity: 0, y: 15 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -15 }}
+            className="space-y-3"
+          >
+            {/* Info banner */}
+            <div className={`rounded-2xl p-4 border ${darkMode ? 'bg-red-900/20 border-red-800/50' : 'bg-red-50 border-red-100'}`}>
+              <div className="flex items-center gap-2 mb-2">
+                <Ban className="w-5 h-5 text-red-600" />
+                <span className={`text-sm font-black ${darkMode ? 'text-red-300' : 'text-red-700'}`}>{t('friends.blockedUsers')}</span>
+              </div>
+              <p className={`text-xs ${darkMode ? 'text-red-400' : 'text-red-600'}`}>
+                {t('friends.blockedUsersDesc')}
+              </p>
+            </div>
+
+            {blockedUsers.length > 0 ? (
+              blockedUsers.map((user, i) => (
+                <motion.div
+                  key={user.id}
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: i * 0.08 }}
+                  className={`rounded-2xl border p-4 transition-all ${cardBg}`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="relative">
+                        <img
+                          src={user.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.id}`}
+                          alt={user.name}
+                          className="w-12 h-12 rounded-xl object-cover opacity-60"
+                        />
+                        <div className="absolute inset-0 flex items-center justify-center">
+                          <Ban className="w-5 h-5 text-red-500 opacity-80" />
+                        </div>
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-1.5">
+                          <h4 className={`font-bold text-sm ${textPrimary}`}>{user.name}</h4>
+                          {user.isVerified && <CheckCircle2 className="w-3.5 h-3.5 text-orange-600" />}
+                        </div>
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${
+                          darkMode ? 'bg-red-900/30 text-red-400' : 'bg-red-100 text-red-600'
+                        }`}>{t('friends.blocked')}</span>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => handleUnblockUser(user.id)}
+                      className={`px-4 py-2 rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5 ${
+                        darkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      }`}
+                    >
+                      <Check className="w-3.5 h-3.5" />
+                      {t('friends.unblock')}
+                    </button>
+                  </div>
+                </motion.div>
+              ))
+            ) : (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className={`p-12 text-center rounded-2xl border ${cardBg}`}
+              >
+                <div className={`w-20 h-20 mx-auto mb-4 rounded-2xl flex items-center justify-center ${darkMode ? 'bg-gray-700' : 'bg-gray-100'}`}>
+                  <Ban className={`w-10 h-10 ${textMuted} opacity-50`} />
+                </div>
+                <p className={`font-bold text-lg mb-2 ${textPrimary}`}>{t('friends.noBlockedUsers')}</p>
+                <p className={`text-sm mb-4 ${textMuted}`}>
+                  {t('friends.noBlockedUsersDesc')}
+                </p>
+              </motion.div>
+            )}
+          </motion.div>
+        )}
       </AnimatePresence>
+
+      {/* ─── Confirmation Dialog for Unfriending (Improvement #2) ─── */}
+      <AnimatePresence>
+        {confirmUnfriend && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+            onClick={() => setConfirmUnfriend(null)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className={`w-full max-w-sm rounded-2xl border p-6 ${cardBg} shadow-2xl`}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="text-center">
+                <div className={`w-16 h-16 mx-auto mb-4 rounded-2xl flex items-center justify-center ${darkMode ? 'bg-red-900/30' : 'bg-red-50'}`}>
+                  <AlertTriangle className="w-8 h-8 text-red-500" />
+                </div>
+                <h3 className={`text-lg font-black mb-2 ${textPrimary}`}>{t('friends.unfriendTitle')}</h3>
+                <p className={`text-sm mb-1 ${textMuted}`}>{t('friends.unfriendConfirm', { name: confirmUnfriend.name })}</p>
+                <p className={`text-xs mb-5 ${textMuted}`}>{t('friends.unfriendWarning')}</p>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setConfirmUnfriend(null)}
+                    className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition-colors ${
+                      darkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    }`}
+                  >
+                    {t('friends.cancel')}
+                  </button>
+                  <button
+                    onClick={() => handleRemoveFriend(confirmUnfriend)}
+                    className="flex-1 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-1.5"
+                  >
+                    <UserX className="w-3.5 h-3.5" />
+                    {t('friends.unfriend')}
+                  </button>
+                </div>
+                {/* Block option in confirm dialog (Improvement #5) */}
+                <button
+                  onClick={() => { handleBlockUser(confirmUnfriend.id); setConfirmUnfriend(null); }}
+                  className={`mt-3 w-full py-2 rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-1.5 ${
+                    darkMode ? 'bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-gray-300' : 'bg-gray-50 text-gray-500 hover:bg-gray-100 hover:text-gray-600'
+                  }`}
+                >
+                  <Ban className="w-3 h-3" />
+                  {t('friends.blockInstead')}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ─── Friend Quick View Popup (Improvement #3) ─── */}
+      <AnimatePresence>
+        {quickViewFriend && (
+          <FriendQuickView
+            friend={quickViewFriend}
+            darkMode={darkMode}
+            onClose={() => setQuickViewFriend(null)}
+            onMessage={() => {
+              navigate(`/messages?chat=${quickViewFriend.id}`);
+              setQuickViewFriend(null);
+            }}
+            onViewProfile={() => {
+              navigate(`/user/${quickViewFriend.id}`);
+              setQuickViewFriend(null);
+            }}
+            onRemoveFriend={() => {
+              setConfirmUnfriend(quickViewFriend);
+              setQuickViewFriend(null);
+            }}
+            onBlock={() => {
+              handleBlockUser(quickViewFriend.id);
+            }}
+            position={quickViewPosition}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Image Modal */}
+      {imageModalElement}
     </div>
   );
 };

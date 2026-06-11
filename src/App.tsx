@@ -52,6 +52,7 @@ import { CreateMarketListing } from './components/CreateMarketListing';
 import { MyMarketListings } from './components/MyMarketListings';
 import { SmartReachPage } from './components/SmartReachPage';
 import { PromotionPackagesPage } from './components/PromotionPackagesPage';
+import { GlobalCallOverlay } from './components/GlobalCallOverlay';
 // API
 import { api } from './services/api';
 
@@ -1112,7 +1113,7 @@ const MainLayout = () => {
                         </div>
                         <div className={`relative h-28 overflow-hidden ${darkMode ? 'bg-gray-700' : 'bg-gray-100'}`}>
                           {post.image ? (
-                            <img src={post.image} alt="" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" loading="lazy" />
+                            <img src={post.image} alt="" className="w-full h-full object-cover" loading="lazy" />
                           ) : (
                             <div className={`w-full h-full flex items-center justify-center ${darkMode ? 'bg-gradient-to-br from-gray-700 to-gray-800' : 'bg-gradient-to-br from-amber-50 to-orange-50'}`}>
                               <Megaphone className={`w-10 h-10 ${darkMode ? 'text-gray-600' : 'text-amber-200'}`} />
@@ -1371,6 +1372,7 @@ function AppInner() {
             <Route path="/admin" element={<RequireAdmin><AdminDashboard /></RequireAdmin>} />
             <Route path="*" element={<div className="min-h-screen flex items-center justify-center bg-gray-50" dir={dir}><div className="text-center space-y-6"><div className="w-20 h-20 bg-orange-100 rounded-full flex items-center justify-center mx-auto"><span className="text-4xl">🔍</span></div><h1 className="text-3xl font-black text-gray-900">{t('app.pageNotFound')}</h1><Link to="/" className="inline-flex items-center gap-2 bg-orange-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-orange-700"><ArrowLeft className="w-5 h-5" />{t('app.backToHome')}</Link></div></div>} />
           </Routes>
+          <GlobalCallOverlay />
           <NotificationToast />
           <FloatingChatButton />
           <AIFloatingButton />

@@ -854,6 +854,7 @@ router.get('/friends/list', authMiddleware, (req: Request, res: Response) => {
 
     const friends = friendships.map((f: any) => ({
       id: f.friend_id,
+      friendshipId: f.id,
       name: f.friend_name,
       avatar: f.friend_avatar_base64 || f.friend_avatar || getDefaultAvatar(f.friend_id, f.friend_gender),
       isVerified: !!f.friend_is_verified,
@@ -1148,6 +1149,84 @@ router.post('/friends/unfriend/:friendshipId', authMiddleware, (req: Request, re
     res.json({ message: 'تم إلغاء الصداقة' });
   } catch (err: any) {
     res.status(500).json({ error: 'فشل إلغاء الصداقة', details: err.message });
+  }
+});
+
+// POST /api/friends/block/:userId - Block a user
+router.post('/friends/block/:userId', authMiddleware, (req: Request, res: Response) => {
+  try {
+    const payload = (req as any).user as JwtPayload;
+    const { userId } = req.params;
+    if (!userId) { res.status(400).json({ error: 'معرف المستخدم مطلوب' }); return; }
+    if (userId === payload.userId) { res.status(400).json({ error: 'لا يمكنك حظر نفسك' }); return; }
+
+    // Create blocked_users table if not exists
+    db.prepare(`CREATE TABLE IF NOT EXISTS blocked_users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      blocker_id TEXT NOT NULL,
+      blocked_id TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now')),
+      UNIQUE(blocker_id, blocked_id)
+    )`).run();
+
+    // Remove any existing friendship
+    db.prepare("DELETE FROM friendships WHERE (requester_id = ? AND addressee_id = ?) OR (requester_id = ? AND addressee_id = ?)")
+      .run(payload.userId, userId, userId, payload.userId);
+
+    // Add block record
+    db.prepare('INSERT OR IGNORE INTO blocked_users (blocker_id, blocked_id) VALUES (?, ?)')
+      .run(payload.userId, userId);
+
+    res.json({ message: 'تم حظر المستخدم بنجاح' });
+  } catch (err: any) {
+    res.status(500).json({ error: 'فشل حظر المستخدم', details: err.message });
+  }
+});
+
+// POST /api/friends/unblock/:userId - Unblock a user
+router.post('/friends/unblock/:userId', authMiddleware, (req: Request, res: Response) => {
+  try {
+    const payload = (req as any).user as JwtPayload;
+    const { userId } = req.params;
+    if (!userId) { res.status(400).json({ error: 'معرف المستخدم مطلوب' }); return; }
+
+    // Check if blocked_users table exists
+    const tableCheck = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='blocked_users'").get() as any;
+    if (!tableCheck) { res.json({ message: 'المستخدم غير محظور' }); return; }
+
+    const result = db.prepare('DELETE FROM blocked_users WHERE blocker_id = ? AND blocked_id = ?')
+      .run(payload.userId, userId);
+
+    if (result.changes === 0) {
+      res.status(404).json({ error: 'المستخدم غير محظور' });
+      return;
+    }
+    res.json({ message: 'تم إلغاء الحظر' });
+  } catch (err: any) {
+    res.status(500).json({ error: 'فشل إلغاء الحظر', details: err.message });
+  }
+});
+
+// GET /api/friends/blocked - Get blocked users list
+router.get('/friends/blocked', authMiddleware, (req: Request, res: Response) => {
+  try {
+    const payload = (req as any).user as JwtPayload;
+
+    const tableCheck = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='blocked_users'").get() as any;
+    if (!tableCheck) { res.json([]); return; }
+
+    const blocked = db.prepare(`
+      SELECT b.id as block_id, b.created_at as blocked_at,
+        u.id, u.name, u.avatar
+      FROM blocked_users b
+      JOIN users u ON u.id = b.blocked_id
+      WHERE b.blocker_id = ?
+      ORDER BY b.created_at DESC
+    `).all(payload.userId);
+
+    res.json(blocked);
+  } catch (err: any) {
+    res.json([]);
   }
 });
 
@@ -1659,6 +1738,68 @@ router.get('/livestream/active', authMiddleware, (req: Request, res: Response) =
     res.json(activeStreamers);
   } catch (err: any) {
     res.json([]);
+  }
+});
+
+// GET /api/webrtc/ice-servers - Get ICE server configuration for WebRTC
+router.get('/webrtc/ice-servers', authMiddleware, (req: Request, res: Response) => {
+  try {
+    const iceServers: any[] = [];
+
+    // STUN servers (for discovering public IP)
+    iceServers.push(
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' },
+      { urls: 'stun:stun2.l.google.com:19302' },
+      { urls: 'stun:stun3.l.google.com:19302' },
+      { urls: 'stun:stun4.l.google.com:19302' },
+      // Additional STUN servers for reliability
+      { urls: 'stun:stun.stunprotocol.org:3478' },
+      { urls: 'stun:global.stun.twilio.com:3478' },
+    );
+
+    // TURN servers with credentials (for traversing NAT/firewalls across different networks)
+    // These relay traffic when direct peer-to-peer connection fails
+
+    // 1. Metered.ca free TURN (primary)
+    iceServers.push(
+      { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+      { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
+      { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
+      { urls: 'turn:openrelay.metered.ca:443?transport=udp', username: 'openrelayproject', credential: 'openrelayproject' },
+    );
+
+    // 2. Generate time-limited TURN credentials using HMAC
+    // This approach works with any TURN server that supports long-term credentials
+    // Using a simple shared secret approach for dynamic credentials
+    const turnSecret = process.env.TURN_SECRET || 'nawaqes-turn-secret-2024';
+    const turnHost = process.env.TURN_HOST || '';
+    const turnPort = process.env.TURN_PORT || '3478';
+
+    if (turnHost) {
+      // If a custom TURN server is configured, use it with time-limited credentials
+      const hmac = crypto.createHmac('sha1', turnSecret);
+      const time = Math.floor(Date.now() / 1000) + 86400; // 24 hours
+      const username = `${time}:nawaqes-user`;
+      hmac.update(username);
+      const credential = hmac.digest('base64');
+
+      iceServers.push(
+        { urls: `turn:${turnHost}:${turnPort}`, username, credential },
+        { urls: `turn:${turnHost}:${turnPort}?transport=tcp`, username, credential },
+      );
+    }
+
+    res.json({ iceServers, ttl: 86400 });
+  } catch (err: any) {
+    // Return basic STUN servers as fallback
+    res.json({
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+      ],
+      ttl: 3600,
+    });
   }
 });
 

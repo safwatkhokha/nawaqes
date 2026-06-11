@@ -80,14 +80,19 @@ class ApiClient {
   // Use skipAuthExpired=true for login/register so that a stale token
   // sent in the Authorization header doesn't trigger auth:expired.
   // These endpoints don't require auth, so 401 here is a real login failure.
-  async login(email: string, password: string) {
+  async login(emailOrPhone: string, password: string) {
     // Clear any stale token BEFORE making the login request to avoid
     // sending a bad Authorization header that could confuse things
     const staleToken = this.token;
     this.token = null;
     try {
+      // Determine if the input is a phone number or email
+      const isPhone = /^01\d{9,}$/.test(emailOrPhone.trim());
+      const body = isPhone
+        ? { phone: emailOrPhone.trim(), password }
+        : { email: emailOrPhone.trim(), password };
       const data = await this.request<{ user: any; token: string }>('/auth/login', {
-        method: 'POST', body: JSON.stringify({ email, password }),
+        method: 'POST', body: JSON.stringify(body),
       }, true);
       this.setToken(data.token);
       return data;
@@ -142,6 +147,11 @@ class ApiClient {
     return this.request<{ message: string; user: any; token: string }>('/auth/reset-password', {
       method: 'POST', body: JSON.stringify({ code, newPassword }),
     }, true);
+  }
+
+  // ─── Auth Stats ─────────────────────────────────────────────────────
+  async getAuthStats() {
+    return this.request<{ totalUsers: number; accountsCreatedToday: number }>('/auth/stats', {}, true);
   }
 
   // ─── Posts ─────────────────────────────────────────────────────────
@@ -325,9 +335,13 @@ class ApiClient {
   async rejectFriendRequest(id: string) { return this.request<{ message: string }>(`/friends/reject/${id}`, { method: 'POST' }); }
   async cancelSentFriendRequest(id: string) { return this.request<{ message: string }>(`/friends/cancel/${id}`, { method: 'POST' }); }
   async unfriend(friendshipId: string) { return this.request<{ message: string }>(`/friends/unfriend/${friendshipId}`, { method: 'POST' }); }
+  async blockUser(userId: string) { return this.request<{ message: string }>(`/friends/block/${userId}`, { method: 'POST' }); }
+  async unblockUser(userId: string) { return this.request<{ message: string }>(`/friends/unblock/${userId}`, { method: 'POST' }); }
+  async getBlockedUsers() { return this.request<any[]>('/friends/blocked'); }
   async getFriendshipStatus(userId: string) { return this.request<{ friendshipStatus: string | null; lastSeenAt?: string | null }>(`/friends/status/${userId}`); }
   async notifyFriendsLivestream(streamTitle: string) { return this.request<{ success: boolean; notifiedFriends: number }>('/livestream/notify-friends', { method: 'POST', body: JSON.stringify({ streamTitle }) }); }
   async getActiveLivestreams() { return this.request<any[]>('/livestream/active'); }
+  async getIceServers() { return this.request<{ iceServers: RTCIceServer[]; ttl: number }>('/webrtc/ice-servers'); }
   async searchUsers(query: string) { return this.request<any[]>(`/users/search?q=${encodeURIComponent(query)}`); }
   async getSmartReachStats() { return this.request<any>('/smart-reach/stats'); }
   async getSmartReachPromotionAnalytics(id: string) { return this.request<any>(`/smart-reach/promotion/${id}/analytics`); }
@@ -784,6 +798,44 @@ class ApiClient {
     if (days !== undefined) params.set('days', days.toString());
     const query = params.toString() ? `?${params.toString()}` : '';
     return this.request<{ success: boolean; data: any }>(`/ai/placement-analytics${query}`);
+  }
+
+  // ─── AI Smart Post Suggestions ────────────────────────────────────
+  async aiSmartPostSuggest() {
+    return this.request<{ success: boolean; data: any }>('/ai/smart-post-suggest', {
+      method: 'POST', body: JSON.stringify({}),
+    });
+  }
+
+  // ─── AI Write Assistant ───────────────────────────────────────────
+  async aiWriteAssistant(data: { category: string; description?: string; price?: number; location?: string; type?: string; step?: number }) {
+    return this.request<{ success: boolean; data: any }>('/ai/write-assistant', {
+      method: 'POST', body: JSON.stringify(data),
+    });
+  }
+
+  // ─── AI Best Time to Post ─────────────────────────────────────────
+  async aiBestTime() {
+    return this.request<{ success: boolean; data: any }>('/ai/best-time');
+  }
+
+  // ─── AI Trending Topics ───────────────────────────────────────────
+  async aiTrendingTopics() {
+    return this.request<{ success: boolean; data: any }>('/ai/trending-topics');
+  }
+
+  // ─── AI Price Suggestion ──────────────────────────────────────────
+  async aiPriceSuggest(data: { category: string; description?: string; condition?: string }) {
+    return this.request<{ success: boolean; data: any }>('/ai/price-suggest', {
+      method: 'POST', body: JSON.stringify(data),
+    });
+  }
+
+  // ─── AI Package Advisor ───────────────────────────────────────────
+  async aiPackageAdvisor(data: { category?: string; budget?: number; goal?: string; postId?: string }) {
+    return this.request<{ success: boolean; data: any }>('/ai/package-advisor', {
+      method: 'POST', body: JSON.stringify(data),
+    });
   }
 }
 

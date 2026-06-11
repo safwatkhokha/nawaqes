@@ -194,6 +194,7 @@ class WebSocketManager {
           // Handle livestream chat message
           if (msg.type === 'livestream:chat' && authenticated) {
             const { streamId, text } = msg.data || {};
+            if (!text || !text.trim()) return; // Skip empty messages
             // Get user info
             let name = '';
             let avatar = '';
@@ -202,11 +203,11 @@ class WebSocketManager {
               name = user?.name || 'مستخدم';
               avatar = user?.avatar || '';
             } catch { name = 'مستخدم'; }
-            // Broadcast chat to all viewers (including host)
+            // Broadcast chat to all viewers EXCEPT the sender (sender already adds locally)
             this.broadcast({
               type: 'livestream:chat',
-              data: { streamId: streamId || userId, userId, userName: name, userAvatar: avatar, text, time: new Date().toISOString() },
-            });
+              data: { streamId: streamId || userId, userId, userName: name, userAvatar: avatar, text: text.trim(), time: new Date().toISOString() },
+            }, { excludeUserId: userId });
             return;
           }
 
@@ -230,14 +231,43 @@ class WebSocketManager {
             return;
           }
 
-          // Handle livestream WebRTC signaling (broadcaster → viewers)
+          // Handle livestream WebRTC signaling (broadcaster ↔ viewers)
           if (msg.type === 'livestream:signal' && authenticated) {
             const { streamId, signal } = msg.data || {};
-            // Broadcast the signal to all viewers of this stream
-            this.broadcast({
-              type: 'livestream:signal',
-              data: { streamId: streamId || userId, fromId: userId, signal },
-            }, { excludeUserId: userId });
+            if (!signal) return;
+
+            // Determine the correct recipient based on signal type and direction
+            // Key insight: streamId is always the broadcaster's userId
+            // The broadcaster is the person whose userId === streamId
+            const isBroadcaster = (streamId === userId) || (this.activeStreams.has(userId));
+
+            if (signal?.targetViewer) {
+              // Broadcaster → Specific viewer (offer or ICE candidate for a specific viewer)
+              this.sendToUser(signal.targetViewer, {
+                type: 'livestream:signal',
+                data: { streamId: streamId || userId, fromId: userId, signal },
+              });
+            } else if (signal?.type === 'answer') {
+              // Viewer → Broadcaster (answer to an offer)
+              // streamId in this case is the broadcaster's userId
+              this.sendToUser(streamId, {
+                type: 'livestream:signal',
+                data: { streamId, fromId: userId, signal },
+              });
+            } else if (signal?.candidate && !isBroadcaster) {
+              // Viewer's ICE candidate (no targetViewer) → send to broadcaster only
+              this.sendToUser(streamId, {
+                type: 'livestream:signal',
+                data: { streamId, fromId: userId, signal },
+              });
+            } else if (signal?.candidate && isBroadcaster) {
+              // Broadcaster's ICE candidate without targetViewer - shouldn't happen
+              // but broadcast as fallback to all except sender
+              this.broadcast({
+                type: 'livestream:signal',
+                data: { streamId: streamId || userId, fromId: userId, signal },
+              }, { excludeUserId: userId });
+            }
             return;
           }
 
@@ -298,6 +328,7 @@ class WebSocketManager {
 
   /**
    * Broadcast an event to all connected clients, with optional filtering
+   * Uses userIdToSockets to reach ALL connections per user (multiple tabs/devices)
    */
   broadcast(event: WSEvent, options?: { excludeUserId?: string }) {
     if (!this.wss) return;
@@ -305,14 +336,21 @@ class WebSocketManager {
     const data = JSON.stringify(event);
     const excludeId = event.excludeUserId || options?.excludeUserId;
 
-    for (const [uid, client] of this.clients) {
+    // Use userIdToSockets instead of clients to reach all tabs/devices per user
+    for (const [uid, sockets] of this.userIdToSockets) {
       if (uid === excludeId) continue;
-      if (event.adminOnly && !client.isAdmin) continue;
+      if (event.adminOnly) {
+        // Check if any socket for this user is admin
+        const clientInfo = this.clients.get(uid);
+        if (!clientInfo?.isAdmin) continue;
+      }
       if (event.targetUserIds && !event.targetUserIds.includes(uid)) continue;
       if (event.targetUserId && uid !== event.targetUserId) continue;
 
-      if (client.ws.readyState === WebSocket.OPEN) {
-        client.ws.send(data);
+      for (const ws of sockets) {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(data);
+        }
       }
     }
   }

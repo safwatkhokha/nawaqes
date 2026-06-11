@@ -39,6 +39,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'sonner';
+import { useImageModal } from './ImageModal';
 import type { MarketListing } from '../types';
 
 // ─── Condition Labels ────────────────────────────────────────────────
@@ -101,6 +102,7 @@ export const MarketListingPage: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [sendingMessage, setSendingMessage] = useState(false);
   const [inquirySent, setInquirySent] = useState(false);
+  const { openImageModal, imageModalElement } = useImageModal();
 
   // ─── Promotion Modal State ────────────────────────────────────
   const [showPromotionModal, setShowPromotionModal] = useState(false);
@@ -609,8 +611,9 @@ export const MarketListingPage: React.FC = () => {
                   transition={{ duration: 0.2 }}
                   src={images[currentImageIndex]}
                   alt={`${listing.title} - ${currentImageIndex + 1}`}
-                  className="w-full h-full object-cover"
+                  className="w-full h-full object-cover cursor-pointer"
                   draggable={false}
+                  onClick={() => openImageModal(images[currentImageIndex], listing.title)}
                 />
               </AnimatePresence>
 
@@ -1727,6 +1730,9 @@ export const MarketListingPage: React.FC = () => {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Image Modal */}
+      {imageModalElement}
     </div>
   );
 };

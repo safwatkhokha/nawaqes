@@ -11,18 +11,33 @@ import { wsManager } from './websocket/index.js';
 
 const rootDir = process.cwd();
 
+// --- Detect persistent storage (HF Spaces uses /data) ---
+const PERSISTENT_DIR = fs.existsSync('/data') ? '/data' : path.resolve(rootDir, 'data');
+console.log(`[SETUP] Persistent storage: ${PERSISTENT_DIR}`);
+
 // --- Auto-setup: Create .env and directories if missing ---
-const envPath = path.resolve(rootDir, '.env');
+// Use persistent storage for .env to prevent JWT_SECRET reset on container rebuild
+const envPath = fs.existsSync(path.resolve(PERSISTENT_DIR, '.env'))
+  ? path.resolve(PERSISTENT_DIR, '.env')
+  : path.resolve(rootDir, '.env');
 const envExamplePath = path.resolve(rootDir, '.env.example');
 if (!fs.existsSync(envPath) && fs.existsSync(envExamplePath)) {
   fs.copyFileSync(envExamplePath, envPath);
-  console.log('[SETUP] Created .env from .env.example');
+  console.log(`[SETUP] Created .env at ${envPath}`);
 }
 for (const dir of ['uploads', 'data', 'backups']) {
   const dirPath = path.resolve(rootDir, dir);
   if (!fs.existsSync(dirPath)) {
     fs.mkdirSync(dirPath, { recursive: true });
     console.log(`[SETUP] Created ${dir}/ directory`);
+  }
+}
+// Ensure persistent storage subdirectories exist
+for (const dir of ['uploads', 'uploads/videos', 'backups']) {
+  const dirPath = path.resolve(PERSISTENT_DIR, dir);
+  if (!fs.existsSync(dirPath)) {
+    fs.mkdirSync(dirPath, { recursive: true });
+    console.log(`[SETUP] Created persistent ${dir}/ directory`);
   }
 }
 
@@ -44,6 +59,21 @@ function autoSetEnv(key: string, value: string) {
       lines.push(`${key}=${value}`);
     }
     fs.writeFileSync(envPath, lines.join('\n'), 'utf-8');
+    // Also save to persistent .env if different from main .env
+    const persistentEnvPath = path.resolve(PERSISTENT_DIR, '.env');
+    if (persistentEnvPath !== envPath) {
+      try {
+        const pEnvContent = fs.existsSync(persistentEnvPath) ? fs.readFileSync(persistentEnvPath, 'utf-8') : '';
+        const pLines = pEnvContent.split('\n');
+        const pExistingIndex = pLines.findIndex(l => keyPattern.test(l));
+        if (pExistingIndex >= 0) {
+          pLines[pExistingIndex] = `${key}=${value}`;
+        } else {
+          pLines.push(`${key}=${value}`);
+        }
+        fs.writeFileSync(persistentEnvPath, pLines.join('\n'), 'utf-8');
+      } catch { /* ignore */ }
+    }
   } catch { /* ignore write errors */ }
 }
 

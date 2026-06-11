@@ -12,6 +12,7 @@ import { useTranslation } from 'react-i18next';
 import { useLanguage } from '../contexts/LanguageContext';
 import { toast } from 'sonner';
 import { isUserOnline, initializeMockPresence } from '../utils/presence';
+import { useImageModal } from './ImageModal';
 
 const REACTION_EMOJIS = ['❤️', '👍', '😂', '😮', '😢', '🎉'];
 
@@ -45,8 +46,8 @@ export const MessagesPage: React.FC = () => {
   const [replyToMessage, setReplyToMessage] = useState<ChatMessage | null>(null);
   const [contextMenu, setContextMenu] = useState<{ messageId: string; x: number; y: number } | null>(null);
   const [showReactionPicker, setShowReactionPicker] = useState<string | null>(null); // messageId
-  const [showImagePreview, setShowImagePreview] = useState<string | null>(null);
   const [showTypingIndicator, setShowTypingIndicator] = useState(false);
+  const { openImageModal, imageModalElement } = useImageModal();
   const [uploadingImage, setUploadingImage] = useState(false);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -70,19 +71,56 @@ export const MessagesPage: React.FC = () => {
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
 
-  const ICE_SERVERS: RTCConfiguration = {
-    iceServers: [
+  // ─── Dynamic ICE servers (fetched from backend for reliable cross-network calls) ───
+  const [iceServers, setIceServers] = useState<RTCIceServer[]>([]);
+  const iceServersFetchedRef = useRef(false);
+
+  // Fetch ICE servers from backend on mount
+  useEffect(() => {
+    if (iceServersFetchedRef.current) return;
+    iceServersFetchedRef.current = true;
+    api.getIceServers().then(data => {
+      if (data?.iceServers && data.iceServers.length > 0) {
+        setIceServers(data.iceServers);
+      }
+    }).catch(() => {
+      // Fallback: use hardcoded servers if API fails
+      setIceServers([
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun2.l.google.com:19302' },
+        { urls: 'stun:stun3.l.google.com:19302' },
+        { urls: 'stun:stun4.l.google.com:19302' },
+        { urls: 'stun:stun.stunprotocol.org:3478' },
+        { urls: 'stun:global.stun.twilio.com:3478' },
+        { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+        { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
+        { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
+        { urls: 'turn:openrelay.metered.ca:443?transport=udp', username: 'openrelayproject', credential: 'openrelayproject' },
+      ]);
+    });
+  }, []);
+
+  // Build ICE config from fetched servers (or fallback)
+  const getIceConfig = (): RTCConfiguration => ({
+    iceServers: iceServers.length > 0 ? iceServers : [
       { urls: 'stun:stun.l.google.com:19302' },
       { urls: 'stun:stun1.l.google.com:19302' },
       { urls: 'stun:stun2.l.google.com:19302' },
       { urls: 'stun:stun3.l.google.com:19302' },
       { urls: 'stun:stun4.l.google.com:19302' },
-      // Free TURN servers for better NAT traversal (mobile networks)
+      { urls: 'stun:stun.stunprotocol.org:3478' },
+      { urls: 'stun:global.stun.twilio.com:3478' },
       { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
       { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
       { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
+      { urls: 'turn:openrelay.metered.ca:443?transport=udp', username: 'openrelayproject', credential: 'openrelayproject' },
     ],
-  };
+    // Enable ICE candidate gathering on all interfaces
+    bundlePolicy: 'max-bundle',
+    rtcpMuxPolicy: 'require',
+    iceCandidatePoolSize: 2,
+  });
 
   // Last seen state
   const [contactLastSeen, setContactLastSeen] = useState<string | null>(null);
@@ -567,7 +605,7 @@ export const MessagesPage: React.FC = () => {
 
   // Create peer connection and attach streams — uses refs to avoid stale closures
   const createPeerConnection = useCallback((targetId: string, stream: MediaStream | null) => {
-    const pc = new RTCPeerConnection(ICE_SERVERS);
+    const pc = new RTCPeerConnection(getIceConfig());
     peerConnectionRef.current = pc;
 
     // Add local tracks from the provided stream
@@ -618,14 +656,48 @@ export const MessagesPage: React.FC = () => {
       }
     };
 
+    // Handle ICE connection state changes (more granular than connection state)
+    pc.oniceconnectionstatechange = () => {
+      if (pc.iceConnectionState === 'failed') {
+        // Try ICE restart before giving up
+        if (pc.restartIce) {
+          try {
+            pc.restartIce();
+            return; // Don't give up yet — wait for restart to complete
+          } catch { /* restart failed, will fall through to cleanup */ }
+        }
+        setCallError(t('messages.callConnectionFailed', 'لم يتم الاتصال - تأكد من اتصال الإنترنت وحاول مرة أخرى'));
+        setTimeout(() => cleanupCall(), 3000);
+      }
+      if (pc.iceConnectionState === 'disconnected') {
+        // Don't immediately fail — wait a bit for reconnection
+        setTimeout(() => {
+          if (peerConnectionRef.current && peerConnectionRef.current.iceConnectionState === 'disconnected') {
+            setCallError(t('messages.callConnectionFailed', 'لم يتم الاتصال - تأكد من اتصال الإنترنت وحاول مرة أخرى'));
+            setTimeout(() => cleanupCall(), 3000);
+          }
+        }, 5000);
+      }
+    };
+
     // Handle connection state changes
     pc.onconnectionstatechange = () => {
-      if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
-        setCallError(t('messages.callConnectionFailed', 'لم يتم الاتصال - تأكد من أنك على نفس الشبكة'));
+      if (pc.connectionState === 'failed') {
+        setCallError(t('messages.callConnectionFailed', 'لم يتم الاتصال - تأكد من اتصال الإنترنت وحاول مرة أخرى'));
         setTimeout(() => cleanupCall(), 3000);
+      }
+      if (pc.connectionState === 'disconnected') {
+        // Wait for potential reconnection
+        setTimeout(() => {
+          if (peerConnectionRef.current && peerConnectionRef.current.connectionState === 'disconnected') {
+            setCallError(t('messages.callConnectionFailed', 'لم يتم الاتصال - تأكد من اتصال الإنترنت وحاول مرة أخرى'));
+            setTimeout(() => cleanupCall(), 3000);
+          }
+        }, 5000);
       }
       if (pc.connectionState === 'connected') {
         setCallState('connected');
+        setCallError(null); // Clear any previous error
         // Start duration timer
         if (callTimerRef.current) clearInterval(callTimerRef.current);
         callTimerRef.current = setInterval(() => {
@@ -659,232 +731,44 @@ export const MessagesPage: React.FC = () => {
     }
   };
 
-  // ─── Start an outgoing call ──────────────────────────────────────────
-  const startCall = async (type: 'audio' | 'video') => {
+  // ─── Start an outgoing call (delegates to GlobalCallOverlay) ────────
+  const startCall = (type: 'audio' | 'video') => {
     if (!selectedContact) return;
-    setCallError(null);
-
-    // Check if mediaDevices API is available (requires HTTPS or localhost)
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      setCallError(t('messages.callSecureContextRequired', 'يتطلب الاتصال الصوتي/الفيديو اتصالاً آمناً (HTTPS). يرجى الوصول للموقع عبر HTTPS.'));
-      // Show call overlay with error - use 'outgoing' state to show error overlay
-      setActiveCall({
+    // Dispatch a global event that GlobalCallOverlay listens to
+    // This ensures calls work from ANY page on the site
+    window.dispatchEvent(new CustomEvent('nawaqes:start-call', {
+      detail: {
         type,
         contactId: selectedContact.id,
         contactName: selectedContact.name,
         contactAvatar: selectedContact.avatar,
-      });
-      setCallState('outgoing');
-      return;
-    }
-
-    // Pre-check permission status using the Permissions API
-    const permStatus = await checkPermissionStatus(type);
-    if (permStatus === 'denied') {
-      // Permission was previously denied — show the guide dialog directly
-      setShowPermissionGuide(type);
-      return;
-    }
-
-    try {
-      const testConstraints: MediaStreamConstraints = {
-        audio: true,
-        video: type === 'video' ? { width: { ideal: 640 }, height: { ideal: 480 } } : false,
-      };
-
-      const stream = await navigator.mediaDevices.getUserMedia(testConstraints);
-      setLocalStream(stream);
-      localStreamRef.current = stream;
-      if (localVideoRef.current && type === 'video') {
-        localVideoRef.current.srcObject = stream;
-      }
-
-      setActiveCall({
-        type,
-        contactId: selectedContact.id,
-        contactName: selectedContact.name,
-        contactAvatar: selectedContact.avatar,
-      });
-      setCallState('outgoing');
-
-      // Create peer connection — pass the stream directly to avoid stale closure
-      const pc = createPeerConnection(selectedContact.id, stream);
-
-      // Create offer
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
-
-      // Wait for ICE gathering to complete (with a timeout fallback)
-      const waitForIceGathering = new Promise<void>((resolve) => {
-        if (pc.iceGatheringState === 'complete') {
-          resolve();
-          return;
-        }
-        const timeout = setTimeout(resolve, 2000); // Max 2 seconds wait
-        pc.onicegatheringstatechange = () => {
-          if (pc.iceGatheringState === 'complete') {
-            clearTimeout(timeout);
-            resolve();
-          }
-        };
-      });
-      await waitForIceGathering;
-
-      // Send the local description (which now includes gathered ICE candidates)
-      sendCallSignal(selectedContact.id, {
-        type: 'call-offer',
-        callType: type,
-        fromId: myId,
-        fromName: currentUser?.name || '',
-        fromAvatar: currentUser?.avatar || '',
-        offer: pc.localDescription,
-      });
-    } catch (err: any) {
-      console.error('Failed to start call:', err);
-      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-        // Show permission guide dialog instead of just an error message
-        setShowPermissionGuide(type);
-      } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
-        setCallError(t('messages.callNoDevice', 'لم يتم العثور على كاميرا/ميكروفون. تأكد من توصيل جهاز الصوت/الفيديو.'));
-      } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
-        setCallError(t('messages.callDeviceInUse', 'الكاميرا/الميكروفون قيد الاستخدام من قبل تطبيق آخر. أغلق التطبيقات الأخرى وحاول مرة أخرى.'));
-      } else {
-        setCallError(t('messages.callStartFailed', 'فشل بدء المكالمة. تأكد من أن الموقع يعمل عبر HTTPS وأن الأذونات مفعّلة.'));
-      }
-      cleanupCall();
-    }
+      },
+    }));
   };
 
-  // ─── Retry call after granting permissions ──────────────────────────
-  const retryCallWithPermission = async () => {
-    const type = showPermissionGuide;
+  // ─── Retry call after granting permissions (delegated to GlobalCallOverlay) ──
+  const retryCallWithPermission = () => {
     setShowPermissionGuide(null);
-    if (type) {
-      // Small delay to let the dialog close
-      setTimeout(() => startCall(type), 300);
-    }
   };
 
-  // ─── Accept an incoming call ──────────────────────────────────────────
-  const acceptIncomingCall = async () => {
-    if (!incomingCall) return;
-    setCallError(null);
-
-    // Check if mediaDevices API is available (requires HTTPS or localhost)
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      toast.error(t('messages.callSecureContextRequired', 'يتطلب الاتصال الصوتي/الفيديو اتصالاً آمناً (HTTPS). يرجى الوصول للموقع عبر HTTPS.'));
-      rejectIncomingCall();
-      return;
-    }
-
-    // Pre-check permission status using the Permissions API
-    const permStatus = await checkPermissionStatus(incomingCall.type);
-    if (permStatus === 'denied') {
-      // Permission was previously denied — show the guide dialog instead
-      setShowPermissionGuide(incomingCall.type);
-      rejectIncomingCall();
-      return;
-    }
-
-    try {
-      const constraints: MediaStreamConstraints = {
-        audio: true,
-        video: incomingCall.type === 'video' ? { width: { ideal: 640 }, height: { ideal: 480 } } : false,
-      };
-      const stream = await navigator.mediaDevices.getUserMedia(constraints);
-      setLocalStream(stream);
-      localStreamRef.current = stream;
-      if (localVideoRef.current && incomingCall.type === 'video') {
-        localVideoRef.current.srcObject = stream;
-      }
-
-      setActiveCall({
-        type: incomingCall.type,
-        contactId: incomingCall.fromId,
-        contactName: incomingCall.fromName,
-        contactAvatar: incomingCall.fromAvatar,
-      });
-      // Don't set 'connected' yet — wait for onconnectionstatechange to fire
-      setCallState('outgoing'); // 'outgoing' shows the connecting overlay
-
-      // Create peer connection — pass the stream directly
-      const pc = createPeerConnection(incomingCall.fromId, stream);
-
-      // Set remote description (the offer)
-      if (incomingCall.offer) {
-        await pc.setRemoteDescription(new RTCSessionDescription(incomingCall.offer));
-      }
-
-      // Create answer
-      const answer = await pc.createAnswer();
-      await pc.setLocalDescription(answer);
-
-      // Wait for ICE gathering to complete (with a timeout fallback)
-      const waitForIceGathering = new Promise<void>((resolve) => {
-        if (pc.iceGatheringState === 'complete') {
-          resolve();
-          return;
-        }
-        const timeout = setTimeout(resolve, 2000);
-        pc.onicegatheringstatechange = () => {
-          if (pc.iceGatheringState === 'complete') {
-            clearTimeout(timeout);
-            resolve();
-          }
-        };
-      });
-      await waitForIceGathering;
-
-      // Send answer via WebSocket
-      sendCallSignal(incomingCall.fromId, {
-        type: 'call-answer',
-        answer: pc.localDescription,
-        toId: incomingCall.fromId,
-      });
-
-      setIncomingCall(null);
-      // Duration timer will be started by onconnectionstatechange when state becomes 'connected'
-    } catch (err: any) {
-      console.error('Failed to accept call:', err);
-      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-        // Show permission guide dialog instead of just an error
-        setShowPermissionGuide(incomingCall?.type || 'audio');
-      } else if (err.name === 'NotFoundError') {
-        setCallError(t('messages.callNoDevice', 'لم يتم العثور على كاميرا/ميكروفون.'));
-      } else {
-        setCallError(t('messages.callAcceptFailed', 'فشل قبول المكالمة.'));
-      }
-      rejectIncomingCall();
-    }
-  };
-
-  // ─── Reject an incoming call ──────────────────────────────────────────
-  const rejectIncomingCall = () => {
-    if (incomingCall) {
-      sendCallSignal(incomingCall.fromId, { type: 'call-reject', toId: incomingCall.fromId });
-    }
+  // ─── Accept an incoming call (now handled by GlobalCallOverlay) ──────
+  const acceptIncomingCall = () => {
+    // The GlobalCallOverlay handles the actual WebRTC connection
+    // MessagesPage just clears its local state since the overlay takes over
     setIncomingCall(null);
-    cleanupCall();
   };
 
-  // ─── End the current call ──────────────────────────────────────────────
+  // ─── Reject an incoming call (now handled by GlobalCallOverlay) ──────
+  const rejectIncomingCall = () => {
+    // The GlobalCallOverlay handles rejection and WebSocket signaling
+    // MessagesPage just clears its local state
+    setIncomingCall(null);
+  };
+
+  // ─── End the current call (now handled by GlobalCallOverlay) ──────────
   const endCall = useCallback(() => {
-    if (activeCall) {
-      // Notify remote user
-      sendCallSignal(activeCall.contactId, { type: 'call-end', toId: activeCall.contactId });
-    }
-    const duration = callDuration;
-    const mins = Math.floor(duration / 60);
-    const secs = duration % 60;
-    if (duration > 0) {
-      toast.success(
-        activeCall?.type === 'video'
-          ? t('messages.videoCallEnded', { duration: `${mins}:${secs.toString().padStart(2, '0')}` })
-          : t('messages.audioCallEnded', { duration: `${mins}:${secs.toString().padStart(2, '0')}` })
-      );
-    }
     cleanupCall();
-  }, [activeCall, callDuration, sendCallSignal, cleanupCall, t]);
+  }, [cleanupCall]);
 
   // ─── Listen for incoming call signals via WebSocket ──────────────────
   useEffect(() => {
@@ -912,7 +796,7 @@ export const MessagesPage: React.FC = () => {
             peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(signal.answer))
               .catch(err => {
                 console.error('Failed to set remote description:', err);
-                setCallError(t('messages.callConnectionFailed', 'لم يتم الاتصال - تأكد من أنك على نفس الشبكة'));
+                setCallError(t('messages.callConnectionFailed', 'لم يتم الاتصال - تأكد من اتصال الإنترنت وحاول مرة أخرى'));
               });
           }
           break;
@@ -1489,7 +1373,7 @@ export const MessagesPage: React.FC = () => {
                               src={msg.imageUrl}
                               alt="Chat image"
                               className="max-w-full max-h-64 rounded-xl cursor-pointer hover:opacity-90 transition-opacity object-cover"
-                              onClick={() => setShowImagePreview(msg.imageUrl!)}
+                              onClick={() => openImageModal(msg.imageUrl!, 'Chat image')}
                               onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
                             />
                           </div>
@@ -1749,417 +1633,12 @@ export const MessagesPage: React.FC = () => {
         )}
       </AnimatePresence>
 
-      {/* Incoming Call UI */}
-      <AnimatePresence>
-        {incomingCall && !activeCall && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[310] flex items-center justify-center"
-            dir={dir}
-          >
-            <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" />
-            <div className="relative z-10 flex flex-col items-center text-center px-6">
-              {/* Avatar */}
-              <div className="relative mb-6">
-                <motion.div
-                  animate={{ scale: [1, 1.05, 1] }}
-                  transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
-                  className="w-28 h-28 rounded-full overflow-hidden border-4 border-white/20 shadow-2xl"
-                >
-                  <img src={incomingCall.fromAvatar} alt="" className="w-full h-full object-cover" />
-                </motion.div>
-                {/* Ringing animation */}
-                <motion.div
-                  animate={{ scale: [1, 1.5, 1], opacity: [0.5, 0, 0.5] }}
-                  transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
-                  className="absolute inset-0 rounded-full border-2 border-green-400"
-                />
-                <motion.div
-                  animate={{ scale: [1, 1.8, 1], opacity: [0.3, 0, 0.3] }}
-                  transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut', delay: 0.5 }}
-                  className="absolute inset-0 rounded-full border-2 border-green-400"
-                />
-                <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-10 h-10 rounded-full bg-green-500 flex items-center justify-center shadow-lg border-2 border-white">
-                  {incomingCall.type === 'audio' ? <PhoneCall className="w-5 h-5 text-white" /> : <Video className="w-5 h-5 text-white" />}
-                </div>
-              </div>
+      {/* Image Modal */}
+      {imageModalElement}
 
-              <h2 className="text-2xl font-black text-white mb-2">{incomingCall.fromName}</h2>
-              <p className="text-green-300 text-sm font-bold mb-1">
-                {incomingCall.type === 'video' ? t('messages.videoCall', 'مكالمة فيديو') : t('messages.audioCall', 'مكالمة صوتية')}
-              </p>
-              <p className="text-white/60 text-sm mb-8">
-                {t('messages.incomingCall', 'مكالمة واردة...')}
-              </p>
-
-              {/* Accept / Reject Buttons */}
-              <div className="flex items-center gap-10">
-                <button
-                  onClick={rejectIncomingCall}
-                  className="w-16 h-16 rounded-full bg-red-500 flex items-center justify-center transition-all active:scale-90 hover:bg-red-600 shadow-lg shadow-red-500/30"
-                >
-                  <PhoneOff className="w-7 h-7 text-white" />
-                </button>
-                <button
-                  onClick={acceptIncomingCall}
-                  className="w-16 h-16 rounded-full bg-green-500 flex items-center justify-center transition-all active:scale-90 hover:bg-green-600 shadow-lg shadow-green-500/30"
-                >
-                  <Phone className="w-7 h-7 text-white" />
-                </button>
-              </div>
-              <p className="text-white/40 text-[10px] mt-4">
-                {t('messages.tapToAccept', 'اضغط للقبول أو الرفض')}
-              </p>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Call UI Overlay */}
-      <AnimatePresence>
-        {activeCall && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[300] flex flex-col"
-            dir={dir}
-          >
-            {/* Hidden audio element for reliable remote audio playback */}
-            <audio id="remote-call-audio" autoPlay style={{ display: 'none' }} />
-
-            {/* Full-screen background */}
-            <div className="absolute inset-0 bg-gray-900">
-              {/* Animated gradient circles (shown when no remote video) */}
-              {!(activeCall.type === 'video' && remoteStream) && (
-                <div className="absolute inset-0 overflow-hidden">
-                  <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-orange-500/10 rounded-full blur-3xl animate-pulse" />
-                  <div className="absolute bottom-1/4 right-1/4 w-80 h-80 bg-blue-500/10 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1s' }} />
-                  <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-purple-500/5 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '2s' }} />
-                </div>
-              )}
-            </div>
-
-            {/* Remote video (full screen) */}
-            {activeCall.type === 'video' && remoteStream && (
-              <video
-                ref={remoteVideoRef}
-                autoPlay
-                playsInline
-                className="absolute inset-0 w-full h-full object-cover z-[1]"
-              />
-            )}
-
-            {/* Local video PIP (top-right corner, draggable feel) */}
-            {activeCall.type === 'video' && !isCameraOff && localStream && (
-              <div className="absolute top-16 right-4 z-[10] w-28 h-40 sm:w-36 sm:h-52 rounded-2xl overflow-hidden border-2 border-white/20 shadow-2xl bg-gray-800">
-                <video
-                  ref={localVideoRef}
-                  autoPlay
-                  playsInline
-                  muted
-                  className="w-full h-full object-cover"
-                  style={{ transform: 'scaleX(-1)' }}
-                />
-                {/* Self label */}
-                <div className="absolute bottom-1 left-1 right-1 bg-black/50 rounded-lg px-1.5 py-0.5 text-center">
-                  <span className="text-white text-[9px] font-bold">{t('common.you', 'أنت')}</span>
-                </div>
-              </div>
-            )}
-
-            {/* Remote user avatar (shown when no remote video) */}
-            {!(activeCall.type === 'video' && remoteStream) && (
-              <div className="relative z-[5] flex-1 flex flex-col items-center justify-center px-6">
-                <div className="relative mb-6">
-                  <motion.div
-                    animate={{ scale: [1, 1.05, 1] }}
-                    transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
-                    className="w-32 h-32 rounded-full overflow-hidden border-4 border-white/20 shadow-2xl"
-                  >
-                    <img src={activeCall.contactAvatar} alt="" className="w-full h-full object-cover" />
-                  </motion.div>
-                  {/* Calling animation rings */}
-                  {callState === 'outgoing' && (
-                    <>
-                      <motion.div
-                        animate={{ scale: [1, 1.5, 1], opacity: [0.5, 0, 0.5] }}
-                        transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
-                        className="absolute inset-0 rounded-full border-2 border-green-400"
-                      />
-                      <motion.div
-                        animate={{ scale: [1, 1.8, 1], opacity: [0.3, 0, 0.3] }}
-                        transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut', delay: 0.5 }}
-                        className="absolute inset-0 rounded-full border-2 border-green-400"
-                      />
-                    </>
-                  )}
-                  {/* Call type icon */}
-                  <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-10 h-10 rounded-full bg-green-500 flex items-center justify-center shadow-lg border-2 border-white">
-                    {activeCall.type === 'audio' ? <PhoneCall className="w-5 h-5 text-white" /> : <Video className="w-5 h-5 text-white" />}
-                  </div>
-                </div>
-
-                {/* Name & Status */}
-                <h2 className="text-2xl font-black text-white mb-2">{activeCall.contactName}</h2>
-                <p className="text-green-300 text-sm font-bold mb-1">
-                  {callState === 'outgoing'
-                    ? t('messages.calling', 'جاري الاتصال...')
-                    : activeCall.type === 'video'
-                      ? t('messages.videoCall', 'مكالمة فيديو')
-                      : t('messages.audioCall', 'مكالمة صوتية')}
-                </p>
-              </div>
-            )}
-
-            {/* When remote video IS showing, overlay the name at top */}
-            {activeCall.type === 'video' && remoteStream && (
-              <div className="relative z-[5] pt-4 px-4">
-                <div className="inline-flex items-center gap-2 bg-black/50 backdrop-blur-sm px-3 py-1.5 rounded-xl">
-                  <h2 className="text-sm font-bold text-white">{activeCall.contactName}</h2>
-                  <span className="text-green-300 text-[10px] font-bold">
-                    {callState === 'outgoing' ? t('messages.calling', 'جاري الاتصال...') : t('messages.videoCall', 'مكالمة فيديو')}
-                  </span>
-                </div>
-              </div>
-            )}
-
-            {/* Call error message */}
-            {callError && (
-              <div className="relative z-[5] flex justify-center mt-2">
-                <div className="px-4 py-2 bg-red-500/20 rounded-xl border border-red-500/30">
-                  <p className="text-red-300 text-sm font-bold">{callError}</p>
-                </div>
-              </div>
-            )}
-
-            {/* Duration display */}
-            <div className="relative z-[5] flex justify-center mt-1">
-              <p className="text-white/80 text-lg font-mono font-bold">
-                {formatCallDuration(callDuration)}
-              </p>
-            </div>
-
-            {/* Spacer to push controls to bottom */}
-            <div className="relative z-[5] flex-1" />
-
-            {/* Call Controls — bottom bar */}
-            <div className="relative z-[5] flex items-center justify-center gap-5 py-8 pb-10 bg-gradient-to-t from-black/60 to-transparent">
-              {/* Mute */}
-              <button
-                onClick={() => {
-                  const newMuted = !isMuted;
-                  setIsMuted(newMuted);
-                  // Actually toggle mic track
-                  if (localStreamRef.current) {
-                    localStreamRef.current.getAudioTracks().forEach(track => { track.enabled = !newMuted; });
-                  }
-                }}
-                className={`w-14 h-14 rounded-full flex items-center justify-center transition-all active:scale-90 ${
-                  isMuted ? 'bg-red-500 text-white' : 'bg-white/20 text-white hover:bg-white/30'
-                }`}
-              >
-                {isMuted ? <MicOff className="w-6 h-6" /> : <Mic className="w-6 h-6" />}
-              </button>
-
-              {/* Camera toggle (video call only) */}
-              {activeCall.type === 'video' && (
-                <button
-                  onClick={() => {
-                    const newCamOff = !isCameraOff;
-                    setIsCameraOff(newCamOff);
-                    // Actually toggle video track
-                    if (localStreamRef.current) {
-                      localStreamRef.current.getVideoTracks().forEach(track => { track.enabled = !newCamOff; });
-                    }
-                  }}
-                  className={`w-14 h-14 rounded-full flex items-center justify-center transition-all active:scale-90 ${
-                    isCameraOff ? 'bg-red-500 text-white' : 'bg-white/20 text-white hover:bg-white/30'
-                  }`}
-                >
-                  {isCameraOff ? <CameraOff className="w-6 h-6" /> : <Video className="w-6 h-6" />}
-                </button>
-              )}
-
-              {/* End Call */}
-              <button
-                onClick={endCall}
-                className="w-16 h-16 rounded-full bg-red-500 flex items-center justify-center transition-all active:scale-90 hover:bg-red-600 shadow-lg shadow-red-500/30"
-              >
-                <PhoneOff className="w-7 h-7 text-white" />
-              </button>
-
-              {/* Speaker toggle */}
-              <button
-                onClick={() => {
-                  const newSpeaker = !isSpeakerOn;
-                  setIsSpeakerOn(newSpeaker);
-                  // Toggle audio output on remote video/audio elements
-                  const remoteVid = remoteVideoRef.current;
-                  const remoteAud = document.getElementById('remote-call-audio') as HTMLAudioElement | null;
-                  if (remoteVid) {
-                    try {
-                      // @ts-ignore - setSinkId is not in all TS definitions
-                      remoteVid.setSinkId?.(newSpeaker ? '' : 'default');
-                    } catch {}
-                    remoteVid.volume = newSpeaker ? 1 : 0.3;
-                  }
-                  if (remoteAud) {
-                    try {
-                      // @ts-ignore
-                      remoteAud.setSinkId?.(newSpeaker ? '' : 'default');
-                    } catch {}
-                    remoteAud.volume = newSpeaker ? 1 : 0.3;
-                  }
-                }}
-                className={`w-14 h-14 rounded-full flex items-center justify-center transition-all active:scale-90 ${
-                  isSpeakerOn ? 'bg-white/20 text-white hover:bg-white/30' : 'bg-orange-500 text-white'
-                }`}
-              >
-                {isSpeakerOn ? <Volume2 className="w-6 h-6" /> : <VolumeX className="w-6 h-6" />}
-              </button>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Full-size Image Preview Modal */}
-      <AnimatePresence>
-        {showImagePreview && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4"
-            onClick={() => setShowImagePreview(null)}
-          >
-            <motion.div
-              initial={{ scale: 0.9 }}
-              animate={{ scale: 1 }}
-              exit={{ scale: 0.9 }}
-              className="relative max-w-3xl max-h-[90vh]"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <img
-                src={showImagePreview}
-                alt="Preview"
-                className="max-w-full max-h-[85vh] rounded-xl object-contain"
-              />
-              <button
-                onClick={() => setShowImagePreview(null)}
-                className="absolute top-2 right-2 w-8 h-8 rounded-full bg-black/50 text-white flex items-center justify-center hover:bg-black/70 transition-colors"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* ─── Permission Guide Dialog ─── */}
-      <AnimatePresence>
-        {showPermissionGuide && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[320] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
-            dir={dir}
-          >
-            <motion.div
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              className={`${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} border rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden`}
-              onClick={(e) => e.stopPropagation()}
-            >
-              {/* Header */}
-              <div className="bg-gradient-to-l from-orange-500 to-amber-600 px-5 py-4 text-center">
-                <div className="w-14 h-14 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-2">
-                  {showPermissionGuide === 'video' ? (
-                    <Video className="w-7 h-7 text-white" />
-                  ) : (
-                    <Mic className="w-7 h-7 text-white" />
-                  )}
-                </div>
-                <h3 className="text-white font-black text-lg">
-                  {showPermissionGuide === 'video'
-                    ? t('messages.permissionVideoTitle', 'السماح بالوصول للكاميرا والميكروفون')
-                    : t('messages.permissionAudioTitle', 'السماح بالوصول للميكروفون')}
-                </h3>
-              </div>
-
-              {/* Instructions */}
-              <div className="p-5 space-y-3">
-                <p className={`text-sm font-bold ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                  {t('messages.permissionInstructions', 'لإجراء مكالمة، يحتاج المتصفح إلى إذن الوصول. اتبع الخطوات التالية:')}
-                </p>
-
-                <div className="space-y-2">
-                  {/* Step 1 */}
-                  <div className={`flex items-start gap-3 p-3 rounded-xl ${darkMode ? 'bg-gray-700/50' : 'bg-gray-50'}`}>
-                    <div className="w-6 h-6 bg-orange-500 text-white rounded-full flex items-center justify-center text-xs font-black flex-shrink-0 mt-0.5">1</div>
-                    <div>
-                      <p className={`text-xs font-bold ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>
-                        {t('messages.permissionStep1', 'انقر على أيقونة القفل (🔒) أو إعدادات الموقع في شريط العنوان')}
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Step 2 */}
-                  <div className={`flex items-start gap-3 p-3 rounded-xl ${darkMode ? 'bg-gray-700/50' : 'bg-gray-50'}`}>
-                    <div className="w-6 h-6 bg-orange-500 text-white rounded-full flex items-center justify-center text-xs font-black flex-shrink-0 mt-0.5">2</div>
-                    <div>
-                      <p className={`text-xs font-bold ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>
-                        {showPermissionGuide === 'video'
-                          ? t('messages.permissionStep2Video', 'ابحث عن "الكاميرا" و"الميكروفون" واختر "السماح"')
-                          : t('messages.permissionStep2Audio', 'ابحث عن "الميكروفون" واختر "السماح"')
-                        }
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Step 3 */}
-                  <div className={`flex items-start gap-3 p-3 rounded-xl ${darkMode ? 'bg-gray-700/50' : 'bg-gray-50'}`}>
-                    <div className="w-6 h-6 bg-orange-500 text-white rounded-full flex items-center justify-center text-xs font-black flex-shrink-0 mt-0.5">3</div>
-                    <div>
-                      <p className={`text-xs font-bold ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>
-                        {t('messages.permissionStep3', 'أعد تحميل الصفحة ثم حاول المكالمة مرة أخرى')}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* HTTPS Note */}
-                <div className={`flex items-start gap-2 p-3 rounded-xl border ${darkMode ? 'bg-amber-900/20 border-amber-800/40' : 'bg-amber-50 border-amber-200'}`}>
-                  <AlertCircle className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />
-                  <p className={`text-[11px] font-bold ${darkMode ? 'text-amber-400' : 'text-amber-700'}`}>
-                    {t('messages.permissionHTTPSNote', 'ملاحظة: يتطلب الاتصال الصوتي/الفيديو اتصالاً آمناً (HTTPS). إذا كنت تستخدم HTTP، يجب التحويل لـ HTTPS أولاً.')}
-                  </p>
-                </div>
-              </div>
-
-              {/* Action buttons */}
-              <div className={`px-5 pb-5 flex gap-3`}>
-                <button
-                  onClick={() => setShowPermissionGuide(null)}
-                  className={`flex-1 py-3 rounded-xl text-sm font-bold transition-all active:scale-95 ${darkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
-                >
-                  {t('common.cancel', 'إلغاء')}
-                </button>
-                <button
-                  onClick={retryCallWithPermission}
-                  className="flex-1 py-3 rounded-xl text-sm font-bold text-white bg-gradient-to-l from-orange-500 to-amber-600 hover:from-orange-400 hover:to-amber-500 transition-all active:scale-95"
-                >
-                  {t('messages.retryCall', 'حاول مرة أخرى')}
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* Note: Call UI (incoming/outgoing/connected) is now handled by GlobalCallOverlay
+          which renders at the app root level (App.tsx) and works on ALL pages,
+          not just the messages page. */}
     </div>
   );
 };
