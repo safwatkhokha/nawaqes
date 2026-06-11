@@ -95,6 +95,9 @@ export const LiveStreamPage: React.FC = () => {
   // Stream ID = host user ID
   const streamId = effectiveHostId;
 
+  // ─── Track message IDs to prevent duplicates ─────────────────────
+  const chatMessageIdsRef = useRef<Set<string>>(new Set());
+
   // ─── WebSocket for livestream events ────────────────────────────
   const {
     sendLivestreamStart,
@@ -103,16 +106,26 @@ export const LiveStreamPage: React.FC = () => {
     sendLivestreamJoin,
     sendLivestreamLeave,
     sendLivestreamSignal,
+    isConnected: isWsConnected,
   } = useWebSocket({
     autoConnect: true,
     onLivestreamChat: (data: any) => {
+      // Skip own messages - we already add them locally in sendChatMessage()
+      // This prevents duplicates from the WebSocket broadcast
+      if (data.userId === currentUser?.id) return;
+
+      // Create a stable ID to prevent duplicates from reconnections/re-renders
+      const msgId = `msg_${data.userId}_${data.time}_${data.text?.substring(0, 20)}`;
+      if (chatMessageIdsRef.current.has(msgId)) return; // Already have this message
+      chatMessageIdsRef.current.add(msgId);
+
       const msg: LiveChatMsg = {
-        id: `msg_${Date.now()}_${Math.random()}`,
+        id: msgId,
         user: data.userName || 'مستخدم',
         avatar: data.userAvatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${data.userId}`,
         text: data.text,
         time: new Date(data.time || Date.now()),
-        isSelf: data.userId === currentUser?.id,
+        isSelf: false,
       };
       setChatMessages(prev => [...prev, msg]);
     },
@@ -160,8 +173,16 @@ export const LiveStreamPage: React.FC = () => {
         }
       } else if (cleanSignal.type === 'offer' && isViewer) {
         // Viewer receives offer from broadcaster
-        if (!viewerPeerConnectionRef.current) return;
+        if (!viewerPeerConnectionRef.current) {
+          console.warn('[Livestream] Received offer but no peer connection');
+          return;
+        }
         const pc = viewerPeerConnectionRef.current;
+        // Only process offer if we haven't already set a remote description
+        if (pc.signalingState !== 'stable' && pc.signalingState !== 'have-local-offer') {
+          console.warn('[Livestream] Skipping offer, signaling state:', pc.signalingState);
+          return;
+        }
         await pc.setRemoteDescription(new RTCSessionDescription(cleanSignal));
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
@@ -177,10 +198,14 @@ export const LiveStreamPage: React.FC = () => {
 
         sendLivestreamSignal(streamId, pc.localDescription);
       } else if (cleanSignal.candidate) {
-        // ICE candidate
+        // ICE candidate - only process if we have a relevant peer connection
         if (isViewer && viewerPeerConnectionRef.current) {
-          await viewerPeerConnectionRef.current.addIceCandidate(new RTCIceCandidate(cleanSignal.candidate));
+          // Only add ICE candidates from the broadcaster (fromId should be the stream host)
+          if (fromId === streamId) {
+            await viewerPeerConnectionRef.current.addIceCandidate(new RTCIceCandidate(cleanSignal.candidate));
+          }
         } else if (!isViewer) {
+          // Broadcaster: add ICE candidate from a specific viewer
           const pc = peerConnectionsRef.current.get(fromId);
           if (pc) await pc.addIceCandidate(new RTCIceCandidate(cleanSignal.candidate));
         }
@@ -319,9 +344,13 @@ export const LiveStreamPage: React.FC = () => {
     }
   }, [viewerStream]);
 
-  // ─── Auto-join as viewer when hostId is set ─────────────────────
+  // ─── Auto-join as viewer when hostId is set and WebSocket is connected ───
+  // CRITICAL: Must wait for WebSocket to be connected before joining,
+  // otherwise the join message is lost and the broadcaster never sends an offer
+  const hasJoinedRef = useRef(false);
   useEffect(() => {
-    if (isViewer && hostId) {
+    if (isViewer && hostId && isWsConnected && !hasJoinedRef.current) {
+      hasJoinedRef.current = true;
       joinStream();
     }
     return () => {
@@ -331,7 +360,7 @@ export const LiveStreamPage: React.FC = () => {
       }
       if (hostId) sendLivestreamLeave(hostId);
     };
-  }, []); // Only on mount
+  }, [isViewer, hostId, isWsConnected]); // Re-run when WS connects
 
   // ─── Start Camera (Broadcaster) ─────────────────────────────────
   const startCamera = useCallback(async () => {
@@ -416,6 +445,7 @@ export const LiveStreamPage: React.FC = () => {
     setPeakViewers(0);
     setShowSummary(false);
     setChatMessages([]);
+    chatMessageIdsRef.current.clear(); // Clear dedup tracking
 
     sendLivestreamStart({
       streamId,
@@ -485,8 +515,11 @@ export const LiveStreamPage: React.FC = () => {
   // ─── Send Chat Message ──────────────────────────────────────────
   const sendChatMessage = () => {
     if (!chatInput.trim()) return;
+    const msgId = `msg_self_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    // Track the message ID to prevent duplicates
+    chatMessageIdsRef.current.add(msgId);
     const msg: LiveChatMsg = {
-      id: `msg_${Date.now()}_self`,
+      id: msgId,
       user: currentUser?.name || t('livestream.you'),
       avatar: currentUser?.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=self`,
       text: chatInput.trim(),
