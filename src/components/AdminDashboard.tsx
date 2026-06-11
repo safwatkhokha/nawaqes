@@ -15,7 +15,7 @@ import {
   Image as ImageIcon, Video, MessageSquare, List, Radio, Cog,
   UserX, UserMinus, ArrowUpRight, ArrowDownRight, Filter, Hash,
   Calendar, Info, ExternalLink, Download, ThumbsUp, Link2, MousePointer,
-  ShoppingBag, Phone as PhoneIcon
+  ShoppingBag, Phone as PhoneIcon, Siren
 } from 'lucide-react';
 import { DashboardStats, ChartDataPoint, Post, PromotionRequest, ChargingRequest, NewsItem, Story, Category, ChatMessage } from '../types';
 import { useAppContext } from '../contexts/AppContext';
@@ -201,6 +201,7 @@ export const AdminDashboard = () => {
   const [alertSource, setAlertSource] = useState('نواقص');
   const [alertCategory, setAlertCategory] = useState<'egypt' | 'world' | 'urgent' | 'general'>('general');
   const [isAlert, setIsAlert] = useState(false);
+  const [alertPriority, setAlertPriority] = useState<'normal' | 'important' | 'urgent'>('normal');
 
   // ─── Admin Post Form ──
   const [adminPostContent, setAdminPostContent] = useState('');
@@ -257,7 +258,7 @@ export const AdminDashboard = () => {
   const [allNews, setAllNews] = useState<any[]>([]);
   const [newsFilter, setNewsFilter] = useState<'all' | 'egypt' | 'world' | 'urgent' | 'general'>('all');
   const [editingNewsId, setEditingNewsId] = useState<string | null>(null);
-  const [newsForm, setNewsForm] = useState({ title: '', content: '', source: 'نواقص', category: 'general' as 'egypt' | 'world' | 'urgent' | 'general', isAlert: false });
+  const [newsForm, setNewsForm] = useState({ title: '', content: '', source: 'نواقص', category: 'general' as 'egypt' | 'world' | 'urgent' | 'general', isAlert: false, priority: 'normal' as 'normal' | 'important' | 'urgent' });
 
   // ─── Settings ──
   const [siteSettings, setSiteSettings] = useState<SiteSettings>({ siteName: 'نواقص', maintenanceMode: false, maxUploadSize: 5, defaultWalletBalance: 0 });
@@ -388,7 +389,7 @@ export const AdminDashboard = () => {
   const loadUserDetail = async (userId: string) => { try { const data = await adminFetch('GET', `/admin/user-details/${userId}`); setUserDetail(data); } catch { setUserDetail(null); } };
 
   // ─── Handlers ──
-  const handleAddAlert = async () => { if (!alertTitle.trim()) { toast.error('أدخل عنوان التنبيه'); return; } try { const result = await api.createAlert(alertTitle.trim(), alertContent.trim() || alertTitle.trim(), alertSource); const newAlert: NewsItem = { id: result?.id || `alert_${Date.now()}`, title: alertTitle.trim(), content: alertContent.trim() || alertTitle.trim(), source: alertSource, isAlert, category: alertCategory, createdAt: new Date().toISOString() }; addAdminAlert(newAlert); setAlertTitle(''); setAlertContent(''); toast.success('تم إضافة التنبيه بنجاح'); refreshData(); loadNews(); } catch { toast.error('فشل إضافة التنبيه'); } };
+  const handleAddAlert = async () => { if (!alertTitle.trim()) { toast.error('أدخل عنوان التنبيه'); return; } try { const result = await api.createAlert(alertTitle.trim(), alertContent.trim() || alertTitle.trim(), alertSource, alertPriority); const newAlert: NewsItem = { id: result?.id || `alert_${Date.now()}`, title: alertTitle.trim(), content: alertContent.trim() || alertTitle.trim(), source: alertSource, isAlert, category: alertCategory, priority: alertPriority, createdAt: new Date().toISOString() }; addAdminAlert(newAlert); setAlertTitle(''); setAlertContent(''); setAlertPriority('normal'); toast.success('تم إضافة التنبيه بنجاح'); refreshData(); loadNews(); } catch { toast.error('فشل إضافة التنبيه'); } };
   const handleDeleteUser = async (userId: string) => { if (!confirm('هل أنت متأكد من حذف هذا المستخدم؟')) return; try { await api.deleteUser(userId); loadUsers(); toast.success('تم حذف المستخدم'); } catch { toast.error('فشل حذف المستخدم'); } };
   const toggleVerify = async (userId: string) => { try { await api.toggleUserVerification(userId); loadUsers(); toast.success('تم تحديث حالة التوثيق'); } catch { toast.error('فشل تحديث التوثيق'); } };
   const toggleAdmin = async (userId: string) => { try { await adminFetch('PATCH', `/admin/users/${userId}/toggle-admin`); loadUsers(); toast.success('تم تحديث صلاحيات المدير'); } catch { toast.error('فشل تحديث الصلاحيات'); } };
@@ -407,8 +408,8 @@ export const AdminDashboard = () => {
   const deleteCategoryHandler = async (catId: string) => { if (!confirm('هل أنت متأكد من حذف هذه الفئة؟')) return; try { await adminFetch('DELETE', `/admin/categories/${catId}`); loadCategories(); toast.success('تم حذف الفئة'); } catch { toast.error('فشل حذف الفئة'); } };
   const saveSettings = async () => { try { await adminFetch('PUT', '/admin/settings', { siteName: siteSettings.siteName, maintenanceMode: siteSettings.maintenanceMode, maxUploadSize: siteSettings.maxUploadSize, defaultWalletBalance: siteSettings.defaultWalletBalance }); toast.success('تم حفظ الإعدادات بنجاح'); } catch { toast.error('فشل حفظ الإعدادات'); } };
   const handlePublishPost = async () => { if (!adminPostContent.trim()) { toast.error('أدخل محتوى المنشور'); return; } try { const postData: any = { content: adminPostContent.trim(), type: adminPostType, image: adminPostImage || undefined, isPromoted: adminPostPromoted }; if (adminPostType === 'ad') { postData.price = parseFloat(adminPostPrice) || 0; postData.location = adminPostLocation; postData.category = adminPostCategory; } await api.createPost(postData); setAdminPostContent(''); setAdminPostImage(''); setAdminPostPrice(''); setAdminPostLocation(''); setAdminPostCategory(''); setAdminPostPromoted(false); toast.success('تم نشر المنشور بنجاح'); refreshData(); } catch { toast.error('فشل نشر المنشور'); } };
-  const handleAddNews = async () => { if (!newsForm.title.trim()) { toast.error('أدخل عنوان الخبر'); return; } try { await adminFetch('POST', '/admin/news', { title: newsForm.title.trim(), content: newsForm.content.trim(), source: newsForm.source.trim() || 'نواقص', category: newsForm.category, isAlert: newsForm.isAlert }); setNewsForm({ title: '', content: '', source: 'نواقص', category: 'general', isAlert: false }); loadNews(); toast.success('تم إضافة الخبر'); refreshData(); } catch { toast.error('فشل إضافة الخبر'); } };
-  const handleUpdateNews = async (newsId: string) => { if (!newsForm.title.trim()) { toast.error('أدخل عنوان الخبر'); return; } try { await adminFetch('PUT', `/admin/news/${newsId}`, { title: newsForm.title.trim(), content: newsForm.content.trim(), source: newsForm.source.trim(), category: newsForm.category, isAlert: newsForm.isAlert }); setEditingNewsId(null); setNewsForm({ title: '', content: '', source: 'نواقص', category: 'general', isAlert: false }); loadNews(); toast.success('تم تحديث الخبر'); refreshData(); } catch { toast.error('فشل تحديث الخبر'); } };
+  const handleAddNews = async () => { if (!newsForm.title.trim()) { toast.error('أدخل عنوان الخبر'); return; } try { await adminFetch('POST', '/admin/news', { title: newsForm.title.trim(), content: newsForm.content.trim(), source: newsForm.source.trim() || 'نواقص', category: newsForm.category, isAlert: newsForm.isAlert, priority: newsForm.isAlert ? newsForm.priority : 'normal' }); setNewsForm({ title: '', content: '', source: 'نواقص', category: 'general', isAlert: false, priority: 'normal' }); loadNews(); toast.success('تم إضافة الخبر'); refreshData(); } catch { toast.error('فشل إضافة الخبر'); } };
+  const handleUpdateNews = async (newsId: string) => { if (!newsForm.title.trim()) { toast.error('أدخل عنوان الخبر'); return; } try { await adminFetch('PUT', `/admin/news/${newsId}`, { title: newsForm.title.trim(), content: newsForm.content.trim(), source: newsForm.source.trim(), category: newsForm.category, isAlert: newsForm.isAlert, priority: newsForm.isAlert ? newsForm.priority : 'normal' }); setEditingNewsId(null); setNewsForm({ title: '', content: '', source: 'نواقص', category: 'general', isAlert: false, priority: 'normal' }); loadNews(); toast.success('تم تحديث الخبر'); refreshData(); } catch { toast.error('فشل تحديث الخبر'); } };
   const handleDeleteNews = async (newsId: string) => { if (!confirm('هل أنت متأكد من حذف هذا الخبر؟')) return; try { await adminFetch('DELETE', `/admin/news/${newsId}`); loadNews(); toast.success('تم حذف الخبر'); refreshData(); } catch { toast.error('فشل حذف الخبر'); } };
   const handleDeleteStory = async (storyId: string) => { if (!confirm('هل أنت متأكد من حذف هذه القصة؟')) return; try { await adminFetch('DELETE', `/admin/stories/${storyId}`); setAdminStories(prev => prev.filter(s => s.id !== storyId)); toast.success('تم حذف القصة'); } catch { toast.error('فشل حذف القصة'); } };
   const handleDeleteMessage = async (msgId: string) => { if (!confirm('هل أنت متأكد من حذف هذه الرسالة؟')) return; try { await adminFetch('DELETE', `/admin/chat-messages/${msgId}`); setChatMessages(prev => prev.filter(m => m.id !== msgId)); toast.success('تم حذف الرسالة'); } catch { toast.error('فشل حذف الرسالة'); } };
@@ -1080,6 +1081,32 @@ export const AdminDashboard = () => {
                     <label className={`flex items-center gap-1.5 text-xs font-bold cursor-pointer ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}><input type="checkbox" checked={newsForm.isAlert} onChange={e => setNewsForm(f => ({ ...f, isAlert: e.target.checked }))} className="rounded" />تنبيه</label>
                   </div>
                 </div>
+                {/* Priority selector - only visible when isAlert is checked */}
+                {newsForm.isAlert && (
+                  <div className="flex items-center gap-2">
+                    <span className={`text-xs font-bold ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>الأولوية:</span>
+                    {(['normal', 'important', 'urgent'] as const).map(p => (
+                      <button
+                        key={p}
+                        onClick={() => setNewsForm(f => ({ ...f, priority: p }))}
+                        className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all ${
+                          newsForm.priority === p
+                            ? p === 'urgent'
+                              ? 'bg-red-500 text-white shadow-sm'
+                              : p === 'important'
+                                ? 'bg-orange-500 text-white shadow-sm'
+                                : 'bg-blue-500 text-white shadow-sm'
+                            : darkMode
+                              ? 'bg-gray-700 text-gray-400 hover:bg-gray-600'
+                              : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                        }`}
+                      >
+                        {p === 'urgent' ? <Siren className="w-3 h-3" /> : p === 'important' ? <AlertTriangle className="w-3 h-3" /> : <Info className="w-3 h-3" />}
+                        {p === 'normal' ? 'عادي' : p === 'important' ? 'مهم' : 'عاجل'}
+                      </button>
+                    ))}
+                  </div>
+                )}
                 <textarea value={newsForm.content} onChange={e => setNewsForm(f => ({ ...f, content: e.target.value }))} placeholder="المحتوى..." rows={3} className={`w-full px-3 py-2 rounded-xl border text-sm resize-none ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'border-gray-200'}`} />
                 <div className="flex gap-2 justify-end">
                   <Btn darkMode={darkMode} variant="primary" onClick={handleAddNews}><Plus className="w-3.5 h-3.5" />إضافة</Btn>
@@ -1102,7 +1129,7 @@ export const AdminDashboard = () => {
                         {n.is_alert ? <AlertTriangle className="w-4 h-4" /> : <Newspaper className="w-4 h-4" />}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap"><span className={`font-bold text-sm ${darkMode ? 'text-white' : 'text-gray-900'}`}>{n.title}</span>{n.is_alert && <Badge darkMode={darkMode} color="red">تنبيه</Badge>}<Badge darkMode={darkMode} color={n.category === 'egypt' ? 'orange' : n.category === 'world' ? 'blue' : n.category === 'urgent' ? 'red' : 'gray'}>{n.category === 'egypt' ? 'مصر' : n.category === 'world' ? 'عالمي' : n.category === 'urgent' ? 'عاجل' : 'عام'}</Badge></div>
+                        <div className="flex items-center gap-2 flex-wrap"><span className={`font-bold text-sm ${darkMode ? 'text-white' : 'text-gray-900'}`}>{n.title}</span>{n.is_alert && <Badge darkMode={darkMode} color="red">تنبيه</Badge>}{n.is_alert && n.priority && <Badge darkMode={darkMode} color={n.priority === 'urgent' ? 'red' : n.priority === 'important' ? 'orange' : 'blue'}>{n.priority === 'urgent' ? 'عاجل' : n.priority === 'important' ? 'مهم' : 'عادي'}</Badge>}<Badge darkMode={darkMode} color={n.category === 'egypt' ? 'orange' : n.category === 'world' ? 'blue' : n.category === 'urgent' ? 'red' : 'gray'}>{n.category === 'egypt' ? 'مصر' : n.category === 'world' ? 'عالمي' : n.category === 'urgent' ? 'عاجل' : 'عام'}</Badge></div>
                         <p className={`text-xs mt-1 line-clamp-2 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{n.content}</p>
                         <p className={`text-[10px] mt-1 ${darkMode ? 'text-gray-600' : 'text-gray-300'}`}>{n.source} • {n.created_at ? formatTimeAgo(n.created_at) : ''}</p>
                       </div>

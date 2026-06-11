@@ -318,6 +318,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  const handleWSPostLiked = useCallback((data: any) => {
+    if (data.postId) {
+      setPosts(prev => prev.map(p => p.id === data.postId ? { ...p, likes: data.likes } : p));
+      setPromotedFeedPosts(prev => prev.map(p => p.id === data.postId ? { ...p, likes: data.likes } : p));
+    }
+  }, []);
+
   const handleWSPostCommentDeleted = useCallback((data: any) => {
     if (data.postId) {
       setPosts(prev => prev.map(p => p.id === data.postId ? { ...p, comments: Math.max(0, p.comments - 1) } : p));
@@ -341,6 +348,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       source: data.source || '',
       isAlert: true,
       category: data.category || 'urgent',
+      priority: data.priority || 'urgent',
       createdAt: data.createdAt || new Date().toISOString(),
     };
     setAdminAlerts(prev => {
@@ -456,6 +464,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     onCallSignal: handleWSCallSignal,
     onPostCreated: handleWSPostCreated,
     onPostDeleted: handleWSPostDeleted,
+    onPostLiked: handleWSPostLiked,
     onPostCommented: handleWSPostCommented,
     onPostCommentDeleted: handleWSPostCommentDeleted,
     onStoryCreated: handleWSStoryCreated,
@@ -558,6 +567,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         source: n.source || '',
         isAlert: !!n.is_alert,
         category: n.category || (n.is_alert ? 'urgent' : 'general'),
+        priority: n.priority || 'normal',
         createdAt: n.created_at || '',
       }));
       setNewsItems(mappedNews);

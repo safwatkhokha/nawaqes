@@ -21,6 +21,7 @@ interface UseWebSocketOptions {
   onAdminEvent?: WSEventHandler;
   onPostCreated?: WSEventHandler;
   onPostDeleted?: WSEventHandler;
+  onPostLiked?: WSEventHandler;
   onPostCommented?: WSEventHandler;
   onPostCommentDeleted?: WSEventHandler;
   onStoryCreated?: WSEventHandler;
@@ -31,6 +32,9 @@ interface UseWebSocketOptions {
   onLivestreamViewerJoined?: WSEventHandler;
   onLivestreamViewerLeft?: WSEventHandler;
   onLivestreamSignal?: WSEventHandler;
+  // Data sync events - real-time updates for data changes
+  onDataWalletUpdated?: WSEventHandler;
+  onDataPromotionStatusChanged?: WSEventHandler;
   autoConnect?: boolean;
 }
 
@@ -58,6 +62,9 @@ let sharedListeners: Map<string, Set<WSEventHandler>> = new Map();
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 let currentToken: string | null = null;
+let reconnectAttempts = 0;
+const MAX_RECONNECT_ATTEMPTS = 20;
+const BASE_RECONNECT_DELAY = 2000;
 
 function getWsUrl(): string {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -96,12 +103,21 @@ function connectWs(token: string) {
         // Handle auth success
         if (msg.type === 'auth:success') {
           sharedConnected = true;
+          reconnectAttempts = 0; // Reset reconnect attempts on successful auth
           console.log('[WS] Authenticated:', msg.data);
           notifyListeners('connection:ready', msg.data);
           // Request initial list of online users
           if (sharedWs?.readyState === WebSocket.OPEN) {
             sharedWs.send(JSON.stringify({ type: 'presence:get-online', data: {} }));
           }
+          return;
+        }
+
+        // Handle auth expired - server is telling us the token expired
+        // We should try to refresh the token and reconnect
+        if (msg.type === 'auth:expired') {
+          console.log('[WS] Server reports token expired, attempting refresh...');
+          // The onclose handler will fire next and handle reconnection with token refresh
           return;
         }
 
@@ -117,8 +133,14 @@ function connectWs(token: string) {
       console.log('[WS] Disconnected:', event.code, event.reason);
       notifyListeners('connection:closed', { code: event.code });
 
-      // Auto-reconnect after delay (unless explicitly closed)
-      if (event.code !== 4001 && event.code !== 4003) {
+      // Auto-reconnect after delay (unless explicitly closed or auth failed)
+      // Code 4003 = authentication failed — try refreshing token first
+      // Code 4001 = auth timeout — same, try refresh
+      // Code 1000 = normal close (client disconnect) — don't reconnect
+      if (event.code === 4003 || event.code === 4001) {
+        // Auth failed — try to refresh the token and reconnect
+        attemptReconnectWithTokenRefresh();
+      } else if (event.code !== 1000) {
         scheduleReconnect(token);
       }
     };
@@ -133,12 +155,62 @@ function connectWs(token: string) {
   }
 }
 
+/**
+ * When WebSocket auth fails (expired token), try to refresh the token
+ * via the API and reconnect with the new token.
+ */
+function attemptReconnectWithTokenRefresh() {
+  // Import api dynamically to avoid circular dependency
+  import('../services/api').then(({ api }) => {
+    api.refreshToken().then((result) => {
+      if (result?.token) {
+        console.log('[WS] Token refreshed, reconnecting with new token...');
+        currentToken = result.token;
+        // Small delay before reconnecting
+        setTimeout(() => {
+          connectWs(result.token);
+        }, 1000);
+      } else {
+        console.log('[WS] Token refresh failed, scheduling normal reconnect');
+        // Refresh failed — schedule reconnect with the old token as last resort
+        if (currentToken) {
+          scheduleReconnect(currentToken);
+        }
+      }
+    }).catch(() => {
+      if (currentToken) {
+        scheduleReconnect(currentToken);
+      }
+    });
+  });
+}
+
 function scheduleReconnect(token: string) {
   if (reconnectTimer) clearTimeout(reconnectTimer);
+
+  if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+    console.log('[WS] Max reconnect attempts reached, giving up');
+    notifyListeners('connection:failed', { attempts: reconnectAttempts });
+    return;
+  }
+
+  // Exponential backoff with jitter
+  const delay = Math.min(BASE_RECONNECT_DELAY * Math.pow(1.5, reconnectAttempts), 60000)
+    + Math.random() * 1000;
+  reconnectAttempts++;
+
+  console.log(`[WS] Reconnecting in ${Math.round(delay)}ms (attempt ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`);
+
   reconnectTimer = setTimeout(() => {
     console.log('[WS] Attempting reconnect...');
-    connectWs(token);
-  }, 5000); // Reconnect after 5 seconds
+    // Before reconnecting, try to get a fresh token from api
+    import('../services/api').then(({ api }) => {
+      const freshToken = api.getToken();
+      connectWs(freshToken || token);
+    }).catch(() => {
+      connectWs(token);
+    });
+  }, delay);
 }
 
 function notifyListeners(type: string, data: any) {
@@ -180,6 +252,7 @@ function disconnectWs() {
   }
   sharedConnected = false;
   currentToken = null;
+  reconnectAttempts = 0;
 }
 
 /**
@@ -209,6 +282,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
     if (options.onChatRead) typeToHandler['chat:read'] = options.onChatRead;
     if (options.onPostCreated) typeToHandler['post:created'] = options.onPostCreated;
     if (options.onPostDeleted) typeToHandler['post:deleted'] = options.onPostDeleted;
+    if (options.onPostLiked) typeToHandler['post:liked'] = options.onPostLiked;
     if (options.onPostCommented) typeToHandler['post:commented'] = options.onPostCommented;
     if (options.onPostCommentDeleted) typeToHandler['post:comment_deleted'] = options.onPostCommentDeleted;
     if (options.onStoryCreated) typeToHandler['story:created'] = options.onStoryCreated;
@@ -219,6 +293,10 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
     if (options.onLivestreamViewerJoined) typeToHandler['livestream:viewer-joined'] = options.onLivestreamViewerJoined;
     if (options.onLivestreamViewerLeft) typeToHandler['livestream:viewer-left'] = options.onLivestreamViewerLeft;
     if (options.onLivestreamSignal) typeToHandler['livestream:signal'] = options.onLivestreamSignal;
+
+    // Data sync events - real-time updates for data changes
+    if (options.onDataWalletUpdated) typeToHandler['data:wallet-updated'] = options.onDataWalletUpdated;
+    if (options.onDataPromotionStatusChanged) typeToHandler['data:promotion-status-changed'] = options.onDataPromotionStatusChanged;
 
     // Register each handler
     for (const [type, handler] of Object.entries(typeToHandler)) {
@@ -258,6 +336,10 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
       sharedListeners.set('connection:closed', new Set());
     }
     sharedListeners.get('connection:closed')!.add(connectionHandler);
+    if (!sharedListeners.has('connection:failed')) {
+      sharedListeners.set('connection:failed', new Set());
+    }
+    sharedListeners.get('connection:failed')!.add(connectionHandler);
 
     return () => {
       // Unregister all handlers
@@ -267,6 +349,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
       sharedListeners.get('*')?.delete(wildcardHandler);
       sharedListeners.get('connection:ready')?.delete(connectionHandler);
       sharedListeners.get('connection:closed')?.delete(connectionHandler);
+      sharedListeners.get('connection:failed')?.delete(connectionHandler);
     };
   }, [
     options.onChatMessage,
@@ -282,6 +365,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
     options.onMessage,
     options.onPostCreated,
     options.onPostDeleted,
+    options.onPostLiked,
     options.onPostCommented,
     options.onPostCommentDeleted,
     options.onStoryCreated,
@@ -292,6 +376,8 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
     options.onLivestreamViewerJoined,
     options.onLivestreamViewerLeft,
     options.onLivestreamSignal,
+    options.onDataWalletUpdated,
+    options.onDataPromotionStatusChanged,
   ]);
 
   // Auto-connect when logged in

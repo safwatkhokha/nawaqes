@@ -3,7 +3,8 @@ import { Router, Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import db from '../database/index.js';
-import { generateToken, authMiddleware, JwtPayload } from '../middleware/auth.js';
+import jwt from 'jsonwebtoken';
+import { generateToken, authMiddleware, JwtPayload, verifyTokenDetailed } from '../middleware/auth.js';
 import { getDefaultAvatar } from '../utils/serverAvatar.js';
 
 const router = Router();
@@ -267,6 +268,65 @@ router.post('/reset-password', (req: Request, res: Response) => {
     res.json({ message: 'تم إعادة تعيين كلمة المرور بنجاح', user: parseUser(user), token });
   } catch (err: any) {
     res.status(500).json({ error: 'فشل إعادة تعيين كلمة المرور', details: err.message });
+  }
+});
+
+// POST /api/auth/refresh — Silent token refresh for expired tokens
+// Accepts an expired JWT and issues a new one if the user still exists and is not deactivated.
+// This prevents unexpected logouts when the JWT expires while the user is active.
+router.post('/refresh', (req: Request, res: Response) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      res.status(401).json({ error: 'لا يوجد توكن للتجديد', code: 'NO_TOKEN' });
+      return;
+    }
+    const token = authHeader.split(' ')[1];
+    const result = verifyTokenDetailed(token);
+
+    // If the token is invalid (not just expired), reject — must re-login
+    if ('invalid' in result) {
+      res.status(401).json({ error: 'توكن غير صالح، سجل دخولك مجدداً', code: 'TOKEN_INVALID' });
+      return;
+    }
+
+    // If token is still valid, just return it as-is (no need to refresh)
+    if ('payload' in result) {
+      const user = db.prepare('SELECT * FROM users WHERE id = ?').get(result.payload.userId) as any;
+      if (!user || user.is_deactivated) {
+        res.status(401).json({ error: 'الحساب غير موجود أو معطل', code: 'TOKEN_INVALID' });
+        return;
+      }
+      res.json({ token, user: parseUser(user) });
+      return;
+    }
+
+    // Token is expired — decode it without verification to get the payload
+    // jwt.decode does NOT verify signature; we rely on the fact that the token
+    // was originally signed by us and only expired (verified by verifyTokenDetailed)
+    const decoded = jwt.decode(token) as JwtPayload | null;
+    if (!decoded || !decoded.userId) {
+      res.status(401).json({ error: 'توكن غير صالح', code: 'TOKEN_INVALID' });
+      return;
+    }
+
+    // Verify the user still exists and is not deactivated
+    const user = db.prepare('SELECT * FROM users WHERE id = ?').get(decoded.userId) as any;
+    if (!user) {
+      res.status(401).json({ error: 'المستخدم غير موجود', code: 'TOKEN_INVALID' });
+      return;
+    }
+    if (user.is_deactivated) {
+      res.status(403).json({ error: 'هذا الحساب معطل', code: 'ACCOUNT_DEACTIVATED' });
+      return;
+    }
+
+    // Issue a fresh token
+    const newToken = generateToken({ userId: user.id, email: user.email, isAdmin: !!user.is_admin });
+    res.json({ token: newToken, user: parseUser(user) });
+  } catch (err: any) {
+    console.error('[API] /auth/refresh error:', err.message);
+    res.status(500).json({ error: 'فشل تجديد الجلسة', details: err.message });
   }
 });
 

@@ -933,7 +933,7 @@ const MainLayout = () => {
       <div className="flex justify-center w-full">
         <div className="flex w-full max-w-[1600px]">
           <Sidebar user={currentUser} categories={categories} onCategorySelect={handleCategorySelect} selectedCategory={selectedCategory} />
-          <main className="flex-1 max-w-[700px] w-full px-4 pt-6 pb-20 lg:pb-6 mx-auto">
+          <main className="flex-1 max-w-[700px] w-full px-2 sm:px-4 pt-4 sm:pt-6 pb-24 lg:pb-6 mx-auto">
 
             {/* ══════════════════ COMPACT HERO ══════════════════ */}
             <motion.div
@@ -1314,7 +1314,7 @@ const PageLayout = ({ children }: { children: React.ReactNode }) => {
       <div className="flex justify-center w-full flex-1">
         <div className="flex w-full max-w-[1600px]">
           <Sidebar user={currentUser} categories={categories} onCategorySelect={handleCategorySelect} selectedCategory={selectedCategory} />
-          <main className="flex-1 max-w-[900px] w-full px-4 pt-6 pb-20 lg:pb-6 mx-auto">{children}</main>
+          <main className="flex-1 max-w-[900px] w-full px-2 sm:px-4 pt-4 sm:pt-6 pb-24 lg:pb-6 mx-auto">{children}</main>
           <RightSidebar user={currentUser} notifications={notifications} />
         </div>
       </div>

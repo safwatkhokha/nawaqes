@@ -1,9 +1,9 @@
 import React, { useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Plus, Trash2, AlertTriangle, Newspaper } from 'lucide-react';
+import { Plus, Trash2, AlertTriangle, Newspaper, Info, Siren } from 'lucide-react';
 import { toast } from 'sonner';
 import { NewsItem } from '../../types';
-import { adminFetch, formatTimeAgo, inputClass } from './helpers';
+import { adminFetch, formatTimeAgo, inputClass, selectClass } from './helpers';
 import { Badge, Btn, EmptyState } from './shared';
 
 interface NewsTabProps {
@@ -14,10 +14,24 @@ interface NewsTabProps {
   darkMode: boolean;
 }
 
+// Priority icon mapping
+const priorityIcon: Record<string, React.ReactNode> = {
+  normal: <Info className="w-3.5 h-3.5" />,
+  important: <AlertTriangle className="w-3.5 h-3.5" />,
+  urgent: <Siren className="w-3.5 h-3.5" />,
+};
+
 export const NewsTab: React.FC<NewsTabProps> = ({ allNews, loadNews, refreshData, addAdminAlert, darkMode }) => {
   const { t } = useTranslation();
   const [newsFilter, setNewsFilter] = useState<'all' | 'egypt' | 'world' | 'urgent' | 'general'>('all');
-  const [newsForm, setNewsForm] = useState({ title: '', content: '', source: t('app.nameAr'), category: 'general' as 'egypt' | 'world' | 'urgent' | 'general', isAlert: false });
+  const [newsForm, setNewsForm] = useState({
+    title: '',
+    content: '',
+    source: t('app.nameAr'),
+    category: 'general' as 'egypt' | 'world' | 'urgent' | 'general',
+    isAlert: false,
+    priority: 'normal' as 'normal' | 'important' | 'urgent',
+  });
 
   const filteredNews = useMemo(
     () => newsFilter === 'all' ? allNews : allNews.filter((n: any) => n.category === newsFilter || ((n as any).is_alert && newsFilter === 'urgent')),
@@ -27,8 +41,15 @@ export const NewsTab: React.FC<NewsTabProps> = ({ allNews, loadNews, refreshData
   const handleAddNews = async () => {
     if (!newsForm.title.trim()) { toast.error(t('admin.enterNewsTitle')); return; }
     try {
-      await adminFetch('POST', '/admin/news', { title: newsForm.title.trim(), content: newsForm.content.trim(), source: newsForm.source.trim() || t('app.nameAr'), category: newsForm.category, isAlert: newsForm.isAlert });
-      setNewsForm({ title: '', content: '', source: t('app.nameAr'), category: 'general', isAlert: false });
+      await adminFetch('POST', '/admin/news', {
+        title: newsForm.title.trim(),
+        content: newsForm.content.trim(),
+        source: newsForm.source.trim() || t('app.nameAr'),
+        category: newsForm.category,
+        isAlert: newsForm.isAlert,
+        priority: newsForm.isAlert ? newsForm.priority : 'normal',
+      });
+      setNewsForm({ title: '', content: '', source: t('app.nameAr'), category: 'general', isAlert: false, priority: 'normal' });
       loadNews(); toast.success(t('admin.newsAdded')); refreshData();
     } catch { toast.error(t('admin.newsAddFailed')); }
   };
@@ -36,6 +57,15 @@ export const NewsTab: React.FC<NewsTabProps> = ({ allNews, loadNews, refreshData
   const handleDeleteNews = async (newsId: string) => {
     if (!confirm(t('admin.confirmDeleteNews'))) return;
     try { await adminFetch('DELETE', `/admin/news/${newsId}`); loadNews(); toast.success(t('admin.newsDeleted')); refreshData(); } catch { toast.error(t('admin.newsDeleteFailed')); }
+  };
+
+  // Priority badge color
+  const getPriorityBadge = (priority: string) => {
+    switch (priority) {
+      case 'urgent': return <Badge darkMode={darkMode} color="red">{t('adminAlertBar.priority_urgent')}</Badge>;
+      case 'important': return <Badge darkMode={darkMode} color="orange">{t('adminAlertBar.priority_important')}</Badge>;
+      default: return <Badge darkMode={darkMode} color="blue">{t('adminAlertBar.priority_normal')}</Badge>;
+    }
   };
 
   return (
@@ -48,7 +78,7 @@ export const NewsTab: React.FC<NewsTabProps> = ({ allNews, loadNews, refreshData
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <input value={newsForm.title} onChange={e => setNewsForm(f => ({ ...f, title: e.target.value }))} placeholder={t('admin.newsTitle')} className={inputClass(darkMode)} />
           <div className="flex gap-2">
-            <select value={newsForm.category} onChange={e => setNewsForm(f => ({ ...f, category: e.target.value as any }))} className={`px-3 py-2 rounded-xl border text-xs font-bold ${darkMode ? 'bg-gray-700 border-gray-600 text-gray-300' : 'border-gray-200'}`}>
+            <select value={newsForm.category} onChange={e => setNewsForm(f => ({ ...f, category: e.target.value as any }))} className={selectClass(darkMode)}>
               <option value="general">{t('admin.cat_general')}</option><option value="egypt">{t('admin.cat_egypt')}</option><option value="world">{t('admin.cat_world')}</option><option value="urgent">{t('admin.cat_urgent')}</option>
             </select>
             <label className={`flex items-center gap-1.5 text-xs font-bold cursor-pointer ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
@@ -56,6 +86,34 @@ export const NewsTab: React.FC<NewsTabProps> = ({ allNews, loadNews, refreshData
             </label>
           </div>
         </div>
+
+        {/* Priority selector - only visible when isAlert is checked */}
+        {newsForm.isAlert && (
+          <div className="flex items-center gap-2">
+            <span className={`text-xs font-bold ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{t('adminAlertBar.priority_label')}:</span>
+            {(['normal', 'important', 'urgent'] as const).map(p => (
+              <button
+                key={p}
+                onClick={() => setNewsForm(f => ({ ...f, priority: p }))}
+                className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all ${
+                  newsForm.priority === p
+                    ? p === 'urgent'
+                      ? 'bg-red-500 text-white shadow-sm'
+                      : p === 'important'
+                        ? 'bg-orange-500 text-white shadow-sm'
+                        : 'bg-blue-500 text-white shadow-sm'
+                    : darkMode
+                      ? 'bg-gray-700 text-gray-400 hover:bg-gray-600'
+                      : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                }`}
+              >
+                {priorityIcon[p]}
+                {t(`adminAlertBar.priority_${p}`)}
+              </button>
+            ))}
+          </div>
+        )}
+
         <textarea value={newsForm.content} onChange={e => setNewsForm(f => ({ ...f, content: e.target.value }))} placeholder={t('admin.newsContent')} rows={3} className={`w-full px-3 py-2 rounded-xl border text-sm resize-none ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'border-gray-200'}`} />
         <div className="flex gap-2 justify-end">
           <Btn darkMode={darkMode} variant="primary" onClick={handleAddNews}><Plus className="w-3.5 h-3.5" />{t('admin.add')}</Btn>
@@ -83,6 +141,7 @@ export const NewsTab: React.FC<NewsTabProps> = ({ allNews, loadNews, refreshData
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className={`font-bold text-sm ${darkMode ? 'text-white' : 'text-gray-900'}`}>{n.title}</span>
                   {n.is_alert && <Badge darkMode={darkMode} color="red">{t('admin.alert')}</Badge>}
+                  {n.is_alert && n.priority && getPriorityBadge(n.priority)}
                   <Badge darkMode={darkMode} color={n.category === 'egypt' ? 'orange' : n.category === 'world' ? 'blue' : n.category === 'urgent' ? 'red' : 'gray'}>
                     {n.category === 'egypt' ? t('admin.cat_egypt') : n.category === 'world' ? t('admin.cat_world') : n.category === 'urgent' ? t('admin.cat_urgent') : t('admin.cat_general')}
                   </Badge>

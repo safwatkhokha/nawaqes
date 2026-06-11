@@ -254,6 +254,14 @@ export const LoginPage: React.FC = () => {
 
   return (
     <div className="min-h-screen flex" dir={dir}>
+      {/* Mobile-safe overlay to prevent bottom nav overlap */}
+      <style>{`
+        @media (max-width: 1023px) {
+          .login-scroll-container {
+            padding-bottom: 2rem;
+          }
+        }
+      `}</style>
       {/* ─── Left Side - Branding (Desktop only) ─── */}
       <div className="hidden lg:flex lg:w-[45%] bg-gradient-to-br from-orange-600 via-orange-700 to-red-600 relative overflow-hidden">
         <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHZpZXdCb3g9IjAgMCA2MCA2MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxnIGZpbGw9IiNmZmYiIGZpbGwtb3BhY2l0eT0iLjA1Ij48cGF0aCBkPSJNMzYgMzRjMC0yIDItNCA0LTRzNCAyIDQgNC0yIDQtNCA0LTQtMi00LTR6Ii8+PC9nPjwvZz48L3N2Zz4=')] opacity-30" />
@@ -352,19 +360,19 @@ export const LoginPage: React.FC = () => {
       </div>
 
       {/* ─── Right Side - Auth Form ─── */}
-      <div className="flex-1 flex flex-col items-center justify-center p-4 sm:p-6 bg-gradient-to-b from-[#f8f9fa] to-white overflow-y-auto">
-        <div className="w-full max-w-[420px]">
-          {/* Mobile Logo */}
-          <div className="lg:hidden text-center mb-6">
+      <div className="flex-1 flex flex-col items-center justify-start lg:justify-center p-4 sm:p-6 bg-gradient-to-b from-[#f8f9fa] to-white overflow-y-auto login-scroll-container">
+        <div className="w-full max-w-[420px] my-4 lg:my-0">
+          {/* Mobile Logo - compact on mobile */}
+          <div className="lg:hidden text-center mb-4 sm:mb-6">
             <motion.div
               initial={{ scale: 0.8, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
-              className="w-16 h-16 bg-gradient-to-br from-orange-500 to-red-500 rounded-2xl flex items-center justify-center text-3xl font-black text-white mx-auto mb-3 shadow-lg shadow-orange-200"
+              className="w-12 h-12 sm:w-16 sm:h-16 bg-gradient-to-br from-orange-500 to-red-500 rounded-2xl flex items-center justify-center text-2xl sm:text-3xl font-black text-white mx-auto mb-2 sm:mb-3 shadow-lg shadow-orange-200"
             >
               ن
             </motion.div>
-            <h1 className="text-2xl font-black text-gray-900">{t('app.name')}</h1>
-            <p className="text-gray-500 text-sm mt-1">{t('auth.smartAdsPlatform')}</p>
+            <h1 className="text-xl sm:text-2xl font-black text-gray-900">{t('app.name')}</h1>
+            <p className="text-gray-500 text-xs sm:text-sm mt-0.5 sm:mt-1">{t('auth.smartAdsPlatform')}</p>
 
             {/* Social proof mobile */}
             {accountStats && accountStats.totalUsers > 0 && (
@@ -372,7 +380,7 @@ export const LoginPage: React.FC = () => {
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.3 }}
-                className="mt-3 inline-flex items-center gap-2 px-3 py-1.5 bg-orange-50 rounded-full"
+                className="mt-2 sm:mt-3 inline-flex items-center gap-2 px-3 py-1.5 bg-orange-50 rounded-full"
               >
                 <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
                 <span className="text-xs font-bold text-orange-700">
@@ -412,7 +420,7 @@ export const LoginPage: React.FC = () => {
 
           {/* ─── Registration Step Indicator ─── */}
           {['register-step1', 'register-step2', 'interests'].includes(activeTab) && (
-            <div className="flex items-center gap-2 mb-5">
+            <div className="flex items-center gap-1 sm:gap-2 mb-3 sm:mb-5">
               {registerSteps.map((step, i) => {
                 const currentIdx = getCurrentStepIndex();
                 const isCompleted = i < currentIdx;
@@ -425,15 +433,15 @@ export const LoginPage: React.FC = () => {
                         i <= currentIdx ? 'bg-orange-500' : 'bg-gray-200'
                       }`} />
                     )}
-                    <div className="flex items-center gap-1.5">
-                      <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
+                    <div className="flex items-center gap-1 sm:gap-1.5">
+                      <div className={`w-6 h-6 sm:w-7 sm:h-7 rounded-full flex items-center justify-center text-[10px] sm:text-xs font-bold transition-all ${
                         isCompleted ? 'bg-green-500 text-white' :
                         isCurrent ? 'bg-orange-500 text-white' :
                         'bg-gray-200 text-gray-400'
                       }`}>
-                        {isCompleted ? <Check className="w-4 h-4" /> : <StepIcon className="w-3.5 h-3.5" />}
+                        {isCompleted ? <Check className="w-3 h-3 sm:w-4 sm:h-4" /> : <StepIcon className="w-3 h-3 sm:w-3.5 sm:h-3.5" />}
                       </div>
-                      <span className={`text-[10px] font-bold whitespace-nowrap ${
+                      <span className={`text-[9px] sm:text-[10px] font-bold whitespace-nowrap hidden sm:inline ${
                         isCurrent ? 'text-orange-600' : isCompleted ? 'text-green-600' : 'text-gray-400'
                       }`}>
                         {step.label}
@@ -991,32 +999,32 @@ export const LoginPage: React.FC = () => {
                 initial={{ opacity: 0, x: 20 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -20 }}
-                className="space-y-3"
+                className="space-y-2 sm:space-y-3"
               >
                 {/* Back button */}
                 <button
                   type="button"
                   onClick={() => setActiveTab('register-step2')}
-                  className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-700 font-bold"
+                  className="flex items-center gap-2 text-xs sm:text-sm text-gray-500 hover:text-gray-700 font-bold"
                 >
-                  <ChevronRight className="w-4 h-4 rtl:rotate-180" />
+                  <ChevronRight className="w-3.5 h-3.5 sm:w-4 sm:h-4 rtl:rotate-180" />
                   {t('common.back')}
                 </button>
 
-                {/* Start Experience Banner */}
-                <div className="bg-gradient-to-l from-orange-50 to-amber-50 rounded-2xl p-4 border border-orange-100">
-                  <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 bg-gradient-to-br from-orange-500 to-red-500 rounded-xl flex items-center justify-center shadow-lg shadow-orange-200 flex-shrink-0">
-                      <Star className="w-6 h-6 text-white" />
+                {/* Start Experience Banner - compact on mobile */}
+                <div className="bg-gradient-to-l from-orange-50 to-amber-50 rounded-xl sm:rounded-2xl p-3 sm:p-4 border border-orange-100">
+                  <div className="flex items-center gap-2 sm:gap-3">
+                    <div className="w-9 h-9 sm:w-12 sm:h-12 bg-gradient-to-br from-orange-500 to-red-500 rounded-lg sm:rounded-xl flex items-center justify-center shadow-lg shadow-orange-200 flex-shrink-0">
+                      <Star className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
                     </div>
                     <div>
-                      <h3 className="text-sm font-black text-gray-900">{t('auth.startYourExperience')}</h3>
-                      <p className="text-[10px] text-gray-500 mt-0.5">{t('auth.startYourExperienceDesc')}</p>
+                      <h3 className="text-xs sm:text-sm font-black text-gray-900">{t('auth.startYourExperience')}</h3>
+                      <p className="text-[9px] sm:text-[10px] text-gray-500 mt-0.5">{t('auth.startYourExperienceDesc')}</p>
                     </div>
                   </div>
                   {/* Progress bar */}
-                  <div className="mt-3">
-                    <div className="w-full h-2 bg-white/60 rounded-full overflow-hidden">
+                  <div className="mt-2 sm:mt-3">
+                    <div className="w-full h-1.5 sm:h-2 bg-white/60 rounded-full overflow-hidden">
                       <motion.div
                         initial={{ width: 0 }}
                         animate={{ width: `${Math.min((selectedInterests.length / 5) * 100, 100)}%` }}
@@ -1029,11 +1037,11 @@ export const LoginPage: React.FC = () => {
                         }`}
                       />
                     </div>
-                    <div className="flex items-center justify-between mt-1">
-                      <span className="text-[10px] font-bold text-gray-400">
+                    <div className="flex items-center justify-between mt-0.5 sm:mt-1">
+                      <span className="text-[9px] sm:text-[10px] font-bold text-gray-400">
                         {selectedInterests.length === 0 ? t('auth.minInterests') : t('auth.interestsSelected', { count: selectedInterests.length })}
                       </span>
-                      <span className="text-[10px] font-bold text-orange-600">
+                      <span className="text-[9px] sm:text-[10px] font-bold text-orange-600">
                         {Math.min(Math.round((selectedInterests.length / 5) * 100), 100)}%
                       </span>
                     </div>
@@ -1058,23 +1066,23 @@ export const LoginPage: React.FC = () => {
                   </button>
                 </div>
 
-                {/* Popular Interests (Quick Chips) */}
+                {/* Popular Interests (Quick Chips) - compact on mobile */}
                 <div>
-                  <p className="text-[10px] font-black text-orange-600 uppercase tracking-wider mb-2">{t('auth.recommendedInterests')}</p>
-                  <div className="flex flex-wrap gap-1.5">
+                  <p className="text-[9px] sm:text-[10px] font-black text-orange-600 uppercase tracking-wider mb-1.5 sm:mb-2">{t('auth.recommendedInterests')}</p>
+                  <div className="flex flex-wrap gap-1 sm:gap-1.5">
                     {interestCategories.filter(i => popularInterestIds.includes(i.id)).map(interest => {
                       const isSelected = selectedInterests.includes(interest.id);
                       return (
                         <button
                           key={interest.id}
                           onClick={() => handleInterestToggle(interest.id)}
-                          className={`flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-bold transition-all active:scale-95 ${
+                          className={`flex items-center gap-0.5 sm:gap-1 px-2 sm:px-3 py-1 sm:py-1.5 rounded-full text-[10px] sm:text-xs font-bold transition-all active:scale-95 ${
                             isSelected
                               ? 'bg-orange-600 text-white shadow-md shadow-orange-200'
                               : 'bg-orange-50 text-orange-700 hover:bg-orange-100'
                           }`}
                         >
-                          <span className="text-sm">{interest.icon}</span>
+                          <span className="text-xs sm:text-sm">{interest.icon}</span>
                           {t(interest.nameKey)}
                         </button>
                       );
@@ -1083,10 +1091,10 @@ export const LoginPage: React.FC = () => {
                 </div>
 
                 {/* Group Tabs */}
-                <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-hide">
+                <div className="flex gap-1 sm:gap-1.5 overflow-x-auto pb-1 scrollbar-hide">
                   <button
                     onClick={() => setActiveGroup('all')}
-                    className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-[11px] font-bold whitespace-nowrap transition-all ${
+                    className={`flex items-center gap-1 px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-lg text-[10px] sm:text-[11px] font-bold whitespace-nowrap transition-all ${
                       activeGroup === 'all'
                         ? 'bg-gray-900 text-white shadow-sm'
                         : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
@@ -1098,7 +1106,7 @@ export const LoginPage: React.FC = () => {
                     <button
                       key={group.id}
                       onClick={() => setActiveGroup(group.id)}
-                      className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-[11px] font-bold whitespace-nowrap transition-all ${
+                      className={`flex items-center gap-1 px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-lg text-[10px] sm:text-[11px] font-bold whitespace-nowrap transition-all ${
                         activeGroup === group.id
                           ? 'bg-gray-900 text-white shadow-sm'
                           : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
@@ -1110,8 +1118,8 @@ export const LoginPage: React.FC = () => {
                   ))}
                 </div>
 
-                {/* Interest Cards Grid */}
-                <div className="grid grid-cols-2 gap-2 max-h-[280px] overflow-y-auto pr-1 scrollbar-thin">
+                {/* Interest Cards Grid - responsive height for mobile */}
+                <div className="grid grid-cols-2 gap-1.5 sm:gap-2 max-h-[200px] sm:max-h-[280px] overflow-y-auto pr-1 scrollbar-thin">
                   {(activeGroup === 'all' ? interestCategories : getInterestsByGroup(activeGroup as InterestGroup)).map(interest => {
                     const isSelected = selectedInterests.includes(interest.id);
                     return (
@@ -1119,7 +1127,7 @@ export const LoginPage: React.FC = () => {
                         key={interest.id}
                         onClick={() => handleInterestToggle(interest.id)}
                         whileTap={{ scale: 0.95 }}
-                        className={`relative rounded-xl p-2.5 text-start transition-all overflow-hidden ${
+                        className={`relative rounded-lg sm:rounded-xl p-2 sm:p-2.5 text-start transition-all overflow-hidden ${
                           isSelected
                             ? 'ring-2 ring-orange-500 shadow-lg shadow-orange-100 bg-white'
                             : 'bg-white border border-gray-100 hover:border-gray-200 hover:shadow-sm'
@@ -1129,18 +1137,18 @@ export const LoginPage: React.FC = () => {
                           <div className={`absolute inset-0 bg-gradient-to-br ${interest.color} opacity-10`} />
                         )}
                         {isSelected && (
-                          <div className="absolute top-1.5 left-1.5 w-4 h-4 bg-orange-600 rounded-full flex items-center justify-center">
-                            <Check className="w-2.5 h-2.5 text-white" />
+                          <div className="absolute top-1 left-1 sm:top-1.5 sm:left-1.5 w-3.5 h-3.5 sm:w-4 sm:h-4 bg-orange-600 rounded-full flex items-center justify-center">
+                            <Check className="w-2 h-2 sm:w-2.5 sm:h-2.5 text-white" />
                           </div>
                         )}
                         <div className="relative z-10">
-                          <div className="flex items-center gap-1.5 mb-1">
-                            <span className="text-lg">{interest.icon}</span>
-                            <span className={`text-[11px] font-black ${isSelected ? 'text-gray-900' : 'text-gray-700'}`}>
+                          <div className="flex items-center gap-1 sm:gap-1.5 mb-0.5 sm:mb-1">
+                            <span className="text-base sm:text-lg">{interest.icon}</span>
+                            <span className={`text-[10px] sm:text-[11px] font-black ${isSelected ? 'text-gray-900' : 'text-gray-700'}`}>
                               {t(interest.nameKey)}
                             </span>
                           </div>
-                          <p className={`text-[9px] leading-relaxed line-clamp-2 ${isSelected ? 'text-gray-600' : 'text-gray-400'}`}>
+                          <p className={`text-[8px] sm:text-[9px] leading-relaxed line-clamp-1 sm:line-clamp-2 ${isSelected ? 'text-gray-600' : 'text-gray-400'}`}>
                             {t(interest.descriptionKey)}
                           </p>
                         </div>
@@ -1149,17 +1157,19 @@ export const LoginPage: React.FC = () => {
                   })}
                 </div>
 
-                {/* Create Account Button */}
+                {/* Create Account Button - sticky on mobile for easy access */}
+                <div className="sticky bottom-0 left-0 right-0 pt-2 bg-gradient-to-t from-[#f8f9fa] via-[#f8f9fa] to-transparent sm:static sm:bg-none sm:pt-0">
                 <button
                   onClick={handleFinishRegistration}
                   disabled={isRegistering || selectedInterests.length === 0}
-                  className="w-full bg-gradient-to-l from-orange-600 to-orange-500 text-white py-4 rounded-xl font-black text-base hover:from-orange-700 hover:to-orange-600 active:scale-[0.98] transition-all shadow-lg shadow-orange-200 disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  className="w-full bg-gradient-to-l from-orange-600 to-orange-500 text-white py-3.5 sm:py-4 rounded-xl font-black text-sm sm:text-base hover:from-orange-700 hover:to-orange-600 active:scale-[0.98] transition-all shadow-lg shadow-orange-200 disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 >
                   {isRegistering && <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />}
                   {isRegistering ? t('common.loading') : t('auth.createAccount', { count: selectedInterests.length })}
                 </button>
+                </div>
 
-                <p className="text-[10px] text-gray-400 text-center leading-relaxed">
+                <p className="text-[9px] sm:text-[10px] text-gray-400 text-center leading-relaxed">
                   {t('auth.bySigningUp')} {t('auth.termsOfUse')} {t('auth.privacyPolicy')}
                 </p>
               </motion.div>

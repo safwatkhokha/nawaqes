@@ -496,11 +496,12 @@ router.delete('/users/:id', (req: Request, res: Response) => {
 // ═══════════════════════════════════════════════════════════════════════
 router.post('/alerts', (req: Request, res: Response) => {
   try {
-    const { title, content, source, category } = req.body;
+    const { title, content, source, category, priority } = req.body;
     if (!title || !content) { res.status(400).json({ error: 'العنوان والمحتوى مطلوبان' }); return; }
     const newsCategory = category || 'urgent';
-    const result = db.prepare('INSERT INTO news_items (title, content, source, is_alert, category) VALUES (?, ?, ?, 1, ?)')
-      .run(title, content, source || 'إدارة نواقص', newsCategory);
+    const alertPriority = ['normal', 'important', 'urgent'].includes(priority) ? priority : 'normal';
+    const result = db.prepare('INSERT INTO news_items (title, content, source, is_alert, category, priority) VALUES (?, ?, ?, 1, ?, ?)')
+      .run(title, content, source || 'إدارة نواقص', newsCategory, alertPriority);
 
     const alertId = result.lastInsertRowid;
 
@@ -527,6 +528,7 @@ router.post('/alerts', (req: Request, res: Response) => {
           source: source || 'إدارة نواقص',
           isAlert: true,
           category: newsCategory,
+          priority: alertPriority,
           createdAt: new Date().toISOString(),
         });
       }
@@ -555,12 +557,13 @@ router.delete('/alerts/:id', (req: Request, res: Response) => {
 // ═══════════════════════════════════════════════════════════════════════
 router.post('/news', (req: Request, res: Response) => {
   try {
-    const { title, content, source, category, isAlert } = req.body;
+    const { title, content, source, category, isAlert, priority } = req.body;
     if (!title || !content) { res.status(400).json({ error: 'العنوان والمحتوى مطلوبان' }); return; }
     const newsCategory = category || 'general';
     const alertFlag = isAlert ? 1 : 0;
-    const result = db.prepare('INSERT INTO news_items (title, content, source, is_alert, category) VALUES (?, ?, ?, ?, ?)')
-      .run(title, content, source || 'نواقص', alertFlag, newsCategory);
+    const newsPriority = ['normal', 'important', 'urgent'].includes(priority) ? priority : 'normal';
+    const result = db.prepare('INSERT INTO news_items (title, content, source, is_alert, category, priority) VALUES (?, ?, ?, ?, ?, ?)')
+      .run(title, content, source || 'نواقص', alertFlag, newsCategory, newsPriority);
 
     const newsId = result.lastInsertRowid;
 
@@ -588,6 +591,7 @@ router.post('/news', (req: Request, res: Response) => {
             source: source || 'نواقص',
             isAlert: true,
             category: newsCategory,
+            priority: newsPriority,
             createdAt: new Date().toISOString(),
           });
         }
@@ -608,7 +612,7 @@ router.put('/news/:id', (req: Request, res: Response) => {
     const existing = db.prepare('SELECT id FROM news_items WHERE id = ?').get(req.params.id) as any;
     if (!existing) { res.status(404).json({ error: 'الخبر غير موجود' }); return; }
 
-    const { title, content, source, category, isAlert } = req.body;
+    const { title, content, source, category, isAlert, priority } = req.body;
     const updates: string[] = [];
     const values: any[] = [];
 
@@ -617,6 +621,7 @@ router.put('/news/:id', (req: Request, res: Response) => {
     if (source !== undefined) { updates.push('source = ?'); values.push(source); }
     if (category !== undefined) { updates.push('category = ?'); values.push(category); }
     if (isAlert !== undefined) { updates.push('is_alert = ?'); values.push(isAlert ? 1 : 0); }
+    if (priority !== undefined) { updates.push('priority = ?'); values.push(priority); }
 
     if (updates.length === 0) {
       res.status(400).json({ error: 'لم يتم تقديم أي تحديثات' });

@@ -115,6 +115,43 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Track whether we've completed initial auth check
   const authCheckedRef = React.useRef(false);
 
+  // ─── Proactive Token Refresh ──────────────────────────────────────
+  // Periodically check if the token is about to expire and refresh it
+  // before it does. This prevents unexpected 401 errors and the brief
+  // disruption of silent refresh retries.
+  useEffect(() => {
+    if (!isLoggedIn) return;
+
+    // Check token every 6 hours and proactively refresh it
+    const TOKEN_REFRESH_INTERVAL = 6 * 60 * 60 * 1000; // 6 hours
+
+    const checkAndRefresh = async () => {
+      try {
+        const result = await api.refreshToken();
+        if (result?.token) {
+          // Token was refreshed — WebSocket will be updated via the
+          // auth:token-refreshed event dispatched by api.refreshToken()
+          console.log('[Auth] Proactive token refresh successful');
+        }
+      } catch {
+        // Silently ignore — the token might still be valid
+      }
+    };
+
+    // Initial check after 30 seconds (don't do it immediately on mount)
+    const initialTimer = setTimeout(() => {
+      checkAndRefresh();
+    }, 30000);
+
+    // Then check periodically
+    const interval = setInterval(checkAndRefresh, TOKEN_REFRESH_INTERVAL);
+
+    return () => {
+      clearTimeout(initialTimer);
+      clearInterval(interval);
+    };
+  }, [isLoggedIn]);
+
   // Check for existing session on mount
   useEffect(() => {
     const init = async () => {
@@ -124,6 +161,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           const data = await api.getMe();
           setCurrentUser(mapApiUser(data));
           setIsLoggedIn(true);
+          // ─── FIX: Connect WebSocket after successful session restoration ───
+          // Previously, WebSocket only connected on login/register, not on page reload.
+          // This caused real-time features (notifications, chat, wallet updates) to
+          // stop working after a page refresh, requiring manual re-login.
+          connectWebSocket(token);
         } catch (err: any) {
           // Only clear token on 401 (authentication error)
           // Don't clear on network errors - the token might still be valid
@@ -153,6 +195,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               paymentMethods: [],
               isDeactivated: false,
             });
+            // Still try to connect WebSocket even on network error
+            // The token might be valid — real-time features should work once connection is up
+            connectWebSocket(token);
             // Schedule a retry to fetch user data
             setTimeout(async () => {
               try {
@@ -184,14 +229,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const currentUserIdRef = React.useRef<string | null>(null);
   currentUserIdRef.current = currentUser?.id ?? null;
 
+  // Track the last time we processed an auth:expired event to debounce
+  // rapid consecutive events from multiple failed requests
+  const lastAuthExpiredRef = React.useRef(0);
+
   useEffect(() => {
     const handler = (e: Event) => {
       // Skip if we're in the middle of logging in (stale request race condition)
       if (isLoggingInRef.current) return;
       // Skip if initial auth check hasn't completed yet
       if (!authCheckedRef.current) return;
+      // Skip if user is on a placeholder/pending state (still initializing)
+      if (currentUser?.id === 'pending') return;
+      // Debounce: ignore auth:expired events within 2 seconds of each other
+      // This prevents multiple concurrent 401 responses from triggering multiple logouts
+      const now = Date.now();
+      if (now - lastAuthExpiredRef.current < 2000) return;
+      lastAuthExpiredRef.current = now;
       // Only show logout toast if user was actually logged in
       if (isLoggedInRef.current) {
+        // Disconnect WebSocket before clearing session
+        disconnectWebSocket();
         setCurrentUser(null);
         setIsLoggedIn(false);
         toast.info(t('auth.loggedOut'));
@@ -199,6 +257,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
     window.addEventListener('auth:expired', handler);
     return () => window.removeEventListener('auth:expired', handler);
+  }, []);
+
+  // ─── Listen for token refresh events from api.ts ───────────────────
+  // When the API client silently refreshes the token, we need to:
+  // 1. Update the user data (in case it changed on the server)
+  // 2. Reconnect the WebSocket with the new token
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const { token, user } = (e as CustomEvent).detail || {};
+      if (!token) return;
+
+      console.log('[Auth] Token refreshed, updating session...');
+
+      // Update user data if provided
+      if (user) {
+        setCurrentUser(mapApiUser(user));
+      } else {
+        // Fetch latest user data
+        api.getMe().then((data) => {
+          setCurrentUser(mapApiUser(data));
+        }).catch(() => {});
+      }
+
+      // Reconnect WebSocket with the new token
+      connectWebSocket(token);
+    };
+    window.addEventListener('auth:token-refreshed', handler);
+    return () => window.removeEventListener('auth:token-refreshed', handler);
   }, []);
 
   return (

@@ -6,6 +6,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { api } from '../services/api';
 import { useTranslation } from 'react-i18next';
 import { useLanguage } from '../contexts/LanguageContext';
+import { formatRelativeTimeI18n } from '../utils/time';
 import {
   Bell,
   Zap,
@@ -485,10 +486,18 @@ export const NotificationsPage: React.FC = () => {
                   <p className={`text-sm leading-relaxed mb-3 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>{alertItem.content}</p>
                 )}
                 <div className="flex items-center gap-2">
-                  <span className={`text-[10px] font-bold ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>[{alertItem.source}]</span>
                   {alertItem.createdAt && (
                     <span className={`text-[10px] ${darkMode ? 'text-gray-600' : 'text-gray-400'}`}>
-                      {new Date(alertItem.createdAt).toLocaleDateString('ar-EG')}
+                      {formatRelativeTimeI18n(alertItem.createdAt, t)}
+                    </span>
+                  )}
+                  {alertItem.priority && (
+                    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${
+                      alertItem.priority === 'urgent' ? (darkMode ? 'bg-red-900/40 text-red-300' : 'bg-red-100 text-red-600')
+                      : alertItem.priority === 'important' ? (darkMode ? 'bg-orange-900/40 text-orange-300' : 'bg-orange-100 text-orange-600')
+                      : (darkMode ? 'bg-blue-900/40 text-blue-300' : 'bg-blue-100 text-blue-600')
+                    }`}>
+                      {alertItem.priority === 'urgent' ? t('adminAlertBar.priority_urgent') : alertItem.priority === 'important' ? t('adminAlertBar.priority_important') : t('adminAlertBar.priority_normal')}
                     </span>
                   )}
                 </div>

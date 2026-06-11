@@ -966,7 +966,12 @@
   "adminAlertBar": {
     "title": "Admin Alert",
     "dismissAll": "Dismiss All",
-    "noAlerts": "No alerts"
+    "noAlerts": "No alerts",
+    "priority_normal": "Normal",
+    "priority_important": "Important",
+    "priority_urgent": "Urgent",
+    "priority_label": "Priority",
+    "broadcastTime": "Broadcast Time"
   },
   "stories": {
     "createStory": "Create Story",

@@ -24,8 +24,8 @@ export const MobileBottomNav: React.FC = () => {
   // Determine active tab based on current route
   const currentPath = location.pathname;
 
-  // Hide bottom nav on pages that have their own full-screen controls
-  const hiddenRoutes = ['/livestream', '/live-stream', '/messages'];
+  // Hide bottom nav on pages that have their own full-screen controls or don't need it
+  const hiddenRoutes = ['/livestream', '/live-stream', '/messages', '/login', '/admin'];
   if (hiddenRoutes.some(route => currentPath.startsWith(route))) return null;
 
   const isActive = (path: string) => {
@@ -101,7 +101,7 @@ export const MobileBottomNav: React.FC = () => {
       } border-t`}
       dir={dir}
     >
-      <div className="flex items-end justify-around h-16 mx-auto px-0.5">
+      <div className="flex items-end justify-around h-14 sm:h-16 mx-auto px-0.5">
         {navItems.map((item) => {
           const active = item.isCenter ? false : isActive(item.path);
           const Icon = item.icon;

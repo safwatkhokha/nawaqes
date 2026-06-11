@@ -1,11 +1,61 @@
-// ─── Admin Alert Bar - Shows Only Admin Alerts (No Breaking News) ────
-// Replaces the old NewsTicker which mixed regular news with admin alerts
-// This bar ONLY appears when the admin sends an alert, keeping it clean
+// ─── Admin Alert Bar - Shows Only Admin Alerts ──────────────────────
+// Displays admin alerts with broadcast time (relative) and priority levels
+// Priority: normal (blue), important (orange), urgent (red)
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAppContext } from '../contexts/AppContext';
 import { useTranslation } from 'react-i18next';
-import { ShieldAlert, X, ChevronLeft, ChevronRight } from 'lucide-react';
+import { ShieldAlert, X, ChevronLeft, ChevronRight, Clock, Info, AlertTriangle, Siren } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { formatRelativeTimeI18n } from '../utils/time';
+
+// ─── Priority Config ───────────────────────────────────────────────
+const priorityConfig: Record<string, {
+  labelKey: string;
+  icon: React.ReactNode;
+  barLight: string;
+  barDark: string;
+  badgeBg: string;
+  badgeText: string;
+  pulseColor: string;
+  borderLight: string;
+  borderDark: string;
+}> = {
+  normal: {
+    labelKey: 'adminAlertBar.priority_normal',
+    icon: <Info className="w-3.5 h-3.5" />,
+    barLight: 'bg-gradient-to-l from-blue-600 via-blue-700 to-blue-600 border-b border-blue-700',
+    barDark: 'bg-gradient-to-l from-blue-950/90 via-blue-900/80 to-blue-950/90 border-b border-blue-800/50',
+    badgeBg: 'bg-blue-800/40',
+    badgeText: 'text-blue-200',
+    pulseColor: 'bg-blue-300',
+    borderLight: 'bg-blue-700/30',
+    borderDark: 'bg-blue-800/60',
+  },
+  important: {
+    labelKey: 'adminAlertBar.priority_important',
+    icon: <AlertTriangle className="w-3.5 h-3.5" />,
+    barLight: 'bg-gradient-to-l from-orange-500 via-orange-600 to-orange-500 border-b border-orange-600',
+    barDark: 'bg-gradient-to-l from-orange-950/90 via-orange-900/80 to-orange-950/90 border-b border-orange-800/50',
+    badgeBg: 'bg-orange-800/40',
+    badgeText: 'text-orange-200',
+    pulseColor: 'bg-orange-300',
+    borderLight: 'bg-orange-700/30',
+    borderDark: 'bg-orange-800/60',
+  },
+  urgent: {
+    labelKey: 'adminAlertBar.priority_urgent',
+    icon: <Siren className="w-3.5 h-3.5" />,
+    barLight: 'bg-gradient-to-l from-red-600 via-red-700 to-red-600 border-b border-red-700',
+    barDark: 'bg-gradient-to-l from-red-950/90 via-red-900/80 to-red-950/90 border-b border-red-800/50',
+    badgeBg: 'bg-red-800/40',
+    badgeText: 'text-red-200',
+    pulseColor: 'bg-yellow-300',
+    borderLight: 'bg-red-800/30',
+    borderDark: 'bg-red-800/60',
+  },
+};
+
+const defaultPriority = 'urgent';
 
 export const AdminAlertBar: React.FC = () => {
   const { darkMode, adminAlerts } = useAppContext();
@@ -22,14 +72,16 @@ export const AdminAlertBar: React.FC = () => {
     (a) => a.isAlert && !dismissedIds.has(String(a.id))
   );
 
-  // Auto-rotate through alerts
+  // Auto-rotate through alerts (faster for urgent)
   useEffect(() => {
     if (isPaused || activeAlerts.length <= 1) return;
-    const interval = setInterval(() => {
+    const currentAlert = activeAlerts[currentIndex] || activeAlerts[0];
+    const interval = currentAlert?.priority === 'urgent' ? 4000 : 5000;
+    const timer = setInterval(() => {
       setCurrentIndex((prev) => (prev + 1) % activeAlerts.length);
-    }, 5000);
-    return () => clearInterval(interval);
-  }, [isPaused, activeAlerts.length]);
+    }, interval);
+    return () => clearInterval(timer);
+  }, [isPaused, activeAlerts.length, currentIndex, activeAlerts]);
 
   // Reset index if it exceeds the list length
   useEffect(() => {
@@ -66,34 +118,41 @@ export const AdminAlertBar: React.FC = () => {
   if (activeAlerts.length === 0) return null;
 
   const currentAlert = activeAlerts[currentIndex] || activeAlerts[0];
+  const priority = currentAlert?.priority || defaultPriority;
+  const config = priorityConfig[priority] || priorityConfig[defaultPriority];
+
+  // Format broadcast time
+  const broadcastTime = currentAlert?.createdAt
+    ? formatRelativeTimeI18n(currentAlert.createdAt, t)
+    : '';
 
   return (
     <div
       className={`sticky top-14 z-50 overflow-hidden transition-all duration-300 ${
-        darkMode
-          ? 'bg-gradient-to-l from-red-950/90 via-red-900/80 to-red-950/90 border-b border-red-800/50'
-          : 'bg-gradient-to-l from-red-600 via-red-700 to-red-600 border-b border-red-700'
+        darkMode ? config.barDark : config.barLight
       }`}
       onMouseEnter={() => setIsPaused(true)}
       onMouseLeave={() => setIsPaused(false)}
       onClick={(e) => e.stopPropagation()}
     >
       <div className="flex items-center h-10 max-w-[1600px] mx-auto px-3">
-        {/* ─── Admin Shield Icon + Label ─── */}
+        {/* ─── Priority Icon + Label ─── */}
         <div
           className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg flex-shrink-0 ${
-            darkMode ? 'bg-red-800/60' : 'bg-red-800/30'
+            darkMode ? config.borderDark : config.badgeBg
           }`}
         >
-          <ShieldAlert className="w-3.5 h-3.5 text-yellow-300 animate-pulse" />
+          <span className={`${priority === 'urgent' ? 'animate-pulse' : ''} ${config.badgeText}`}>
+            {config.icon}
+          </span>
           <span className="text-[11px] font-black text-white whitespace-nowrap">
-            {t('adminAlertBar.title')}
+            {t(config.labelKey)}
           </span>
         </div>
 
         {/* ─── Separator ─── */}
         <div
-          className={`w-px h-5 mx-2.5 ${darkMode ? 'bg-red-700/60' : 'bg-white/20'}`}
+          className={`w-px h-5 mx-2.5 ${darkMode ? 'bg-white/10' : 'bg-white/20'}`}
         />
 
         {/* ─── Current Alert Text ─── */}
@@ -102,8 +161,8 @@ export const AdminAlertBar: React.FC = () => {
           onClick={(e) => currentAlert && handleAlertClick(e, currentAlert.id)}
         >
           <div className="flex items-center gap-2 min-w-0 w-full">
-            {/* Pulsing red dot */}
-            <span className="w-2 h-2 rounded-full bg-yellow-300 animate-pulse flex-shrink-0" />
+            {/* Pulsing dot */}
+            <span className={`w-2 h-2 rounded-full ${config.pulseColor} ${priority === 'urgent' ? 'animate-pulse' : ''} flex-shrink-0`} />
 
             {/* Alert title with smooth transition */}
             <p
@@ -113,10 +172,11 @@ export const AdminAlertBar: React.FC = () => {
               {currentAlert?.title}
             </p>
 
-            {/* Source tag */}
-            {currentAlert?.source && (
-              <span className="text-[10px] font-medium text-white/50 flex-shrink-0">
-                [{currentAlert.source}]
+            {/* Broadcast time */}
+            {broadcastTime && (
+              <span className="text-[10px] font-medium text-white/50 flex-shrink-0 flex items-center gap-1">
+                <Clock className="w-2.5 h-2.5" />
+                {broadcastTime}
               </span>
             )}
           </div>
@@ -133,7 +193,7 @@ export const AdminAlertBar: React.FC = () => {
                 );
               }}
               className={`p-0.5 rounded transition-colors ${
-                darkMode ? 'hover:bg-red-800' : 'hover:bg-red-800/30'
+                darkMode ? 'hover:bg-white/10' : 'hover:bg-white/15'
               }`}
             >
               <ChevronLeft className="w-3 h-3 text-white/60" />
@@ -147,7 +207,7 @@ export const AdminAlertBar: React.FC = () => {
                 setCurrentIndex((prev) => (prev + 1) % activeAlerts.length);
               }}
               className={`p-0.5 rounded transition-colors ${
-                darkMode ? 'hover:bg-red-800' : 'hover:bg-red-800/30'
+                darkMode ? 'hover:bg-white/10' : 'hover:bg-white/15'
               }`}
             >
               <ChevronRight className="w-3 h-3 text-white/60" />
@@ -159,7 +219,7 @@ export const AdminAlertBar: React.FC = () => {
         <button
           onClick={(e) => handleDismissAll(e)}
           className={`p-1 rounded-md flex-shrink-0 transition-colors ${
-            darkMode ? 'hover:bg-red-800' : 'hover:bg-red-800/30'
+            darkMode ? 'hover:bg-white/10' : 'hover:bg-white/15'
           }`}
           title={t('adminAlertBar.dismissAll')}
         >

@@ -37,6 +37,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 import { useLanguage } from '../contexts/LanguageContext';
+import { formatRelativeTimeI18n } from '../utils/time';
 
 interface MarketOverview {
   activeAds: number;
@@ -470,7 +471,9 @@ export const MarketPulsePage: React.FC = () => {
                 </div>
 
                 <div className="space-y-2">
-                  {adminAlerts.slice(0, 4).map(item => (
+                  {adminAlerts.slice(0, 4).map(item => {
+                    const priorityColor = item.priority === 'urgent' ? 'bg-red-500' : item.priority === 'important' ? 'bg-orange-500' : 'bg-blue-500';
+                    return (
                     <div
                       key={item.id}
                       className={`flex items-start gap-3 p-3 rounded-xl cursor-pointer transition-colors ${
@@ -480,18 +483,27 @@ export const MarketPulsePage: React.FC = () => {
                         navigate(`/notifications?filter=alert&newsId=${item.id}`);
                       }}
                     >
-                      <div className="w-2 h-2 rounded-full mt-1.5 flex-shrink-0 bg-red-500 animate-pulse" />
+                      <div className={`w-2 h-2 rounded-full mt-1.5 flex-shrink-0 ${priorityColor} ${item.priority === 'urgent' ? 'animate-pulse' : ''}`} />
                       <div className="flex-1 min-w-0">
                         <p className={`text-xs font-bold ${textSecondary} line-clamp-2`}>{item.title}</p>
                         <div className="flex items-center gap-2 mt-1">
-                          <span className={`text-[9px] font-bold ${textMuted}`}>[{item.source}]</span>
                           {item.createdAt && (
-                            <span className={`text-[9px] ${textMuted}`}>{item.createdAt}</span>
+                            <span className={`text-[9px] ${textMuted}`}>{formatRelativeTimeI18n(item.createdAt, t)}</span>
+                          )}
+                          {item.priority && (
+                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${
+                              item.priority === 'urgent' ? (darkMode ? 'bg-red-900/40 text-red-300' : 'bg-red-50 text-red-600')
+                              : item.priority === 'important' ? (darkMode ? 'bg-orange-900/40 text-orange-300' : 'bg-orange-50 text-orange-600')
+                              : (darkMode ? 'bg-blue-900/40 text-blue-300' : 'bg-blue-50 text-blue-600')
+                            }`}>
+                              {item.priority === 'urgent' ? t('adminAlertBar.priority_urgent') : item.priority === 'important' ? t('adminAlertBar.priority_important') : t('adminAlertBar.priority_normal')}
+                            </span>
                           )}
                         </div>
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             )}

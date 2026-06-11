@@ -1019,7 +1019,7 @@ export const AIFloatingButton: React.FC = () => {
         whileHover={{ scale: 1.1 }}
         whileTap={{ scale: 0.9 }}
         onClick={() => setShowAssistant(!showAssistant)}
-        className={`fixed bottom-6 z-[200] w-12 h-12 rounded-2xl items-center justify-center shadow-2xl transition-all flex ${
+        className={`fixed bottom-20 lg:bottom-6 z-[200] w-12 h-12 rounded-2xl items-center justify-center shadow-2xl transition-all flex ${
           showAssistant
             ? 'bg-gray-600 hover:bg-gray-700 text-white right-6 lg:right-6'
             : 'bg-gradient-to-br from-orange-500 via-amber-500 to-orange-600 text-white shadow-orange-300/30 hover:shadow-orange-400/50 right-6 lg:right-6'

@@ -1060,7 +1060,12 @@
   "adminAlertBar": {
     "title": "تنبيه إداري",
     "dismissAll": "إغلاق الكل",
-    "noAlerts": "لا توجد تنبيهات"
+    "noAlerts": "لا توجد تنبيهات",
+    "priority_normal": "عادي",
+    "priority_important": "مهم",
+    "priority_urgent": "عاجل",
+    "priority_label": "الأولوية",
+    "broadcastTime": "وقت البث"
   },
   "stories": {
     "createStory": "إنشاء قصة",

@@ -61,18 +61,18 @@ export const Stories: React.FC<StoriesProps> = ({ stories, currentUser }) => {
         {/* Create Story */}
         <div
           onClick={handleCreateStoryClick}
-          className={`relative min-w-[110px] h-48 rounded-2xl overflow-hidden shadow-sm cursor-pointer group ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'} border`}
+          className={`relative min-w-[80px] sm:min-w-[110px] h-36 sm:h-48 rounded-xl sm:rounded-2xl overflow-hidden shadow-sm cursor-pointer group ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'} border`}
         >
           <div className="h-2/3 overflow-hidden">
             <img src={currentUser?.avatarBase64 || currentUser?.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${currentUser?.id || 'default'}`} className="w-full h-full object-cover group-hover:scale-105 transition-transform" alt="Me" />
           </div>
           <div className="absolute top-2/3 left-1/2 -translate-x-1/2 -translate-y-1/2">
-            <div className={`w-8 h-8 rounded-full bg-orange-600 border-4 ${darkMode ? 'border-gray-800' : 'border-white'} flex items-center justify-center text-white`}>
-              <Plus className="w-5 h-5" />
+            <div className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-orange-600 border-4 ${darkMode ? 'border-gray-800' : 'border-white'} flex items-center justify-center text-white`}>
+              <Plus className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
           </div>
-          <div className={`h-1/3 flex items-end justify-center pb-2 ${darkMode ? 'bg-gray-800' : 'bg-white'}`}>
-            <span className={`text-[11px] font-bold ${darkMode ? 'text-gray-200' : 'text-gray-900'}`}>{t('stories.createStory')}</span>
+          <div className={`h-1/3 flex items-end justify-center pb-1.5 sm:pb-2 ${darkMode ? 'bg-gray-800' : 'bg-white'}`}>
+            <span className={`text-[9px] sm:text-[11px] font-bold ${darkMode ? 'text-gray-200' : 'text-gray-900'}`}>{t('stories.createStory')}</span>
           </div>
         </div>
 
@@ -81,11 +81,11 @@ export const Stories: React.FC<StoriesProps> = ({ stories, currentUser }) => {
           <div
             key={story.id}
             onClick={() => handleStoryClick(story, index)}
-            className={`relative min-w-[110px] h-48 rounded-2xl overflow-hidden shadow-sm cursor-pointer group ${darkMode ? 'border-gray-700' : 'border-gray-100'} border`}
+            className={`relative min-w-[80px] sm:min-w-[110px] h-36 sm:h-48 rounded-xl sm:rounded-2xl overflow-hidden shadow-sm cursor-pointer group ${darkMode ? 'border-gray-700' : 'border-gray-100'} border`}
           >
             {story.type === 'text' && story.backgroundColor ? (
-              <div className={`w-full h-full bg-gradient-to-br ${story.backgroundColor} flex items-center justify-center p-3`}>
-                <p className="text-white text-sm font-black text-center leading-tight" style={{ textShadow: '0 1px 3px rgba(0,0,0,0.3)' }}>
+              <div className={`w-full h-full bg-gradient-to-br ${story.backgroundColor} flex items-center justify-center p-2 sm:p-3`}>
+                <p className="text-white text-xs sm:text-sm font-black text-center leading-tight" style={{ textShadow: '0 1px 3px rgba(0,0,0,0.3)' }}>
                   {story.text || story.user.name}
                 </p>
               </div>
@@ -93,11 +93,11 @@ export const Stories: React.FC<StoriesProps> = ({ stories, currentUser }) => {
               <img src={story.image} className="w-full h-full object-cover group-hover:scale-105 transition-transform" alt="Story" />
             )}
             <div className="absolute inset-0 bg-black/20" />
-            <div className={`absolute top-2 right-2 w-9 h-9 rounded-full border-4 p-0.5 ${darkMode ? 'bg-gray-800' : 'bg-white'} ${story.isSeen ? 'border-gray-300' : 'border-orange-600'}`}>
+            <div className={`absolute top-1.5 sm:top-2 right-1.5 sm:right-2 w-7 h-7 sm:w-9 sm:h-9 rounded-full border-3 sm:border-4 p-0.5 ${darkMode ? 'bg-gray-800' : 'bg-white'} ${story.isSeen ? 'border-gray-300' : 'border-orange-600'}`}>
               <img src={story.user.avatar} className={`w-full h-full rounded-full ${darkMode ? 'bg-gray-700' : 'bg-gray-100'}`} alt={story.user.name} />
             </div>
-            <div className="absolute bottom-2 right-2 left-2">
-              <span className="text-white text-[11px] font-bold leading-tight block truncate" style={{ textShadow: '0 1px 3px rgba(0,0,0,0.5)' }}>
+            <div className="absolute bottom-1.5 sm:bottom-2 right-1.5 sm:right-2 left-1.5 sm:left-2">
+              <span className="text-white text-[9px] sm:text-[11px] font-bold leading-tight block truncate" style={{ textShadow: '0 1px 3px rgba(0,0,0,0.5)' }}>
                 {story.user.name}
               </span>
             </div>

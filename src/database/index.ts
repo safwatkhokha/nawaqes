@@ -194,6 +194,7 @@ db.exec(`
     source TEXT NOT NULL,
     is_alert INTEGER DEFAULT 0,
     category TEXT DEFAULT 'general',
+    priority TEXT DEFAULT 'normal',
     created_at TEXT DEFAULT (datetime('now'))
   );
 
@@ -607,6 +608,11 @@ try {
 // News items table migrations - add category column
 try {
   db.prepare("ALTER TABLE news_items ADD COLUMN category TEXT DEFAULT 'general'").run();
+} catch { /* column already exists */ }
+
+// News items table migrations - add priority column
+try {
+  db.prepare("ALTER TABLE news_items ADD COLUMN priority TEXT DEFAULT 'normal'").run();
 } catch { /* column already exists */ }
 
 // Notifications table migrations - add user_id_ref and link columns
