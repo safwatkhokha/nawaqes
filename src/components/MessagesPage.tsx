@@ -577,23 +577,36 @@ export const MessagesPage: React.FC = () => {
       });
     }
 
-    // Handle remote stream
-    const newRemoteStream = new MediaStream();
+    // Handle remote stream — collect tracks into a new MediaStream
+    let remoteTrackCount = 0;
+    const remoteTracks: MediaStreamTrack[] = [];
     pc.ontrack = (event) => {
-      event.streams[0]?.getTracks().forEach(track => {
-        newRemoteStream.addTrack(track);
-      });
-      setRemoteStream(newRemoteStream);
-      // Set remote stream on video element
+      // Add the track to our collection
+      if (event.streams[0]) {
+        event.streams[0].getTracks().forEach(track => {
+          if (!remoteTracks.find(t => t.id === track.id)) {
+            remoteTracks.push(track);
+          }
+        });
+      } else {
+        // Fallback: use event.track directly when streams[0] is undefined
+        if (!remoteTracks.find(t => t.id === event.track.id)) {
+          remoteTracks.push(event.track);
+        }
+      }
+      remoteTrackCount++;
+      // Create a NEW MediaStream each time so React detects the change (different reference)
+      const newStream = new MediaStream(remoteTracks);
+      setRemoteStream(newStream);
+      // Try to set srcObject immediately (works if video element already mounted)
       if (remoteVideoRef.current) {
-        remoteVideoRef.current.srcObject = newRemoteStream;
-        // Ensure video plays (browsers may block autoplay without user interaction)
+        remoteVideoRef.current.srcObject = newStream;
         remoteVideoRef.current.play().catch(() => {});
       }
       // Also set remote audio on a dedicated audio element for reliable audio playback
       const remoteAudioEl = document.getElementById('remote-call-audio') as HTMLAudioElement | null;
       if (remoteAudioEl) {
-        remoteAudioEl.srcObject = newRemoteStream;
+        remoteAudioEl.srcObject = newStream;
         remoteAudioEl.play().catch(() => {});
       }
     };
@@ -938,6 +951,25 @@ export const MessagesPage: React.FC = () => {
     window.addEventListener('ws:call-signal', handleCallSignal);
     return () => window.removeEventListener('ws:call-signal', handleCallSignal);
   }, [cleanupCall, callDuration, activeCall, t]);
+
+  // Attach REMOTE video when remoteStream changes — CRITICAL FIX
+  // The <video ref={remoteVideoRef}> element is conditionally rendered (only when remoteStream is truthy),
+  // so when ontrack fires and sets remoteStream, the video element doesn't exist yet.
+  // This useEffect runs AFTER React renders the video element, so we can safely attach the stream.
+  useEffect(() => {
+    if (remoteStream && remoteVideoRef.current) {
+      remoteVideoRef.current.srcObject = remoteStream;
+      remoteVideoRef.current.play().catch(() => {});
+    }
+    // Also attach to the hidden audio element for reliable audio playback
+    if (remoteStream) {
+      const remoteAudioEl = document.getElementById('remote-call-audio') as HTMLAudioElement | null;
+      if (remoteAudioEl) {
+        remoteAudioEl.srcObject = remoteStream;
+        remoteAudioEl.play().catch(() => {});
+      }
+    }
+  }, [remoteStream]);
 
   // Attach local video when stream changes
   useEffect(() => {

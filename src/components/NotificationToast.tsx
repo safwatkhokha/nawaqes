@@ -1,7 +1,7 @@
 // ─── Notification Toast - Enhanced Notification System ──────────
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Heart, MessageCircle, CreditCard, Megaphone, AlertTriangle, UserPlus, Settings, Bell, X, Target, Share2, ShoppingBag, Zap } from 'lucide-react';
+import { Heart, MessageCircle, CreditCard, Megaphone, AlertTriangle, UserPlus, Settings, Bell, X, Target, Share2, ShoppingBag, Zap, Radio } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAppContext } from '../contexts/AppContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -22,6 +22,7 @@ const notifConfig: Record<string, { icon: React.ReactNode; color: string; bg: st
   share:     { icon: <Share2 className="w-5 h-5" />,         color: 'text-cyan-500',    bg: 'bg-cyan-500/15',  accent: 'border-l-cyan-500' },
   market:    { icon: <ShoppingBag className="w-5 h-5" />,     color: 'text-amber-500',   bg: 'bg-amber-500/15', accent: 'border-l-amber-500' },
   warning:   { icon: <AlertTriangle className="w-5 h-5" />,  color: 'text-yellow-500',  bg: 'bg-yellow-500/15',accent: 'border-l-yellow-500' },
+  livestream:{ icon: <Radio className="w-5 h-5" />,          color: 'text-red-500',     bg: 'bg-red-500/15',   accent: 'border-l-red-500' },
 };
 
 const defaultConfig = notifConfig.system;
@@ -224,6 +225,7 @@ export const NotificationToast: React.FC = () => {
         case 'promotion': navigate('/promotions'); break;
         case 'message': navigate('/messages'); break;
         case 'friend': navigate('/friends?tab=requests'); break;
+        case 'livestream': navigate(notif.link || '/live-stream'); break;
         case 'alert': navigate('/market-pulse'); break;
         case 'like': navigate('/'); break;
         case 'comment': navigate('/'); break;

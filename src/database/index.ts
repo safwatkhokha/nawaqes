@@ -3,13 +3,18 @@ import Database from 'better-sqlite3';
 import path from 'path';
 import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
+import fs from 'fs';
 
-const DB_PATH = path.resolve(process.cwd(), 'data/nawaqes.db');
+// Use /data (HF Spaces persistent volume) when available, fallback to ./data for local dev
+const PERSISTENT_DIR = fs.existsSync('/data') ? '/data' : path.resolve(process.cwd(), 'data');
+const DB_PATH = path.resolve(PERSISTENT_DIR, 'nawaqes.db');
 
 // Ensure data directory exists
-import fs from 'fs';
 const dataDir = path.dirname(DB_PATH);
 if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
+
+console.log(`[DB] Database path: ${DB_PATH}`);
+console.log(`[DB] Using persistent storage: ${PERSISTENT_DIR === '/data'}`);
 
 const db = new Database(DB_PATH);
 

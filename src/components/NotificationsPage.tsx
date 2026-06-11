@@ -27,6 +27,7 @@ import {
   Check,
   Trash2,
   ChevronDown,
+  Radio,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'sonner';
@@ -169,6 +170,7 @@ export const NotificationsPage: React.FC = () => {
       case 'share': return <Share2 className="w-4 h-4 text-cyan-500" />;
       case 'market': return <ShoppingBag className="w-4 h-4 text-amber-500" />;
       case 'warning': return <AlertTriangle className="w-4 h-4 text-yellow-500" />;
+      case 'livestream': return <Radio className="w-4 h-4 text-red-500" />;
       default: return <Bell className="w-4 h-4 text-gray-500" />;
     }
   };
@@ -189,6 +191,7 @@ export const NotificationsPage: React.FC = () => {
       case 'share': return darkMode ? 'bg-cyan-900/20 border-cyan-800/30' : 'bg-cyan-50 border-cyan-100';
       case 'market': return darkMode ? 'bg-amber-900/20 border-amber-800/30' : 'bg-amber-50 border-amber-100';
       case 'warning': return darkMode ? 'bg-yellow-900/20 border-yellow-800/30' : 'bg-yellow-50 border-yellow-100';
+      case 'livestream': return darkMode ? 'bg-red-900/20 border-red-800/30' : 'bg-red-50 border-red-100';
       default: return darkMode ? 'bg-gray-800 border-gray-700' : 'bg-gray-50 border-gray-100';
     }
   };
@@ -206,6 +209,7 @@ export const NotificationsPage: React.FC = () => {
       case 'share': return darkMode ? 'bg-cyan-900/40' : 'bg-cyan-100';
       case 'market': return darkMode ? 'bg-amber-900/40' : 'bg-amber-100';
       case 'warning': return darkMode ? 'bg-yellow-900/40' : 'bg-yellow-100';
+      case 'livestream': return darkMode ? 'bg-red-900/40' : 'bg-red-100';
       default: return darkMode ? 'bg-gray-700' : 'bg-gray-100';
     }
   };
@@ -247,6 +251,16 @@ export const NotificationsPage: React.FC = () => {
           navigate(`/user/${notif.userId}`);
         } else {
           navigate('/friends?tab=requests');
+        }
+        return;
+      case 'livestream':
+        // Navigate to the live stream of the host
+        if (notif.link) {
+          navigate(notif.link);
+        } else if (notif.userId) {
+          navigate(`/live-stream/${notif.userId}`);
+        } else {
+          navigate('/live-stream');
         }
         return;
       case 'like':

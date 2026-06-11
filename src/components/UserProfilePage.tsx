@@ -218,7 +218,7 @@ export const UserProfilePage: React.FC = () => {
           <div className="absolute top-4 left-4 flex gap-2 z-10">
             {isUserLive && (
               <button
-                onClick={() => navigate('/live-stream')}
+                onClick={() => navigate(`/live-stream/${targetUser.id}`)}
                 className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold bg-red-500 text-white hover:bg-red-600 transition-all active:scale-95 backdrop-blur-md shadow-lg animate-pulse"
               >
                 <Radio className="w-3.5 h-3.5" />
@@ -263,7 +263,7 @@ export const UserProfilePage: React.FC = () => {
           {targetUser.is_verified && <CheckCircle2 className="w-5 h-5 text-orange-600 fill-orange-600/10" />}
           {isUserLive && (
             <motion.button
-              onClick={() => navigate('/live-stream')}
+              onClick={() => navigate(`/live-stream/${targetUser.id}`)}
               animate={{ scale: [1, 1.05, 1] }}
               transition={{ duration: 1.5, repeat: Infinity, ease: 'easeInOut' }}
               className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-red-500 text-white text-[11px] font-black shadow-lg shadow-red-500/30 hover:bg-red-600 transition-colors"
