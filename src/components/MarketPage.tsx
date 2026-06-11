@@ -10,7 +10,7 @@ import { useLanguage } from '../contexts/LanguageContext';
 import { api } from '../services/api';
 import { interestCategories } from '../config/interests';
 import { marketPromotionPackages } from '../data/marketPromotionPackages';
-import { egyptianCities, getCityNameAr, regionLabels, regionOrder, searchCities, getGovernorates } from '../data/egyptianCities';
+import { egyptianCities, getCityNameAr, regionLabels, regionOrder, searchCities } from '../data/egyptianCities';
 import {
   ArrowRight,
   Search,

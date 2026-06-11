@@ -8,7 +8,7 @@ import { useAppContext } from '../contexts/AppContext';
 import { useAuth } from '../contexts/AuthContext';
 import { promotionPackages, getCityTier, cityTiers } from '../data/promotionPackages';
 import { egyptianCities, regionLabels, regionOrder, formatSelectedCities, getCityNameAr, searchCities, getGovernorateCount } from '../data/egyptianCities';
-import type { EgyptianCity } from '../data/egyptianCities';
+import type { EgyptianCity } from '../types';
 import { Post } from '../types';
 import { api } from '../services/api';
 import {

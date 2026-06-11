@@ -260,11 +260,11 @@ export const PromotionPackagesPage: React.FC = () => {
                       <h3 className={`font-black text-base ${darkMode ? 'text-white' : 'text-gray-900'}`}>
                         {pkg.name}
                       </h3>
-                      {getTargetingIcon(pkg.targeting)}
+                      {pkg.targeting && getTargetingIcon(pkg.targeting)}
                       <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-md ${
                         darkMode ? 'bg-gray-700 text-gray-300' : 'bg-gray-100 text-gray-600'
                       }`}>
-                        {getTargetingLabel(pkg.targeting)}
+                        {pkg.targeting ? getTargetingLabel(pkg.targeting) : ''}
                       </span>
                     </div>
 
