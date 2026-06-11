@@ -350,6 +350,98 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  // ─── Real-time data sync: Wallet updated ───────────────────────────
+  // When wallet balance changes (charge approved/rejected, admin adjustment),
+  // update the local state immediately without requiring a refresh
+  const handleDataWalletUpdated = useCallback((data: any) => {
+    if (!data) return;
+    // Refresh the user's wallet balance from server
+    refreshCurrentUser();
+    // Also refresh transactions list
+    api.getTransactions().then(txns => {
+      if (Array.isArray(txns)) {
+        const mapped = (txns as any[]).map((t: any) => ({
+          id: t.id,
+          type: t.type,
+          amount: t.amount,
+          method: t.method,
+          timestamp: t.created_at || t.timestamp || '',
+          status: t.status,
+        }));
+        setTransactions(mapped);
+      }
+    }).catch(() => {});
+    // Show toast notification
+    if (data.message) {
+      if (data.action === 'charging-approved') {
+        toast.success(data.message);
+      } else if (data.action === 'charging-rejected') {
+        toast.error(data.message);
+      } else if (data.action === 'admin-adjustment') {
+        toast.info(data.message);
+      }
+    }
+    // Also refresh charging requests for admin context
+    setWsRefreshFlag(prev => prev + 1);
+  }, [refreshCurrentUser]);
+
+  // ─── Real-time data sync: Promotion status changed ──────────────────
+  // When a promotion request is approved or rejected, update local state
+  const handleDataPromotionStatusChanged = useCallback((data: any) => {
+    if (!data) return;
+    // Update promotion requests in local state
+    if (data.requestId) {
+      setPromotionRequests(prev => prev.map(r =>
+        r.id === data.requestId
+          ? { ...r, status: (data.action?.includes('rejected') ? 'rejected' : 'approved') as 'pending' | 'approved' | 'rejected' }
+          : r
+      ));
+    }
+    // Update the corresponding post's promotion status in local state
+    if (data.postId) {
+      setPosts(prev => prev.map(p => {
+        if (p.id === data.postId) {
+          return {
+            ...p,
+            isPromoted: data.action?.includes('approved'),
+            promotionStatus: data.action?.includes('rejected') ? 'rejected' : data.action?.includes('approved') ? 'approved' : p.promotionStatus,
+            promotionExpiresAt: data.expiresAt || p.promotionExpiresAt,
+          };
+        }
+        return p;
+      }));
+    }
+    // If promotion was rejected and money was refunded, refresh wallet
+    if (data.refund) {
+      refreshCurrentUser();
+      api.getTransactions().then(txns => {
+        if (Array.isArray(txns)) {
+          const mapped = (txns as any[]).map((t: any) => ({
+            id: t.id,
+            type: t.type,
+            amount: t.amount,
+            method: t.method,
+            timestamp: t.created_at || t.timestamp || '',
+            status: t.status,
+          }));
+          setTransactions(mapped);
+        }
+      }).catch(() => {});
+    }
+    // Show toast notification
+    if (data.message) {
+      if (data.action?.includes('approved')) {
+        toast.success(data.message);
+      } else if (data.action?.includes('rejected')) {
+        toast.error(data.message);
+      } else {
+        toast.info(data.message);
+      }
+    }
+    // Refresh data to ensure consistency
+    setWsRefreshFlag(prev => prev + 1);
+  }, [refreshCurrentUser]);
+
   // Connect WebSocket and register all handlers
   const { isConnected: wsConnected, sendTyping, sendReadReceipt, sendCallSignal } = useWebSocket({
     onChatMessage: handleWSChatMessage,
@@ -372,7 +464,24 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (data.eventType === 'admin:alert') {
         handleWSAdminAlert(data);
       }
+      // Handle admin data sync events - refresh relevant data when admin actions occur
+      // These events are sent to admin users when other admins process requests
+      if (data.eventType === 'admin:promotion-request-created' ||
+          data.eventType === 'admin:promotion-request-updated' ||
+          data.eventType === 'admin:charging-request-created' ||
+          data.eventType === 'admin:charging-request-updated' ||
+          data.eventType === 'admin:market-promotion-request-created' ||
+          data.eventType === 'admin:market-promotion-request-updated') {
+        // Refresh admin-relevant data
+        loadUserData();
+        // Dispatch custom events so admin dashboard components can react
+        window.dispatchEvent(new CustomEvent('nawaqes:admin-data-changed', {
+          detail: { eventType: data.eventType, data },
+        }));
+      }
     },
+    onDataWalletUpdated: handleDataWalletUpdated,
+    onDataPromotionStatusChanged: handleDataPromotionStatusChanged,
     autoConnect: true,
   });
   const [posts, setPosts] = useState<Post[]>([]);

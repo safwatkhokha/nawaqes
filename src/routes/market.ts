@@ -567,6 +567,24 @@ router.post('/promote', authMiddleware, (req: Request, res: Response) => {
         .run(payload.userId, 'promotion', `تم إرسال طلب ترويج إعلانك "${listing.title}" وسيتم مراجعته من الإدارة`, listingId, `/market/listing/${listingId}`);
     } catch { /* notifications table may not exist */ }
 
+    // ─── WebSocket: Notify admins in real-time about new market promotion request ───
+    try {
+      const wsManager = (req.app.locals as any).wsManager;
+      if (wsManager) {
+        wsManager.emitAdminEvent('market-promotion-request-created', {
+          listingId,
+          sellerId: payload.userId,
+          sellerName: listing.title || 'بائع',
+          tier,
+          packageName: packageName || tier,
+          price,
+          message: `طلب ترويج جديد في السوق الذكي: "${listing.title}" - باقة ${packageName || tier} (${price} ج.م)`,
+        });
+      }
+    } catch (wsErr: any) {
+      console.error('[WS] Failed to emit market promotion request event:', wsErr.message);
+    }
+
     const promoRequest = db.prepare('SELECT * FROM market_promotion_requests WHERE listing_id = ? AND seller_id = ? ORDER BY created_at DESC LIMIT 1').get(listingId, payload.userId) as any;
     res.status(201).json(promoRequest);
   } catch (err: any) {

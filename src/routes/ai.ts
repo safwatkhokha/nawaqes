@@ -322,7 +322,7 @@ ${userId ? `رقم المستخدم: ${userId}` : ''}`
 // 2. AI مراجعة تلقائية لطلبات الترويج - Auto Review
 // يحلل المنشور ويقرر ما إذا كان مناسباً للترويج
 // ═══════════════════════════════════════════════════════════════════════
-router.post('/review-promotion', async (req: Request, res: Response) => {
+router.post('/review-promotion', optionalAuth, async (req: Request, res: Response) => {
   try {
     const { postId, content, category, price } = req.body;
 
@@ -455,7 +455,7 @@ router.post('/review-promotion', async (req: Request, res: Response) => {
 // 3. AI مساعد ترويج ذكي - Promotion Assistant Chat
 // يجاوب على أسئلة المستخدمين عن الترويج
 // ═══════════════════════════════════════════════════════════════════════
-router.post('/assistant', async (req: Request, res: Response) => {
+router.post('/assistant', optionalAuth, async (req: Request, res: Response) => {
   try {
     const { message, context, userId } = req.body;
 
@@ -578,7 +578,7 @@ ${userInfo}`
 // ═══════════════════════════════════════════════════════════════════════
 // 4. AI اقتراح الميزانية والباقة - Budget Suggestion
 // ═══════════════════════════════════════════════════════════════════════
-router.post('/budget-suggestion', async (req: Request, res: Response) => {
+router.post('/budget-suggestion', optionalAuth, async (req: Request, res: Response) => {
   try {
     const { budget, category, price, goal } = req.body;
     const userId = (req as any).user?.userId;
@@ -921,7 +921,7 @@ ${postsSummary || 'لا توجد منشورات بعد'}`
 // ═══════════════════════════════════════════════════════════════════════
 // 6. AI تحسين المحتوى - Content Enhancement
 // ═══════════════════════════════════════════════════════════════════════
-router.post('/enhance-content', async (req: Request, res: Response) => {
+router.post('/enhance-content', optionalAuth, async (req: Request, res: Response) => {
   try {
     const { content, category, price } = req.body;
     if (!content) return res.status(400).json({ error: 'المحتوى مطلوب' });
@@ -1007,7 +1007,7 @@ router.post('/enhance-content', async (req: Request, res: Response) => {
 // 7. AI تحديد موضع المنشورات المروجة - Smart Placement Engine
 // الذكاء الاصطناعي يحدد أفضل مكان لكل منشور مروج في الصفحة
 // ═══════════════════════════════════════════════════════════════════════
-router.post('/smart-placement', async (req: Request, res: Response) => {
+router.post('/smart-placement', optionalAuth, async (req: Request, res: Response) => {
   try {
     const { promotedPosts, totalPosts, feedType, userInterests } = req.body;
     const userId = (req as any).user?.userId || null;
@@ -1298,10 +1298,14 @@ ${engagementSummary || 'لا توجد بيانات سابقة - استخدم ا�
 // 8. AI تتبع تفاعل المستخدم مع المنشورات المروجة - Engagement Tracking
 // يسجل موضع المنشور والتفاعل معه لتحسين المواضع المستقبلية
 // ═══════════════════════════════════════════════════════════════════════
-router.post('/track-engagement', async (req: Request, res: Response) => {
+router.post('/track-engagement', optionalAuth, async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user?.userId || null;
-    if (!userId) return res.status(401).json({ error: 'يجب تسجيل الدخول' });
+    if (!userId) {
+      // Silently skip tracking for unauthenticated users instead of returning 401
+      // This prevents the auth:expired event from being triggered on the frontend
+      return res.json({ tracked: 0 });
+    }
 
     const { events } = req.body;
     if (!Array.isArray(events) || events.length === 0) {
@@ -1353,10 +1357,13 @@ router.post('/track-engagement', async (req: Request, res: Response) => {
 // 9. AI تحليلات المواضع - Placement Analytics
 // يعرض أداء المواضع المختلفة للمنشورات المروجة
 // ═══════════════════════════════════════════════════════════════════════
-router.get('/placement-analytics', async (req: Request, res: Response) => {
+router.get('/placement-analytics', optionalAuth, async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user?.userId;
-    if (!userId) return res.status(401).json({ error: 'يجب تسجيل الدخول' });
+    if (!userId) {
+      // Return empty data instead of 401 to prevent frontend logout
+      return res.json({ success: true, data: { positions: [], summary: { totalImpressions: 0, totalClicks: 0, avgCTR: 0 } } });
+    }
 
     const db = database;
     const { feedType, days } = req.query;

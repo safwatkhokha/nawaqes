@@ -125,6 +125,21 @@ router.post('/register', (req: Request, res: Response) => {
     const user = db.prepare('SELECT * FROM users WHERE email = ?').get(normalizedEmail) as any;
     const token = generateToken({ userId: user.id, email: user.email, isAdmin: !!user.is_admin });
 
+    // ─── WebSocket: Notify admins about new user registration ───
+    try {
+      const wsManager = (req.app.locals as any)?.wsManager;
+      if (wsManager) {
+        wsManager.emitAdminEvent('user-registered', {
+          userId: user.id,
+          userName: user.name,
+          userEmail: user.email,
+          message: `مستخدم جديد: ${user.name} (${user.email})`,
+        });
+      }
+    } catch (wsErr: any) {
+      console.error('[WS] Failed to emit user registration event:', wsErr.message);
+    }
+
     res.status(201).json({ user: parseUser(user), token });
   } catch (err: any) {
     res.status(500).json({ error: 'فشل إنشاء الحساب', details: err.message });

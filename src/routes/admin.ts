@@ -266,12 +266,31 @@ router.post('/promotion-requests/:id/approve', (req: Request, res: Response) => 
       const wsManager = (req.app.locals as any).wsManager;
       if (wsManager) {
         wsManager.emitAdminEvent('promotion-approved', { id: req.params.id, postId: pr?.post_id });
-        // Also notify the post author via WebSocket
+        // Notify the post author about approval via WebSocket
         wsManager.emitNotification(pr?.author_id, {
           type: 'promotion',
           message: `تم الموافقة على ترويج منشورك - باقة ${pr?.package_name}`,
           postId: pr?.post_id,
           time: new Date().toISOString(),
+        });
+        // Also send a data sync event so the author's UI updates immediately
+        wsManager.sendToUser(pr?.author_id, {
+          type: 'data:promotion-status-changed',
+          data: {
+            action: 'promotion-approved',
+            requestId: req.params.id,
+            postId: pr?.post_id,
+            tier: pr?.tier,
+            packageName: pr?.package_name,
+            expiresAt,
+            message: `تم الموافقة على ترويج منشورك - باقة ${pr?.package_name}`,
+          },
+        });
+        // Notify admins that this request was processed (refresh other admin tabs)
+        wsManager.emitAdminEvent('promotion-request-updated', {
+          id: req.params.id,
+          status: 'approved',
+          postId: pr?.post_id,
         });
       }
     } catch (wsErr: any) {
@@ -304,6 +323,33 @@ router.post('/promotion-requests/:id/reject', (req: Request, res: Response) => {
 
     db.prepare('INSERT INTO notifications (user_id, type, message, post_id, link) VALUES (?, ?, ?, ?, ?)')
       .run(pr.author_id, 'promotion', `تم رفض طلب ترويج منشورك وتم استرداد ${pr.price} ج.م`, pr.post_id, `/post/${pr.post_id}`);
+
+    // ─── WebSocket: Notify user about rejected promotion in real-time ───
+    try {
+      const wsManager = (req.app.locals as any).wsManager;
+      if (wsManager) {
+        // Notify the post author that their promotion was rejected
+        wsManager.sendToUser(pr.author_id, {
+          type: 'data:promotion-status-changed',
+          data: {
+            action: 'promotion-rejected',
+            requestId: req.params.id,
+            postId: pr.post_id,
+            price: pr.price,
+            refund: pr.price,
+            message: `تم رفض طلب ترويج منشورك وتم استرداد ${pr.price} ج.م`,
+          },
+        });
+        // Notify admins that this request was processed (refresh other admin tabs)
+        wsManager.emitAdminEvent('promotion-request-updated', {
+          id: req.params.id,
+          status: 'rejected',
+          postId: pr.post_id,
+        });
+      }
+    } catch (wsErr: any) {
+      console.error('[WS] Failed to emit promotion rejection event:', wsErr.message);
+    }
 
     res.json({ message: 'تم رفض طلب الترويج' });
   } catch (err: any) {
@@ -401,6 +447,25 @@ router.post('/users/:id/adjust-wallet', (req: Request, res: Response) => {
       : `تم خصم ${Math.abs(amount)} ج.م من محفظتك${reason ? ` (${reason})` : ''}`;
     db.prepare('INSERT INTO notifications (user_id, type, message, link) VALUES (?, ?, ?, ?)')
       .run(req.params.id, 'payment', notifyMsg, '/wallet');
+
+    // ─── WebSocket: Notify user about wallet adjustment in real-time ───
+    try {
+      const wsManager = (req.app.locals as any).wsManager;
+      if (wsManager) {
+        wsManager.sendToUser(req.params.id, {
+          type: 'data:wallet-updated',
+          data: {
+            action: 'admin-adjustment',
+            amount,
+            reason: reason || 'تعديل يدوي من المدير',
+            newBalance,
+            message: notifyMsg,
+          },
+        });
+      }
+    } catch (wsErr: any) {
+      console.error('[WS] Failed to emit wallet adjustment event:', wsErr.message);
+    }
 
     res.json({
       message: amount > 0 ? `تم إضافة ${amount} ج.م للمحفظة` : `تم خصم ${Math.abs(amount)} ج.م من المحفظة`,
@@ -1701,6 +1766,34 @@ router.post('/market-promotion-requests/:id/approve', (req: Request, res: Respon
       console.error('Error sending targeted notifications for market promotion:', notifErr.message);
     }
 
+    // ─── WebSocket: Notify seller about approved market promotion in real-time ───
+    try {
+      const wsManager = (req.app.locals as any).wsManager;
+      if (wsManager) {
+        // Notify the seller
+        wsManager.sendToUser(pr.seller_id, {
+          type: 'data:promotion-status-changed',
+          data: {
+            action: 'market-promotion-approved',
+            requestId: req.params.id,
+            listingId: pr.listing_id,
+            tier: pr.tier,
+            packageName: pr.package_name,
+            expiresAt,
+            message: `تم الموافقة على ترويج إعلانك في السوق الذكي - باقة ${pr.package_name || pr.tier}`,
+          },
+        });
+        // Notify admins
+        wsManager.emitAdminEvent('market-promotion-request-updated', {
+          id: req.params.id,
+          status: 'approved',
+          listingId: pr.listing_id,
+        });
+      }
+    } catch (wsErr: any) {
+      console.error('[WS] Failed to emit market promotion approval event:', wsErr.message);
+    }
+
     res.json({ message: 'تم الموافقة على طلب ترويج السوق' });
   } catch (err: any) {
     res.status(500).json({ error: 'فشل الموافقة على ترويج السوق', details: err.message });
@@ -1732,6 +1825,33 @@ router.post('/market-promotion-requests/:id/reject', (req: Request, res: Respons
     // Notify the seller about rejection
     db.prepare('INSERT INTO notifications (user_id, type, message) VALUES (?, ?, ?)')
       .run(pr.seller_id, 'system', `تم رفض طلب ترويج إعلانك وتم استرداد ${pr.price} ج.م`);
+
+    // ─── WebSocket: Notify seller about rejected market promotion in real-time ───
+    try {
+      const wsManager = (req.app.locals as any).wsManager;
+      if (wsManager) {
+        // Notify the seller
+        wsManager.sendToUser(pr.seller_id, {
+          type: 'data:promotion-status-changed',
+          data: {
+            action: 'market-promotion-rejected',
+            requestId: req.params.id,
+            listingId: pr.listing_id,
+            price: pr.price,
+            refund: pr.price,
+            message: `تم رفض طلب ترويج إعلانك وتم استرداد ${pr.price} ج.م`,
+          },
+        });
+        // Notify admins
+        wsManager.emitAdminEvent('market-promotion-request-updated', {
+          id: req.params.id,
+          status: 'rejected',
+          listingId: pr.listing_id,
+        });
+      }
+    } catch (wsErr: any) {
+      console.error('[WS] Failed to emit market promotion rejection event:', wsErr.message);
+    }
 
     res.json({ message: 'تم رفض طلب ترويج السوق' });
   } catch (err: any) {

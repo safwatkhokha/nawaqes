@@ -768,6 +768,20 @@ router.post('/promotions', authMiddleware, (req: Request, res: Response) => {
 
     // Return the full created request so the frontend can use the real ID
     const createdRequest = db.prepare('SELECT * FROM promotion_requests WHERE id = ?').get(promoId) as any;
+
+    // ─── WebSocket: Notify admins in real-time about new promotion request ───
+    try {
+      const wsManager = (req.app.locals as any).wsManager;
+      if (wsManager) {
+        wsManager.emitAdminEvent('promotion-request-created', {
+          request: createdRequest,
+          message: `طلب ترويج جديد من ${user.name} - باقة ${packageName || tier} (${price} ج.م)`,
+        });
+      }
+    } catch (wsErr: any) {
+      console.error('[WS] Failed to emit promotion request event:', wsErr.message);
+    }
+
     res.status(201).json({
       id: createdRequest?.id || promoId,
       message: 'تم إرسال طلب الترويج بنجاح',

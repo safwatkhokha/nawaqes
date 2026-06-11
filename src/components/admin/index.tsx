@@ -338,6 +338,111 @@ export const AdminDashboard = () => {
     if (activeTab === 'overview') loadRealtimeStats();
   }, [activeTab, txPage, txFilter]);
 
+  // ─── Periodic refresh for real-time stats (every 30 seconds) ──────
+  useEffect(() => {
+    // Initial load
+    loadRealtimeStats();
+    // Refresh every 30 seconds to keep admin data fresh
+    const interval = setInterval(() => {
+      loadRealtimeStats();
+      // Also refresh core stats periodically
+      api.getAdminStats().then(data => { if (data) setStats(data as any); }).catch(() => {});
+      api.getAdminDetailedStats().then(data => { if (data) setDetailedStats(data); }).catch(() => {});
+    }, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // ─── Real-time updates via WebSocket ──────────────────────────────
+  // Listen for data change events from WebSocket and auto-refresh
+  // the relevant admin data without requiring a manual page refresh
+  useEffect(() => {
+    const handleAdminDataChanged = async (event: Event) => {
+      const customEvent = event as CustomEvent;
+      const { eventType } = customEvent.detail || {};
+
+      // Refresh stats and detailed stats for ALL changes
+      api.getAdminStats().then(data => { if (data) setStats(data as any); }).catch(() => {});
+      api.getAdminDetailedStats().then(data => { if (data) setDetailedStats(data); }).catch(() => {});
+      loadRealtimeStats();
+
+      // Specific refreshes based on event type
+      if (eventType === 'admin:promotion-request-created' || eventType === 'admin:promotion-request-updated') {
+        // New or updated promotion request - refresh promotion list
+        api.getPromotionRequests().then(promoReqs => {
+          if (Array.isArray(promoReqs)) {
+            setPromotionRequests(
+              (promoReqs as any[]).map((r: any) => ({
+                id: r.id, postId: r.post_id, postContent: r.post_content,
+                postAuthor: { id: r.author_id, name: r.author_name, avatar: r.author_avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${r.author_id}` },
+                tier: r.tier, price: r.price, status: r.status, createdAt: r.created_at,
+                packageName: r.package_name, duration: r.duration, estimatedReach: r.estimated_reach,
+                maxNotifications: r.max_notifications, includeMessages: !!r.include_messages, targeting: r.targeting,
+                targetCity: r.target_city, targetInterests: r.target_interests ? JSON.parse(r.target_interests) : [],
+                targetAgeMin: r.target_age_min || 0, targetAgeMax: r.target_age_max || 0,
+                cityCount: r.city_count || 1,
+              }))
+            );
+          }
+        }).catch(() => {});
+      }
+
+      if (eventType === 'admin:charging-request-created' || eventType === 'admin:charging-request-updated') {
+        // New or updated charging request - refresh charging list
+        api.getChargingRequests().then(chargeReqs => {
+          if (Array.isArray(chargeReqs)) {
+            setChargingRequests(
+              (chargeReqs as any[]).map((r: any) => ({
+                id: r.id, userId: r.user_id, userName: r.user_name,
+                userAvatar: r.user_avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${r.user_id}`,
+                userPhone: r.user_phone || '', amount: r.amount, method: r.method,
+                receiptImage: r.receipt_image || '', status: r.status, createdAt: r.created_at,
+              }))
+            );
+          }
+        }).catch(() => {});
+      }
+
+      if (eventType === 'admin:market-promotion-request-created' || eventType === 'admin:market-promotion-request-updated') {
+        // New or updated market promotion request - refresh market promo list
+        api.getMarketPromotionRequests().then(marketPromoReqs => {
+          if (Array.isArray(marketPromoReqs)) {
+            setMarketPromoRequests(
+              (marketPromoReqs as any[]).map((r: any) => ({
+                id: r.id, listingId: r.listing_id,
+                listingTitle: r.listing_title || r.listing_id,
+                sellerId: r.seller_id, sellerName: r.seller_name || t('common.user'),
+                sellerAvatar: r.seller_avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${r.seller_id}`,
+                tier: r.tier, packageName: r.package_name, price: r.price,
+                duration: r.duration, estimatedReach: r.estimated_reach,
+                targeting: r.targeting, targetCity: r.target_city,
+                targetInterests: r.target_interests,
+                targetAgeMin: r.target_age_min || 0, targetAgeMax: r.target_age_max || 0,
+                status: r.status, createdAt: r.created_at,
+              }))
+            );
+          }
+        }).catch(() => {});
+      }
+
+      // Always refresh transaction data on any admin change
+      // (transactions change when charging/promotion requests are processed)
+      loadTransactions();
+
+      // Refresh posts list when any admin event occurs
+      adminFetch('GET', '/admin/all-posts?limit=50').then(postsData => {
+        if (postsData && (postsData as any).posts) {
+          setPosts((postsData as any).posts);
+        }
+      }).catch(() => {});
+
+      // Refresh users list on any admin change (new users, status changes)
+      loadUsers();
+    };
+
+    window.addEventListener('nawaqes:admin-data-changed', handleAdminDataChanged);
+    return () => window.removeEventListener('nawaqes:admin-data-changed', handleAdminDataChanged);
+  }, [activeTab, t]);
+
   // ─── Keyboard shortcut for search ──
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
