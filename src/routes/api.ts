@@ -1621,7 +1621,7 @@ router.post('/livestream/notify-friends', authMiddleware, (req: Request, res: Re
 
     const { streamTitle } = req.body || {};
     const hostName = ((db.prepare('SELECT name FROM users WHERE id = ?').get(uid) as any)?.name) || 'مستخدم';
-    const message = `${hostName} بدأ بثاً مباشراً${streamTitle ? ': ' + streamTitle : ''}! شاهد الآن 🔴`;
+    const message = `${hostName} بدأ بثاً مباشراً${streamTitle ? ': ' + streamTitle : ''}! شاهد الآن`;
 
     // Get all accepted friends
     const friends = db.prepare(`
@@ -1630,12 +1630,12 @@ router.post('/livestream/notify-friends', authMiddleware, (req: Request, res: Re
       WHERE (requester_id = ? OR addressee_id = ?) AND status = 'accepted'
     `).all(uid, uid, uid) as any[];
 
-    // Insert notification for each friend
+    // Insert notification for each friend — use 'livestream' type with link to the host's stream
     const insertNotif = db.prepare('INSERT INTO notifications (user_id, type, message, link, user_id_ref) VALUES (?, ?, ?, ?, ?)');
     let count = 0;
     for (const friend of friends) {
       try {
-        insertNotif.run(friend.friend_id, 'friend', message, `/live-stream`, uid);
+        insertNotif.run(friend.friend_id, 'livestream', message, `/live-stream/${uid}`, uid);
         count++;
       } catch {}
     }
@@ -1650,12 +1650,12 @@ router.post('/livestream/notify-friends', authMiddleware, (req: Request, res: Re
 router.get('/livestream/active', authMiddleware, (req: Request, res: Response) => {
   try {
     const wsManager = (req.app.locals as any).wsManager;
-    if (!wsManager) {
+    if (!wsManager || !wsManager.activeStreams) {
       res.json([]);
       return;
     }
-    // Get active streamers from the WebSocket manager
-    const activeStreamers = (wsManager as any).activeStreams || [];
+    // Convert Map to Array for JSON serialization (Map serializes as {})
+    const activeStreamers = Array.from((wsManager.activeStreams as Map<string, any>).values());
     res.json(activeStreamers);
   } catch (err: any) {
     res.json([]);

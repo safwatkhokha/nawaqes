@@ -55,43 +55,77 @@ RUN chmod +x start.sh || true
 # Create .env from example (will be overridden by /data/.env if it exists)
 RUN cp .env.example .env
 
-# Create local data directories (symlinks will point to /data for persistence)
-RUN mkdir -p /app/data /app/uploads /app/uploads/videos /app/backups
-
 # ─── HF Spaces Persistent Volume ────────────────────────────
 # /data is the persistent volume on Hugging Face Spaces.
 # It survives container restarts and rebuilds.
 # The app code checks for /data and uses it when available.
+
+# Create /data directory and subdirectories BEFORE declaring VOLUME
+# This is critical: chown needs /data to exist at build time
+RUN mkdir -p /data/uploads /data/uploads/videos /data/backups
+
 VOLUME /data
 
-# Create entrypoint script that sets up symlinks for persistent storage
+# Create entrypoint script that sets up persistent storage
+# This script ensures data survives container restarts by:
+# 1. Persisting .env (JWT_SECRET etc.) to /data
+# 2. Symlinking uploads to /data/uploads
+# 3. Symlinking local data dir to /data for database access
 RUN cat > /app/entrypoint.sh << 'EOF'
 #!/bin/sh
 set -e
 
-# Ensure /data exists and has proper subdirectories
+echo "[ENTRYPOINT] Setting up Nawaqes persistent storage..."
+
+# Ensure /data subdirectories exist
 mkdir -p /data/uploads /data/uploads/videos /data/backups
 
-# If /data/.env exists, copy it to /app/.env (persistent JWT_SECRET etc.)
+# ─── 1. Handle .env persistence (JWT_SECRET etc.) ───────────
 if [ -f /data/.env ]; then
   echo "[ENTRYPOINT] Using persistent .env from /data/.env"
   cp /data/.env /app/.env
 else
   echo "[ENTRYPOINT] No persistent .env found, using default"
-  # Copy the example .env as base
   cp /app/.env.example /app/.env 2>/dev/null || true
 fi
 
-# If /data/nawaqes.db exists, the app will find it automatically
-# (database code checks /data first, then falls back to ./data)
+# ─── 2. Handle uploads directory persistence ────────────────
+if [ ! -L /app/uploads ]; then
+  # Copy any existing uploads to persistent storage first
+  if [ -d /app/uploads ]; then
+    cp -rn /app/uploads/* /data/uploads/ 2>/dev/null || true
+    rm -rf /app/uploads
+  fi
+  ln -sf /data/uploads /app/uploads
+  echo "[ENTRYPOINT] Uploads symlinked to /data/uploads"
+fi
 
-# Create symlinks for uploads directory so files persist in /data
-# This ensures uploaded images/videos survive container restarts
-if [ ! -L /app/uploads ] && [ -d /app/uploads ]; then
-  # Copy any existing uploads to persistent storage
-  cp -rn /app/uploads/* /data/uploads/ 2>/dev/null || true
-  rm -rf /app/uploads
-  ln -s /data/uploads /app/uploads
+# ─── 3. Handle data directory for database ──────────────────
+# The database code checks /data first, then falls back to ./data
+# We symlink /app/data to /data so that even fallback paths work
+if [ ! -L /app/data ]; then
+  # If there's an existing local database, migrate it to /data
+  if [ -f /app/data/nawaqes.db ] && [ ! -f /data/nawaqes.db ]; then
+    echo "[ENTRYPOINT] Migrating existing database to /data"
+    cp /app/data/nawaqes.db /data/nawaqes.db
+    cp /app/data/nawaqes.db-wal /data/nawaqes.db-wal 2>/dev/null || true
+    cp /app/data/nawaqes.db-shm /data/nawaqes.db-shm 2>/dev/null || true
+  fi
+  if [ -d /app/data ]; then
+    rm -rf /app/data
+  fi
+  ln -sf /data /app/data
+  echo "[ENTRYPOINT] Data directory symlinked to /data"
+fi
+
+# ─── 4. Handle backups directory persistence ────────────────
+if [ ! -L /app/backups ]; then
+  if [ -d /app/backups ]; then
+    cp -rn /app/backups/* /data/backups/ 2>/dev/null || true
+    rm -rf /app/backups
+  fi
+  ln -sf /data/backups /app/backups
+  echo "[ENTRYPOINT] Backups symlinked to /data/backups"
 fi
 
 echo "[ENTRYPOINT] Nawaqes starting..."
