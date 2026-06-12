@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAppContext } from '../contexts/AppContext';
 import { useAuth } from '../contexts/AuthContext';
-import { promotionPackages, cityTiers } from '../data/promotionPackages';
+import { promotionPackages, cityCountTiers } from '../data/promotionPackages';
 import { marketPromotionPackages } from '../data/marketPromotionPackages';
 import {
   ArrowRight,
@@ -272,7 +272,10 @@ export const PromotionPackagesPage: React.FC = () => {
                     <div className="flex items-center gap-3 mb-2 flex-wrap">
                       <span className={`flex items-center gap-1 text-[10px] font-bold ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
                         <Eye className="w-3 h-3" />
-                        ~{pkg.estimatedReach.toLocaleString()} {t('promotionPackagesPage.reach', 'وصول')}
+                        ~{pkg.reachEstimate.toLocaleString()} {t('promotionPackagesPage.reach', 'وصول')}
+                        <span className={`text-[9px] px-1.5 py-0.5 rounded-md ${darkMode ? 'bg-orange-900/30 text-orange-400' : 'bg-orange-50 text-orange-600'}`}>
+                          {Math.round((pkg.reachEstimate / 9000) * 100)}%
+                        </span>
                       </span>
                       <span className={`flex items-center gap-1 text-[10px] font-bold ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
                         <Clock className="w-3 h-3" />
@@ -280,8 +283,15 @@ export const PromotionPackagesPage: React.FC = () => {
                       </span>
                       <span className={`flex items-center gap-1 text-[10px] font-bold ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
                         <Bell className="w-3 h-3" />
-                        {pkg.maxNotifications} {t('promotionPackagesPage.notifications', 'إشعار')}
+                        {pkg?.maxNotifications} {t('promotionPackagesPage.notifications', 'إشعار')}
                       </span>
+                    </div>
+                    {/* Reach Progress Bar */}
+                    <div className={`w-full h-1.5 rounded-full overflow-hidden ${darkMode ? 'bg-gray-700' : 'bg-gray-100'}`}>
+                      <div
+                        className={`h-full rounded-full bg-gradient-to-l ${pkg.color} transition-all duration-500`}
+                        style={{ width: `${Math.round((pkg.reachEstimate / 9000) * 100)}%` }}
+                      />
                     </div>
 
                     {/* Features Preview */}
@@ -353,7 +363,7 @@ export const PromotionPackagesPage: React.FC = () => {
                         ))}
 
                         {/* Messages included */}
-                        {pkg.includeMessages && (
+                        {pkg?.includeMessages && (
                           <div className="flex items-center gap-2">
                             <MessageCircle className="w-4 h-4 text-blue-500 flex-shrink-0" />
                             <span className={`text-xs font-bold ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
@@ -387,7 +397,7 @@ export const PromotionPackagesPage: React.FC = () => {
                                 exit={{ height: 0, opacity: 0 }}
                                 className="space-y-2 mt-2"
                               >
-                                {cityTiers.map((tier, tIdx) => (
+                                {cityCountTiers.map((tier, tIdx) => (
                                   <div
                                     key={tIdx}
                                     className={`flex items-center justify-between p-2 rounded-xl ${
@@ -399,7 +409,10 @@ export const PromotionPackagesPage: React.FC = () => {
                                     </span>
                                     <div className="flex items-center gap-2">
                                       <span className={`text-[9px] ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                                        ~{tier.estimatedReach.toLocaleString()} {t('promotionPackagesPage.reach', 'وصول')}
+                                        ~{tier.reachEstimate?.toLocaleString() || tier.estimatedReach?.toLocaleString()} {t('promotionPackagesPage.reach', 'وصول')}
+                                        <span className={`text-[8px] px-1 py-0.5 rounded ${darkMode ? 'bg-orange-900/20 text-orange-400' : 'bg-orange-50 text-orange-600'}`}>
+                                          {Math.round(((tier.reachEstimate || tier.estimatedReach || 0) / 9000) * 100)}%
+                                        </span>
                                       </span>
                                       <span className={`text-[10px] font-black ${darkMode ? 'text-orange-400' : 'text-orange-600'}`}>
                                         {tier.price} {t('common.egp', 'ج.م')}

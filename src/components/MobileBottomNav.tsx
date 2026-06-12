@@ -100,8 +100,9 @@ export const MobileBottomNav: React.FC = () => {
           : 'bg-white border-gray-200'
       } border-t`}
       dir={dir}
+      style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
     >
-      <div className="flex items-end justify-around h-14 sm:h-16 mx-auto px-0.5">
+      <div className="flex items-end justify-around h-14 sm:h-16 mx-auto px-0.5 max-w-lg">
         {navItems.map((item) => {
           const active = item.isCenter ? false : isActive(item.path);
           const Icon = item.icon;
@@ -115,10 +116,10 @@ export const MobileBottomNav: React.FC = () => {
                 className="flex flex-col items-center justify-center -mt-5 relative"
                 aria-label={item.label}
               >
-                <div className="w-14 h-14 bg-gradient-to-br from-orange-500 to-amber-600 rounded-2xl flex items-center justify-center shadow-lg shadow-orange-300/30 active:scale-95 transition-transform">
+                <div className="w-12 h-12 sm:w-14 sm:h-14 bg-gradient-to-br from-orange-500 to-amber-600 rounded-2xl flex items-center justify-center shadow-lg shadow-orange-300/30 active:scale-95 transition-transform">
                   <Icon className="w-7 h-7 text-white" />
                 </div>
-                <span className={`text-[10px] font-bold mt-1 ${
+                <span className={`text-[9px] sm:text-[10px] font-bold mt-1 ${
                   darkMode ? 'text-gray-400' : 'text-gray-500'
                 }`}>
                   {item.label}
@@ -136,7 +137,7 @@ export const MobileBottomNav: React.FC = () => {
             >
               <div className="relative">
                 <Icon
-                  className={`w-5 h-5 transition-colors ${
+                  className={`w-5 h-5 sm:w-6 sm:h-6 transition-colors ${
                     active
                       ? 'text-orange-500'
                       : darkMode
@@ -152,7 +153,7 @@ export const MobileBottomNav: React.FC = () => {
                 ) : null}
               </div>
               <span
-                className={`text-[10px] font-bold mt-1 transition-colors ${
+                className={`text-[9px] sm:text-[10px] font-bold mt-1 transition-colors ${
                   active
                     ? 'text-orange-500'
                     : darkMode

@@ -551,7 +551,7 @@ export const PostCard: React.FC<PostCardProps> = ({ post, onHidePost }) => {
     <>
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
         dir={dir}
-        className={`rounded-xl shadow-sm border mb-4 overflow-hidden cursor-pointer transition-all duration-300 ${getPromotedStyle()}`}
+        className={`rounded-xl shadow-sm border mb-4 overflow-hidden cursor-pointer transition-all duration-300 w-full ${getPromotedStyle()}`}
         onClick={handlePostClick}>
 
         {/* Pending Promotion Banner */}
@@ -645,8 +645,8 @@ export const PostCard: React.FC<PostCardProps> = ({ post, onHidePost }) => {
         </div>
 
         {/* Content */}
-        <div className="px-3 pb-2">
-          <p className={`text-xs sm:text-sm leading-relaxed whitespace-pre-wrap line-clamp-4 ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>{post.content}</p>
+        <div className="px-3 pb-2 min-w-0 overflow-hidden">
+          <p className={`text-xs sm:text-sm leading-relaxed whitespace-pre-wrap line-clamp-4 break-words ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>{post.content}</p>
 
           {/* Feeling & Activity Display */}
           {(feelingConfig || activityConfig) && (
@@ -667,7 +667,7 @@ export const PostCard: React.FC<PostCardProps> = ({ post, onHidePost }) => {
 
         {/* Category & Condition Badges */}
         {(categoryConfig || conditionConfig) && (
-          <div className="px-3 pb-2 flex items-center gap-1.5 flex-wrap">
+          <div className="px-3 pb-2 flex items-center gap-1.5 flex-wrap overflow-hidden">
             {categoryConfig && (
               <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold border ${darkMode ? 'bg-gray-700 text-gray-300 border-gray-600' : 'bg-orange-50 text-orange-700 border-orange-100'}`}>
                 <Tag className="w-2.5 h-2.5" /> {categoryConfig.emoji} {t(categoryConfig.labelKey)}
@@ -683,8 +683,8 @@ export const PostCard: React.FC<PostCardProps> = ({ post, onHidePost }) => {
 
         {/* Location */}
         {post.location && (
-          <div className={`px-3 pb-2 flex items-center gap-1 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-            <MapPin className="w-3 h-3 text-orange-500" /><span className="text-[10px] font-medium">{post.location}</span>
+          <div className={`px-3 pb-2 flex items-center gap-1 overflow-hidden ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+            <MapPin className="w-3 h-3 text-orange-500 flex-shrink-0" /><span className="text-[10px] font-medium truncate">{post.location}</span>
           </div>
         )}
 
@@ -736,7 +736,7 @@ export const PostCard: React.FC<PostCardProps> = ({ post, onHidePost }) => {
         {/* Image */}
         {post.image && (
           <div
-            className={`max-h-[280px] overflow-hidden border-y cursor-pointer ${darkMode ? 'bg-gray-700 border-gray-700' : 'bg-gray-50 border-gray-100'}`}
+            className={`max-h-[200px] sm:max-h-[280px] overflow-hidden border-y cursor-pointer ${darkMode ? 'bg-gray-700 border-gray-700' : 'bg-gray-50 border-gray-100'}`}
             onClick={(e) => { e.stopPropagation(); openImageModal(post.image!, 'Post content'); }}
           >
             <img src={post.image} alt="Post content" className="w-full h-full object-contain" loading="lazy" />
@@ -765,23 +765,23 @@ export const PostCard: React.FC<PostCardProps> = ({ post, onHidePost }) => {
         {/* Actions */}
         <div className={`mx-2 border-t py-0.5 flex items-center justify-between ${darkMode ? 'border-gray-700' : 'border-gray-100'}`}>
           <button onClick={(e) => { e.stopPropagation(); handleLike(e); }}
-            className={`flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg transition-colors group ${liked ? 'text-blue-600' : darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-100'}`}>
+            className={`flex-1 flex items-center justify-center gap-1 py-2 sm:py-1.5 rounded-lg transition-colors group min-h-[44px] sm:min-h-0 ${liked ? 'text-blue-600' : darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-100'}`}>
             <ThumbsUp className={`w-4 h-4 ${liked ? 'text-blue-600 fill-blue-600' : darkMode ? 'text-gray-400 group-hover:text-blue-500' : 'text-gray-500 group-hover:text-blue-600'}`} />
             <span className={`text-[11px] font-semibold ${liked ? 'text-blue-600' : darkMode ? 'text-gray-400 group-hover:text-blue-500' : 'text-gray-600 group-hover:text-blue-600'}`}>{t('postCard.liked')}</span>
           </button>
           <button onClick={(e) => { e.stopPropagation(); handleToggleComments(e); }}
-            className={`flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg transition-colors group ${darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-100'}`}>
+            className={`flex-1 flex items-center justify-center gap-1 py-2 sm:py-1.5 rounded-lg transition-colors group min-h-[44px] sm:min-h-0 ${darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-100'}`}>
             <MessageSquare className={`w-4 h-4 ${darkMode ? 'text-gray-400 group-hover:text-gray-200' : 'text-gray-500 group-hover:text-gray-900'}`} />
             <span className={`text-[11px] font-semibold ${darkMode ? 'text-gray-400 group-hover:text-gray-200' : 'text-gray-600 group-hover:text-gray-900'}`}>{t('postCard.comment')}</span>
           </button>
           <button onClick={(e) => { e.stopPropagation(); handleShare(e); }}
-            className={`flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg transition-colors group ${darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-100'}`}>
+            className={`flex-1 flex items-center justify-center gap-1 py-2 sm:py-1.5 rounded-lg transition-colors group min-h-[44px] sm:min-h-0 ${darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-100'}`}>
             <Share2 className={`w-4 h-4 ${darkMode ? 'text-gray-400 group-hover:text-green-400' : 'text-gray-500 group-hover:text-green-600'}`} />
             <span className={`text-[11px] font-semibold ${darkMode ? 'text-gray-400 group-hover:text-green-400' : 'text-gray-600 group-hover:text-green-600'}`}>{t('postCard.share')}</span>
           </button>
           {isMyPost && (
             <button onClick={(e) => { e.stopPropagation(); setEditingPost(post); }}
-              className={`flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg transition-colors group ${darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-100'}`}>
+              className={`flex-1 flex items-center justify-center gap-1 py-2 sm:py-1.5 rounded-lg transition-colors group min-h-[44px] sm:min-h-0 ${darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-100'}`}>
               <Edit3 className={`w-4 h-4 ${darkMode ? 'text-gray-400 group-hover:text-orange-400' : 'text-gray-500 group-hover:text-orange-600'}`} />
               <span className={`text-[11px] font-semibold ${darkMode ? 'text-gray-400 group-hover:text-orange-400' : 'text-gray-600 group-hover:text-orange-600'}`}>{t('common.edit')}</span>
             </button>

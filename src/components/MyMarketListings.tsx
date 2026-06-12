@@ -148,7 +148,7 @@ interface MyMarketListingsProps {
 export const MyMarketListings: React.FC<MyMarketListingsProps> = ({ initialTab = 'active' }) => {
   const navigate = useNavigate();
   const { darkMode } = useAppContext();
-  const { currentUser } = useAuth();
+  const { currentUser, refreshCurrentUser } = useAuth();
   const { dir } = useLanguage();
   const { t } = useTranslation();
 
@@ -284,13 +284,14 @@ export const MyMarketListings: React.FC<MyMarketListingsProps> = ({ initialTab =
     try {
       const promotionData: Record<string, any> = {
         listingId: promotingListing.id,
-        tier: selectedPackage,
+        tier: pkg.tier || selectedPackage.replace('market_', ''), // Strip 'market_' prefix for backend
         packageName: pkg.name,
         price: pkg.price,
-        duration: pkg.duration,
-        estimatedReach: pkg.estimatedReach,
+        duration: pkg.duration, // Duration in days - backend expects days
+        estimatedReach: pkg.reachEstimate, // Fixed: was using undefined pkg.estimatedReach
       };
 
+      // Determine targeting based on package type and user selections
       if (pkg.targeting === 'city' && selectedCities.length > 0) {
         promotionData.targetCities = selectedCities;
         promotionData.targetCity = selectedCities[0];
@@ -298,6 +299,12 @@ export const MyMarketListings: React.FC<MyMarketListingsProps> = ({ initialTab =
       } else if (pkg.targeting === 'interests' && selectedInterests.length > 0) {
         promotionData.targetInterests = selectedInterests;
         promotionData.targeting = 'interests';
+      } else if (pkg.targeting === 'city' && selectedCities.length === 0) {
+        // Package supports city targeting but user didn't select any - default to all
+        promotionData.targeting = 'all';
+      } else if (pkg.targeting === 'interests' && selectedInterests.length === 0) {
+        // Package supports interest targeting but user didn't select any - default to all
+        promotionData.targeting = 'all';
       } else {
         promotionData.targeting = 'all';
       }
@@ -305,6 +312,13 @@ export const MyMarketListings: React.FC<MyMarketListingsProps> = ({ initialTab =
       await api.requestMarketPromotion(promotionData);
       toast.success(t('market.promotionRequestSuccess'));
       closePromotionModal();
+      // Refresh user data to update wallet balance
+      try {
+        await refreshCurrentUser();
+        // Refresh wallet balance from API to ensure it's accurate
+        const walletData = await api.getWalletBalance().catch(() => ({ balance: 0 }));
+        setWalletBalance(walletData?.balance ?? 0);
+      } catch { /* non-critical */ }
       // Refresh data
       fetchData();
     } catch (err: any) {
@@ -743,8 +757,8 @@ export const MyMarketListings: React.FC<MyMarketListingsProps> = ({ initialTab =
                             {t('market.edit')}
                           </motion.button>
 
-                          {/* Promote (only if not already promoted with approved status) */}
-                          {!isPromoted && listing.status !== 'deleted' && (
+                          {/* Promote (only if not already promoted with approved or pending status) */}
+                          {!isPromoted && listing.promotion_status !== 'pending' && listing.status !== 'deleted' && (
                             <motion.button
                               whileTap={{ scale: 0.95 }}
                               onClick={() => openPromotionModal(listing)}
@@ -757,6 +771,16 @@ export const MyMarketListings: React.FC<MyMarketListingsProps> = ({ initialTab =
                               <Megaphone className="w-3 h-3" />
                               {t('market.promote')}
                             </motion.button>
+                          )}
+
+                          {/* Pending promotion indicator */}
+                          {listing.promotion_status === 'pending' && (
+                            <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold ${
+                              darkMode ? 'bg-amber-900/20 text-amber-500' : 'bg-amber-50 text-amber-600'
+                            }`}>
+                              <Clock className="w-3 h-3 animate-pulse" />
+                              {t('market.promotionPending', 'قيد المراجعة')}
+                            </div>
                           )}
 
                           {/* Delete */}
@@ -993,7 +1017,7 @@ export const MyMarketListings: React.FC<MyMarketListingsProps> = ({ initialTab =
                                 </span>
                                 <span className={`flex items-center gap-1 text-[10px] font-bold ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
                                   <TrendingUp className="w-3 h-3" />
-                                  {pkg.estimatedReach.toLocaleString('ar-EG')} {t('market.reach')}
+                                  {pkg.reachEstimate.toLocaleString('ar-EG')} {t('market.reach')}
                                 </span>
                               </div>
                               <div className="flex flex-wrap gap-1">
@@ -1267,7 +1291,7 @@ export const MyMarketListings: React.FC<MyMarketListingsProps> = ({ initialTab =
                             </span>
                             <span className={`text-xs ${darkMode ? 'text-gray-600' : 'text-gray-300'}`}>•</span>
                             <span className={`text-xs font-bold ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                              ~{selectedPackageData.estimatedReach.toLocaleString('ar-EG')} {t('market.reach')}
+                              ~{selectedPackageData.reachEstimate.toLocaleString('ar-EG')} {t('market.reach')}
                             </span>
                           </div>
                         </div>

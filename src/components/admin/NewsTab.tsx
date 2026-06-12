@@ -50,13 +50,21 @@ export const NewsTab: React.FC<NewsTabProps> = ({ allNews, loadNews, refreshData
         priority: newsForm.isAlert ? newsForm.priority : 'normal',
       });
       setNewsForm({ title: '', content: '', source: t('app.nameAr'), category: 'general', isAlert: false, priority: 'normal' });
-      loadNews(); toast.success(t('admin.newsAdded')); refreshData();
+      loadNews();
+      toast.success(t('admin.newsAdded'));
+      // Refresh global data so AdminAlertBar and news items update immediately
+      refreshData();
     } catch { toast.error(t('admin.newsAddFailed')); }
   };
 
   const handleDeleteNews = async (newsId: string) => {
     if (!confirm(t('admin.confirmDeleteNews'))) return;
-    try { await adminFetch('DELETE', `/admin/news/${newsId}`); loadNews(); toast.success(t('admin.newsDeleted')); refreshData(); } catch { toast.error(t('admin.newsDeleteFailed')); }
+    try {
+      await adminFetch('DELETE', `/admin/news/${newsId}`);
+      loadNews();
+      toast.success(t('admin.newsDeleted'));
+      refreshData();
+    } catch { toast.error(t('admin.newsDeleteFailed')); }
   };
 
   // Priority badge color

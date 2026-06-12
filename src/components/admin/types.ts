@@ -4,7 +4,7 @@ export type AdminTab =
   | 'charging' | 'promotions' | 'market-promotions' | 'news' | 'publish'
   | 'reports' | 'categories' | 'transactions' | 'stories' | 'messages'
   | 'smartlinks' | 'activity' | 'broadcast' | 'database' | 'settings'
-  | 'friends-mgmt' | 'livestream' | 'ai-analytics';
+  | 'friends-mgmt' | 'livestream' | 'ai-analytics' | 'admin-notifications';
 
 // ─── Interfaces ──────────────────────────────────────────────────────
 export interface AdminUser {

@@ -140,15 +140,15 @@ export const Navbar: React.FC<NavbarProps> = ({ user }) => {
 
   return (
     <nav
-      className={`sticky top-0 z-50 ${navBg} border-b h-14 flex items-center justify-between px-4 transition-colors`}
+      className={`sticky top-0 z-50 ${navBg} border-b h-14 flex items-center justify-between px-2 sm:px-4 transition-colors overflow-x-hidden`}
     >
       {/* ─── Mobile Menu Button ─── */}
       <MobileMenuButton />
 
       {/* ─── Search and Logo ─── */}
-      <div className="flex items-center gap-2 flex-1 relative" ref={searchRef}>
+      <div className="flex items-center gap-2 flex-1 min-w-0 relative" ref={searchRef}>
         <div
-          className="w-10 h-10 bg-orange-600 rounded-full flex items-center justify-center text-white font-black text-2xl shadow-lg shadow-orange-100 cursor-pointer flex-shrink-0"
+          className="w-9 h-9 sm:w-10 sm:h-10 bg-orange-600 rounded-full flex items-center justify-center text-white font-black text-xl sm:text-2xl shadow-lg shadow-orange-100 cursor-pointer flex-shrink-0"
           onClick={() => navigate('/')}
         >
           {t('navbar.logo')}
@@ -256,7 +256,7 @@ export const Navbar: React.FC<NavbarProps> = ({ user }) => {
       </div>
 
       {/* ─── Profile and Actions ─── */}
-      <div className="flex items-center gap-2 flex-1 justify-end">
+      <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
         {/* Language Toggle - hidden on mobile */}
         <div className="hidden md:block">
           <LanguageToggle />
@@ -314,7 +314,7 @@ export const Navbar: React.FC<NavbarProps> = ({ user }) => {
         <div className="relative" ref={profileRef}>
           <button
             onClick={() => setShowProfileDropdown(!showProfileDropdown)}
-            className="w-10 h-10 rounded-full overflow-hidden border border-gray-100 flex items-center justify-center"
+            className="w-9 h-9 sm:w-10 sm:h-10 rounded-full overflow-hidden border border-gray-100 flex items-center justify-center"
           >
             <img
               src={user?.avatarBase64 || user?.avatar || 'https://api.dicebear.com/7.x/avataaars/svg?seed=Default'}
@@ -331,7 +331,7 @@ export const Navbar: React.FC<NavbarProps> = ({ user }) => {
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: 10, scale: 0.95 }}
                 transition={{ duration: 0.15 }}
-                className={`absolute left-0 top-full mt-2 w-56 ${dropdownBg} rounded-2xl shadow-2xl border overflow-hidden z-[100]`}
+                className={`absolute left-0 top-full mt-2 w-56 max-w-[calc(100vw-2rem)] ${dropdownBg} rounded-2xl shadow-2xl border overflow-hidden z-[100]`}
               >
                 {/* User Info */}
                 {user && (

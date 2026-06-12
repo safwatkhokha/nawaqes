@@ -6,7 +6,7 @@ import React, { useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../contexts/AppContext';
 import { useAuth } from '../contexts/AuthContext';
-import { promotionPackages, getCityTier, cityTiers } from '../data/promotionPackages';
+import { promotionPackages, getCityTier, cityCountTiers } from '../data/promotionPackages';
 import { egyptianCities, regionLabels, regionOrder, formatSelectedCities, getCityNameAr, searchCities, getGovernorateCount } from '../data/egyptianCities';
 import type { EgyptianCity } from '../types';
 import { Post } from '../types';
@@ -69,7 +69,7 @@ export const PromotionWizard: React.FC<PromotionWizardProps> = ({ post, onClose,
 
   const effectiveReach = useMemo(() => {
     if (selectedPackage === 'city_target' && cityTier) return cityTier.estimatedReach;
-    return pkg?.estimatedReach || 0;
+    return pkg?.reachEstimate || 0;
   }, [selectedPackage, cityTier, pkg]);
 
   const effectiveNotifications = useMemo(() => {
@@ -327,7 +327,7 @@ export const PromotionWizard: React.FC<PromotionWizardProps> = ({ post, onClose,
                           {p.id === 'city_target' ? (
                             <span className="flex items-center gap-1"><MapPin className="w-3 h-3" />{t('promotion.basedOnCityCount')}</span>
                           ) : (
-                            <span className="flex items-center gap-1"><Eye className="w-3 h-3" />{t('promotion.reachCount', { count: p.estimatedReach.toLocaleString() })}</span>
+                            <span className="flex items-center gap-1"><Eye className="w-3 h-3" />{t('promotion.reachCount', { count: p.reachEstimate.toLocaleString() })}</span>
                           )}
                         </div>
                         <div className="flex flex-wrap gap-1">
@@ -350,7 +350,7 @@ export const PromotionWizard: React.FC<PromotionWizardProps> = ({ post, onClose,
                           <div className="mb-3">
                             <p className={`text-[10px] font-bold mb-2 ${textMuted}`}>{t('promotion.pricesByCityCount')}</p>
                             <div className="grid grid-cols-2 gap-1.5">
-                              {cityTiers.map((tier, i) => (
+                              {cityCountTiers.map((tier, i) => (
                                 <div key={i} className={`text-[9px] px-2 py-1.5 rounded-lg ${darkMode ? 'bg-gray-700/50 text-gray-300' : 'bg-orange-50 text-gray-700'}`}>
                                   <span className="font-bold">{tier.label}:</span> {t('promotion.currencyPerReach', { price: tier.price, reach: tier.estimatedReach.toLocaleString() })}
                                 </div>

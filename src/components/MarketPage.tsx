@@ -644,7 +644,7 @@ export const MarketPage: React.FC = () => {
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.1 }}
-        className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-5"
+        className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-5 overflow-x-hidden"
       >
         {/* Total Listings */}
         <div className={`rounded-xl p-2.5 border text-center ${
@@ -921,7 +921,7 @@ export const MarketPage: React.FC = () => {
                   <BarChart3 className="w-3.5 h-3.5 inline-block ml-1" />
                   {t('market.priceRange')}
                 </label>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-2 gap-3 overflow-x-hidden">
                   <div>
                     <input
                       type="number"
@@ -1171,7 +1171,7 @@ export const MarketPage: React.FC = () => {
           ═══════════════════════════════════════════════════════════════ */}
       {loading ? (
         // Loading skeleton
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-2 gap-3 overflow-x-hidden">
           {Array.from({ length: 6 }).map((_, i) => (
             <motion.div
               key={i}
@@ -1220,7 +1220,7 @@ export const MarketPage: React.FC = () => {
           </div>
 
           {/* Grid */}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 gap-3 overflow-x-hidden">
             {smartListings.map((listing, index) => {
               const isSaved = savedListingIds.has(listing.id);
               const conditionInfo = conditionLabels[listing.condition];
@@ -1256,7 +1256,7 @@ export const MarketPage: React.FC = () => {
                   }`}
                 >
                   {/* ── Image Section ── */}
-                  <div className="relative h-40 overflow-hidden">
+                  <div className="relative h-32 sm:h-40 overflow-hidden">
                     {mainImage ? (
                       <img
                         src={mainImage}
@@ -1326,9 +1326,9 @@ export const MarketPage: React.FC = () => {
                   </div>
 
                   {/* ── Details Section ── */}
-                  <div className="p-3">
+                  <div className="p-2 sm:p-3">
                     {/* Title */}
-                    <h3 className={`text-xs font-bold leading-snug line-clamp-2 mb-1.5 min-h-[2rem] ${
+                    <h3 className={`text-[11px] sm:text-xs font-bold leading-snug line-clamp-2 mb-1 sm:mb-1.5 min-h-[2rem] ${
                       darkMode ? 'text-gray-100' : 'text-gray-800'
                     }`}>
                       {listing.title}
@@ -1336,20 +1336,20 @@ export const MarketPage: React.FC = () => {
 
                     {/* Price */}
                     {listing.price && listing.price > 0 ? (
-                      <p className="text-sm font-black text-orange-600 mb-1.5">
+                      <p className="text-xs sm:text-sm font-black text-orange-600 mb-1 sm:mb-1.5">
                         {formatPrice(listing.price, listing.currency || t('common.egp'))}
                       </p>
                     ) : (
-                      <p className={`text-sm font-black mb-1.5 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                      <p className={`text-xs sm:text-sm font-black mb-1 sm:mb-1.5 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
                         {t('market.priceOnCall')}
                       </p>
                     )}
 
                     {/* Location */}
                     {(listing.city || listing.location) && (
-                      <div className={`flex items-center gap-1 mb-1.5 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                      <div className={`flex items-center gap-1 mb-1 sm:mb-1.5 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
                         <MapPin className="w-3 h-3 text-orange-500 flex-shrink-0" />
-                        <span className="text-[10px] font-medium truncate">
+                        <span className="text-[9px] sm:text-[10px] font-medium truncate">
                           {listing.city ? getCityNameAr(listing.city) : listing.location}
                         </span>
                       </div>
@@ -1518,12 +1518,12 @@ export const MarketPage: React.FC = () => {
               </div>
               <motion.button
                 whileTap={{ scale: 0.95 }}
-                onClick={() => navigate('/market/new')}
+                onClick={() => navigate('/market/my-listings')}
                 className={`flex-shrink-0 px-4 py-2 rounded-xl text-xs font-bold ${
                   darkMode ? 'bg-orange-600 text-white' : 'bg-orange-500 text-white'
                 }`}
               >
-                {t('market.startNow')}
+                {t('market.promoteNow', 'روّج الآن')}
               </motion.button>
             </div>
           </motion.div>

@@ -45,6 +45,7 @@ import { NotificationsPage } from './components/NotificationsPage';
 import { NotificationToast } from './components/NotificationToast';
 import { FloatingChatButton } from './components/FloatingChatButton';
 import { AIFloatingButton, AIPromotionPage } from './components/AIPromotionAssistant';
+import { GlobalAIAssistant } from './components/GlobalAIAssistant';
 import { MobileBottomNav } from './components/MobileBottomNav';
 import { LiveStreamPage } from './components/LiveStreamPage';
 import { MarketListingPage } from './components/MarketListingPage';
@@ -926,14 +927,14 @@ const MainLayout = () => {
   };
 
   return (
-    <div className={`min-h-screen flex flex-col ${darkMode ? 'bg-gray-900' : 'bg-[#f8f9fa]'}`} dir={dir}>
+    <div className={`min-h-screen flex flex-col overflow-x-hidden ${darkMode ? 'bg-gray-900' : 'bg-[#f8f9fa]'}`} dir={dir}>
       <Navbar user={currentUser} />
       <AdminAlertBar />
       <DepositConfirmationBanner />
-      <div className="flex justify-center w-full">
+      <div className="flex justify-center w-full overflow-x-hidden">
         <div className="flex w-full max-w-[1600px]">
           <Sidebar user={currentUser} categories={categories} onCategorySelect={handleCategorySelect} selectedCategory={selectedCategory} />
-          <main className="flex-1 max-w-[700px] w-full px-2 sm:px-4 pt-4 sm:pt-6 pb-24 lg:pb-6 mx-auto">
+          <main className="flex-1 max-w-[700px] w-full px-1.5 sm:px-4 pt-3 sm:pt-6 pb-24 lg:pb-6 mx-auto overflow-x-hidden">
 
             {/* ══════════════════ COMPACT HERO ══════════════════ */}
             <motion.div
@@ -1307,14 +1308,14 @@ const PageLayout = ({ children }: { children: React.ReactNode }) => {
     else if (!id) navigate('/');
   };
   return (
-    <div className={`min-h-screen flex flex-col ${darkMode ? 'bg-gray-900' : 'bg-[#f8f9fa]'}`} dir={dir}>
+    <div className={`min-h-screen flex flex-col overflow-x-hidden ${darkMode ? 'bg-gray-900' : 'bg-[#f8f9fa]'}`} dir={dir}>
       <Navbar user={currentUser} />
       <AdminAlertBar />
       <DepositConfirmationBanner />
-      <div className="flex justify-center w-full flex-1">
+      <div className="flex justify-center w-full flex-1 overflow-x-hidden">
         <div className="flex w-full max-w-[1600px]">
           <Sidebar user={currentUser} categories={categories} onCategorySelect={handleCategorySelect} selectedCategory={selectedCategory} />
-          <main className="flex-1 max-w-[900px] w-full px-2 sm:px-4 pt-4 sm:pt-6 pb-24 lg:pb-6 mx-auto">{children}</main>
+          <main className="flex-1 max-w-[900px] w-full px-1.5 sm:px-4 pt-3 sm:pt-6 pb-24 lg:pb-6 mx-auto overflow-x-hidden">{children}</main>
           <RightSidebar user={currentUser} notifications={notifications} />
         </div>
       </div>
@@ -1376,6 +1377,7 @@ function AppInner() {
           <NotificationToast />
           <FloatingChatButton />
           <AIFloatingButton />
+          <GlobalAIAssistant />
           <MobileBottomNav />
           <ShareModal />
           <MobileSidebarDrawer user={null} categories={[]} />

@@ -685,6 +685,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             source: n.source || '',
             isAlert: !!n.is_alert,
             category: n.category || (n.is_alert ? 'urgent' : 'general'),
+            priority: n.priority || 'normal',
             createdAt: n.created_at || '',
           }));
           setNewsItems(mappedNews);

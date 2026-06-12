@@ -553,6 +553,28 @@ router.delete('/alerts/:id', (req: Request, res: Response) => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════
+// GET /api/admin/news - Get all news items (admin view, includes all fields)
+// ═══════════════════════════════════════════════════════════════════════
+router.get('/news', (req: Request, res: Response) => {
+  try {
+    const limit = parseInt(req.query.limit as string) || 50;
+    const category = req.query.category as string | undefined;
+    let query = 'SELECT * FROM news_items';
+    const params: any[] = [];
+    if (category && ['general', 'egypt', 'world', 'urgent'].includes(category)) {
+      query += ' WHERE category = ?';
+      params.push(category);
+    }
+    query += ' ORDER BY created_at DESC LIMIT ?';
+    params.push(limit);
+    const news = db.prepare(query).all(...params);
+    res.json(news);
+  } catch (err: any) {
+    res.status(500).json({ error: 'فشل جلب الأخبار', details: err.message });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════
 // POST /api/admin/news - Add news item
 // ═══════════════════════════════════════════════════════════════════════
 router.post('/news', (req: Request, res: Response) => {
@@ -1063,12 +1085,11 @@ router.get('/transactions', (req: Request, res: Response) => {
 router.get('/activity-log', (req: Request, res: Response) => {
   try {
     const limit = parseInt(req.query.limit as string) || 50;
+    const typeFilter = req.query.type as string | undefined;
 
-    const activities: any[] = [];
-
-    // Recent posts
+    // Recent posts — truncate content for display
     const recentPosts = db.prepare(`
-      SELECT p.id, p.content, p.type, p.status, p.created_at,
+      SELECT p.id, SUBSTR(p.content, 1, 120) as content, p.type, p.status, p.created_at,
              u.name as user_name, u.id as user_id, 'post' as activity_type
       FROM posts p LEFT JOIN users u ON u.id = p.author_id
       ORDER BY p.created_at DESC LIMIT ?
@@ -1096,15 +1117,53 @@ router.get('/activity-log', (req: Request, res: Response) => {
       ORDER BY pr.created_at DESC LIMIT ?
     `).all(limit);
 
+    // Recent charging requests
+    let recentCharges: any[] = [];
+    try {
+      recentCharges = db.prepare(`
+        SELECT cr.id, cr.amount, cr.method, cr.status, cr.created_at,
+               u.name as user_name, 'transaction' as activity_type, 'charge_request' as tx_type
+        FROM charging_requests cr LEFT JOIN users u ON u.id = cr.user_id
+        ORDER BY cr.created_at DESC LIMIT ?
+      `).all(limit);
+    } catch { /* charging_requests may not exist */ }
+
+    // Recent news/alerts
+    let recentNews: any[] = [];
+    try {
+      recentNews = db.prepare(`
+        SELECT ni.id, ni.title as content, ni.is_alert, ni.category, ni.created_at,
+               'news' as activity_type, ni.source as user_name
+        FROM news_items ni
+        ORDER BY ni.created_at DESC LIMIT ?
+      `).all(Math.min(limit, 20));
+    } catch { /* news_items may not exist */ }
+
     // Merge and sort by date
-    const all = [
+    let all = [
       ...recentPosts.map((p: any) => ({ ...p, sortDate: new Date(p.created_at).getTime() })),
-      ...recentUsers.map((u: any) => ({ ...u, sortDate: new Date(u.created_at).getTime() })),
+      ...recentUsers.map((u: any) => ({ ...u, user_name: u.name, sortDate: new Date(u.created_at).getTime() })),
       ...recentTx.map((t: any) => ({ ...t, sortDate: new Date(t.created_at).getTime() })),
       ...recentPromos.map((p: any) => ({ ...p, sortDate: new Date(p.created_at).getTime() })),
-    ].sort((a, b) => b.sortDate - a.sortDate).slice(0, limit);
+      ...recentCharges.map((c: any) => ({ ...c, sortDate: new Date(c.created_at).getTime() })),
+      ...recentNews.map((n: any) => ({ ...n, sortDate: new Date(n.created_at).getTime() })),
+    ].sort((a, b) => b.sortDate - a.sortDate);
 
-    res.json(all);
+    // Apply type filter if requested
+    if (typeFilter && typeFilter !== 'all') {
+      all = all.filter((item: any) => {
+        const at = (item.activity_type || '').toLowerCase();
+        if (typeFilter === 'user') return at === 'user' || at === 'user_register';
+        if (typeFilter === 'post') return at === 'post';
+        if (typeFilter === 'transaction') return at === 'transaction';
+        if (typeFilter === 'promotion') return at === 'promotion';
+        if (typeFilter === 'news') return at === 'news';
+        return true;
+      });
+    }
+
+    // Remove sortDate helper field and limit results
+    res.json(all.slice(0, limit).map(({ sortDate, ...rest }: any) => rest));
   } catch (err: any) {
     res.status(500).json({ error: 'فشل جلب سجل النشاط', details: err.message });
   }
@@ -1690,8 +1749,8 @@ router.post('/market-promotion-requests/:id/approve', (req: Request, res: Respon
     // Update promotion request status
     db.prepare("UPDATE market_promotion_requests SET status = 'approved' WHERE id = ?").run(req.params.id);
 
-    // Calculate duration in days (duration field stores hours in market packages)
-    const durationDays = pr.duration ? Math.ceil(pr.duration / 24) : 3;
+    // Duration field stores days (not hours) in market packages
+    const durationDays = pr.duration ? pr.duration : 3;
     const expiresAt = new Date(Date.now() + durationDays * 86400000).toISOString();
 
     // Activate the listing promotion

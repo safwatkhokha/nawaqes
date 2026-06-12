@@ -854,7 +854,7 @@ export const MyPage: React.FC = () => {
             {myPromotedPosts.length > 0 ? myPromotedPosts.map(post => {
               const pkg = promotionPackages.find(p => p.id === post.promotionTier);
               const reach = post.reachCount || 0;
-              const estimated = post.estimatedReach || pkg?.estimatedReach || 0;
+              const estimated = post.estimatedReach || pkg?.reachEstimate || 0;
               const progress = estimated > 0 ? Math.min(100, Math.round((reach / estimated) * 100)) : 0;
 
               return (

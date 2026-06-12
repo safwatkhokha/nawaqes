@@ -1119,7 +1119,7 @@ export const LoginPage: React.FC = () => {
                 </div>
 
                 {/* Interest Cards Grid - responsive height for mobile */}
-                <div className="grid grid-cols-2 gap-1.5 sm:gap-2 max-h-[200px] sm:max-h-[280px] overflow-y-auto pr-1 scrollbar-thin">
+                <div className="grid grid-cols-2 gap-1.5 sm:gap-2 max-h-[160px] sm:max-h-[280px] overflow-y-auto pr-1 scrollbar-thin">
                   {(activeGroup === 'all' ? interestCategories : getInterestsByGroup(activeGroup as InterestGroup)).map(interest => {
                     const isSelected = selectedInterests.includes(interest.id);
                     return (
@@ -1158,11 +1158,11 @@ export const LoginPage: React.FC = () => {
                 </div>
 
                 {/* Create Account Button - sticky on mobile for easy access */}
-                <div className="sticky bottom-0 left-0 right-0 pt-2 bg-gradient-to-t from-[#f8f9fa] via-[#f8f9fa] to-transparent sm:static sm:bg-none sm:pt-0">
+                <div className="sticky bottom-0 left-0 right-0 pt-3 pb-[env(safe-area-inset-bottom,0px)] bg-gradient-to-t from-[#f8f9fa] via-[#f8f9fa] to-transparent sm:static sm:bg-none sm:pt-0 sm:pb-0">
                 <button
                   onClick={handleFinishRegistration}
                   disabled={isRegistering || selectedInterests.length === 0}
-                  className="w-full bg-gradient-to-l from-orange-600 to-orange-500 text-white py-3.5 sm:py-4 rounded-xl font-black text-sm sm:text-base hover:from-orange-700 hover:to-orange-600 active:scale-[0.98] transition-all shadow-lg shadow-orange-200 disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  className="w-full min-h-[48px] bg-gradient-to-l from-orange-600 to-orange-500 text-white py-3.5 sm:py-4 rounded-xl font-black text-sm sm:text-base hover:from-orange-700 hover:to-orange-600 active:scale-[0.98] transition-all shadow-lg shadow-orange-200 disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 >
                   {isRegistering && <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />}
                   {isRegistering ? t('common.loading') : t('auth.createAccount', { count: selectedInterests.length })}

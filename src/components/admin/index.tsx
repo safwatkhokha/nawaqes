@@ -43,6 +43,7 @@ const SettingsTab = lazy(() => import('./SettingsTab').then(m => ({ default: m.S
 const FriendsManagementTab = lazy(() => import('./FriendsManagementTab').then(m => ({ default: m.FriendsManagementTab })));
 const LiveStreamTab = lazy(() => import('./LiveStreamTab').then(m => ({ default: m.LiveStreamTab })));
 const AIAnalyticsTab = lazy(() => import('./AIAnalyticsTab').then(m => ({ default: m.AIAnalyticsTab })));
+const AdminNotificationsTab = lazy(() => import('./AdminNotificationsTab').then(m => ({ default: m.AdminNotificationsTab })));
 
 // ─── Tab Fallback Loader ──
 const TabLoader: React.FC<{ darkMode?: boolean }> = ({ darkMode }) => (
@@ -173,7 +174,7 @@ export const AdminDashboard = () => {
 
   const loadNews = useCallback(async () => {
     try {
-      const data = await api.getNews().catch(() => []);
+      const data = await adminFetch('GET', '/admin/news?limit=100').catch(() => []);
       if (Array.isArray(data)) setAllNews(data as any[]);
     } catch {}
   }, []);
@@ -437,6 +438,12 @@ export const AdminDashboard = () => {
 
       // Refresh users list on any admin change (new users, status changes)
       loadUsers();
+
+      // Refresh news list on any admin change (news/alerts created or deleted)
+      loadNews();
+
+      // Refresh activity log on any admin change
+      if (activeTab === 'activity') loadActivityLog();
     };
 
     window.addEventListener('nawaqes:admin-data-changed', handleAdminDataChanged);
@@ -463,6 +470,7 @@ export const AdminDashboard = () => {
       label: t('admin.groupMain'),
       tabs: [
         { id: 'overview' as AdminTab, label: t('admin.tab_overview'), icon: <LayoutDashboard className="w-[18px] h-[18px]" /> },
+        { id: 'admin-notifications' as AdminTab, label: 'الإشعارات', icon: <Bell className="w-[18px] h-[18px]" />, badge: (stats?.pendingCharging || 0) + (stats?.pendingPromotions || 0) + (stats?.pendingMarketPromotions || 0), badgeColor: 'orange' },
         { id: 'users' as AdminTab, label: t('admin.tab_users'), icon: <Users className="w-[18px] h-[18px]" />, badge: allUsers.length },
         { id: 'posts' as AdminTab, label: t('admin.tab_posts'), icon: <Package className="w-[18px] h-[18px]" />, badge: posts.length },
       ],
@@ -563,7 +571,7 @@ export const AdminDashboard = () => {
 
   // ─── Render ──
   return (
-    <div className={`min-h-screen flex ${darkMode ? 'bg-gray-950' : 'bg-gradient-to-br from-gray-50 to-gray-100'}`} dir={dir}>
+    <div className={`min-h-screen flex overflow-x-hidden ${darkMode ? 'bg-gray-950' : 'bg-gradient-to-br from-gray-50 to-gray-100'}`} dir={dir}>
       {/* ─── Mobile Overlay ─── */}
       {mobileSidebarOpen && (
         <div className="fixed inset-0 bg-black/50 z-50 lg:hidden" onClick={() => setMobileSidebarOpen(false)} />
@@ -731,10 +739,10 @@ export const AdminDashboard = () => {
       </aside>
 
       {/* ─── Main Content ─── */}
-      <main className="flex-1 min-w-0 overflow-y-auto">
+      <main className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden">
         {/* Header */}
         <header
-          className={`${darkMode ? 'bg-gray-900/80 border-gray-800' : 'bg-white/80 border-gray-200'} border-b sticky top-0 z-40 backdrop-blur-xl px-4 md:px-6 py-3`}
+          className={`${darkMode ? 'bg-gray-900/80 border-gray-800' : 'bg-white/80 border-gray-200'} border-b sticky top-0 z-40 backdrop-blur-xl px-3 md:px-6 py-3`}
         >
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-3 min-w-0">
@@ -821,7 +829,7 @@ export const AdminDashboard = () => {
         </header>
 
         {/* Content Area */}
-        <div className="p-4 md:p-6 max-w-[1400px] mx-auto">
+        <div className="p-2 sm:p-4 md:p-6 max-w-[1400px] mx-auto">
           <Suspense fallback={<TabLoader darkMode={darkMode} />}>
             {activeTab === 'overview' && (
               <OverviewTab
@@ -931,7 +939,7 @@ export const AdminDashboard = () => {
               <SmartLinksTab smartLinksData={smartLinksData} darkMode={darkMode} />
             )}
             {activeTab === 'activity' && (
-              <ActivityTab activityLog={activityLog} darkMode={darkMode} />
+              <ActivityTab activityLog={activityLog} darkMode={darkMode} loadActivityLog={loadActivityLog} />
             )}
             {activeTab === 'broadcast' && (
               <BroadcastTab darkMode={darkMode} />
@@ -955,6 +963,17 @@ export const AdminDashboard = () => {
             )}
             {activeTab === 'ai-analytics' && (
               <AIAnalyticsTab darkMode={darkMode} />
+            )}
+            {activeTab === 'admin-notifications' && (
+              <AdminNotificationsTab
+                darkMode={darkMode}
+                pendingCharging={stats?.pendingCharging || 0}
+                pendingPromotions={stats?.pendingPromotions || 0}
+                pendingMarketPromotions={stats?.pendingMarketPromotions || 0}
+                reportsCount={reports.length}
+                allNews={allNews}
+                activityLog={activityLog}
+              />
             )}
           </Suspense>
         </div>

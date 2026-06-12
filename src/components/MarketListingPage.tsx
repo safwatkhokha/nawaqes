@@ -87,7 +87,7 @@ export const MarketListingPage: React.FC = () => {
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
   const { darkMode, sendMessage } = useAppContext();
-  const { currentUser } = useAuth();
+  const { currentUser, refreshCurrentUser } = useAuth();
   const { t } = useTranslation();
   const { dir } = useLanguage();
 
@@ -353,8 +353,9 @@ export const MarketListingPage: React.FC = () => {
   const isOwnListing = currentUser?.id === listing?.seller?.id;
   // Allow promotion for own listings that are not currently actively promoted
   // Re-promotion is allowed if the current promotion is expired or rejected
+  // Block promotion if there's already a pending or approved promotion
   const canPromote = isOwnListing && listing && (
-    !listing.isPromoted ||
+    (!listing.isPromoted && !listing.promotionStatus) ||
     listing.promotionStatus === 'expired' ||
     listing.promotionStatus === 'rejected'
   );
@@ -419,11 +420,11 @@ export const MarketListingPage: React.FC = () => {
     try {
       const promotionData: Record<string, any> = {
         listingId: listing.id,
-        tier: selectedPackage,
+        tier: pkg.tier || selectedPackage.replace('market_', ''), // Strip 'market_' prefix for backend
         packageName: pkg.name,
         price: pkg.price,
         duration: pkg.duration,
-        estimatedReach: pkg.estimatedReach,
+        estimatedReach: pkg.reachEstimate,
       };
 
       if (pkg.targeting === 'city' && selectedCities.length > 0) {
@@ -440,8 +441,12 @@ export const MarketListingPage: React.FC = () => {
       await api.requestMarketPromotion(promotionData);
       toast.success(t('marketListing.promotionRequestSent'));
       closePromotionModal();
-      // Update listing to show promoted
-      setListing(prev => prev ? { ...prev, isPromoted: true } : prev);
+      // Update listing to reflect pending promotion status (not isPromoted=true, which is only set after admin approval)
+      setListing(prev => prev ? { ...prev, isPromoted: false, promotionStatus: 'pending', promotionPackage: pkg.name, promotionTier: pkg.tier } : prev);
+      // Refresh user data to update wallet balance
+      try {
+        await refreshCurrentUser();
+      } catch { /* non-critical */ }
     } catch (err: any) {
       toast.error(err.message || t('marketListing.promotionRequestFailed'));
     } finally {
@@ -1390,7 +1395,7 @@ export const MarketListingPage: React.FC = () => {
                                 </span>
                                 <span className={`flex items-center gap-1 text-[10px] font-bold ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
                                   <TrendingUp className="w-3 h-3" />
-                                  {pkg.estimatedReach.toLocaleString()} {t('marketListing.reach')}
+                                  {pkg.reachEstimate.toLocaleString()} {t('marketListing.reach')}
                                 </span>
                               </div>
                               <div className="flex flex-wrap gap-1">
@@ -1586,7 +1591,7 @@ export const MarketListingPage: React.FC = () => {
                       </button>
                       <button
                         onClick={() => setPromotionStep('confirm')}
-                        disabled={selectedPackageData.targeting === 'city' && selectedCities.length === 0}
+                        disabled={(selectedPackageData.targeting === 'city' && selectedCities.length === 0) || (selectedPackageData.targeting === 'interests' && selectedInterests.length === 0)}
                         className="flex-1 py-2.5 rounded-xl text-sm font-bold bg-orange-600 hover:bg-orange-700 text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         {t('common.next')}

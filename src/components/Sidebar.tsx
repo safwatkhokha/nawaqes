@@ -244,12 +244,12 @@ const SidebarContent: React.FC<SidebarProps & { onClose?: () => void }> = ({
   const dialogSectionBg = darkMode ? 'bg-gray-700/50' : 'bg-gray-50';
 
   return (
-    <div dir={dir} className="flex flex-col gap-0 py-3 h-full overflow-y-auto overflow-x-hidden px-3 transition-colors scrollbar-thin">
+    <div dir={dir} className="flex flex-col gap-0 py-3 h-full overflow-y-auto overflow-x-hidden px-2 sm:px-3 transition-colors scrollbar-thin">
       {/* ─── User Profile Card ─── */}
       {user && (
         <motion.button
           onClick={() => handleNavClick('/profile')}
-          className={`flex items-center gap-3.5 p-3.5 ${hoverBg} rounded-2xl transition-all w-full text-start mb-3 group`}
+          className={`flex items-center gap-3.5 p-2.5 sm:p-3.5 ${hoverBg} rounded-2xl transition-all w-full text-start mb-3 group`}
           whileHover={{ scale: 1.01 }}
           whileTap={{ scale: 0.99 }}
         >
@@ -257,12 +257,12 @@ const SidebarContent: React.FC<SidebarProps & { onClose?: () => void }> = ({
             <img
               src={user.avatarBase64 || user.avatar}
               alt={user.name}
-              className="w-14 h-14 rounded-xl bg-gray-100 group-hover:scale-105 transition-transform object-cover"
+              className="w-11 h-11 sm:w-14 sm:h-14 rounded-xl bg-gray-100 group-hover:scale-105 transition-transform object-cover"
             />
             <div className="absolute -bottom-0.5 -left-0.5 w-4 h-4 bg-green-500 border-2 border-white dark:border-gray-900 rounded-full" />
           </div>
           <div className="flex flex-col flex-1 min-w-0">
-            <span className={`font-black text-base ${textPrimary} truncate`}>{user.name}</span>
+            <span className={`font-black text-sm sm:text-base ${textPrimary} truncate`}>{user.name}</span>
             <div className="flex items-center gap-2">
               <span className="text-xs text-green-600 font-bold">{t('navbar.activeNow')}</span>
               {walletBalance > 0 && (
@@ -279,14 +279,14 @@ const SidebarContent: React.FC<SidebarProps & { onClose?: () => void }> = ({
 
       {/* ─── Search Filter ─── */}
       <div className="mb-3">
-        <div className={`flex items-center gap-2.5 px-4 py-3 rounded-xl ${darkMode ? 'bg-gray-800' : 'bg-gray-50'} transition-colors`}>
-          <Search className={`w-5 h-5 ${textMuted} flex-shrink-0`} />
+        <div className={`flex items-center gap-2.5 px-3 sm:px-4 py-2.5 sm:py-3 rounded-xl ${darkMode ? 'bg-gray-800' : 'bg-gray-50'} transition-colors`}>
+          <Search className={`w-4 h-4 sm:w-5 sm:h-5 ${textMuted} flex-shrink-0`} />
           <input
             type="text"
             placeholder={t('sidebar.searchMenu')}
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
-            className={`bg-transparent border-none outline-none text-sm w-full ${textPrimary} placeholder:${textMuted}`}
+            className={`bg-transparent border-none outline-none text-xs sm:text-sm w-full ${textPrimary} placeholder:${textMuted}`}
           />
           {searchQuery && (
             <button onClick={() => setSearchQuery('')} className="flex-shrink-0">
@@ -300,7 +300,7 @@ const SidebarContent: React.FC<SidebarProps & { onClose?: () => void }> = ({
       <div className="mb-3">
         <motion.button
           onClick={toggleLanguage}
-          className={`flex items-center gap-3 w-full px-4 py-3.5 rounded-xl transition-all group ${
+          className={`flex items-center gap-2 sm:gap-3 w-full px-3 sm:px-4 py-2.5 sm:py-3.5 rounded-xl transition-all group ${
             darkMode
               ? 'bg-gradient-to-l from-blue-900/40 to-indigo-900/40 hover:from-blue-900/60 hover:to-indigo-900/60 border border-blue-800/30'
               : 'bg-gradient-to-l from-blue-50 to-indigo-50 hover:from-blue-100 hover:to-indigo-100 border border-blue-200/50'
@@ -308,13 +308,13 @@ const SidebarContent: React.FC<SidebarProps & { onClose?: () => void }> = ({
           whileHover={{ scale: 1.02 }}
           whileTap={{ scale: 0.98 }}
         >
-          <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${
+          <div className={`w-9 h-9 sm:w-10 sm:h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${
             darkMode ? 'bg-blue-800/50 text-blue-300' : 'bg-blue-100 text-blue-600'
           }`}>
-            <Globe className="w-5 h-5" />
+            <Globe className="w-4 h-4 sm:w-5 sm:h-5" />
           </div>
           <div className="flex-1 text-start">
-            <span className={`text-sm font-black block ${darkMode ? 'text-blue-300' : 'text-blue-700'}`}>
+            <span className={`text-xs sm:text-sm font-black ${darkMode ? 'text-blue-300' : 'text-blue-700'}`}>
               {language === 'ar' ? 'English' : 'العربية'}
             </span>
             <span className={`text-xs ${darkMode ? 'text-blue-400/70' : 'text-blue-500'}`}>
@@ -341,12 +341,12 @@ const SidebarContent: React.FC<SidebarProps & { onClose?: () => void }> = ({
               {/* Section Header */}
               <button
                 onClick={() => toggleSection(section.id)}
-                className={`flex items-center gap-3 w-full px-4 py-3 rounded-xl transition-all ${isSectionActive ? (darkMode ? 'bg-orange-900/20' : 'bg-orange-50/50') : hoverBg} group`}
+                className={`flex items-center gap-3 w-full px-3 sm:px-4 py-2.5 sm:py-3 rounded-xl transition-all ${isSectionActive ? (darkMode ? 'bg-orange-900/20' : 'bg-orange-50/50') : hoverBg} group`}
               >
                 <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${isSectionActive ? (darkMode ? 'bg-orange-900/40 text-orange-400' : 'bg-orange-100 text-orange-600') : (darkMode ? 'bg-gray-700 text-gray-400' : 'bg-gray-100 text-gray-500')}`}>
                   <SectionIcon className="w-5 h-5" />
                 </div>
-                <span className={`text-[15px] font-black flex-1 text-start ${isSectionActive ? 'text-orange-600' : textSecondary}`}>
+                <span className={`text-[13px] sm:text-[15px] font-black flex-1 text-start ${isSectionActive ? 'text-orange-600' : textSecondary}`}>
                   {section.label}
                 </span>
                 <motion.div
@@ -367,7 +367,7 @@ const SidebarContent: React.FC<SidebarProps & { onClose?: () => void }> = ({
                     transition={{ duration: 0.2, ease: 'easeInOut' }}
                     className="overflow-hidden"
                   >
-                    <div className="py-1 pe-2 ps-6 space-y-1">
+                    <div className="py-1 pe-1.5 ps-4 sm:pe-2 sm:ps-6 space-y-1">
                       {section.items.map((item) => {
                         const ItemIcon = item.icon;
                         const active = isActive(item.path);
@@ -376,7 +376,7 @@ const SidebarContent: React.FC<SidebarProps & { onClose?: () => void }> = ({
                           <motion.button
                             key={item.id}
                             onClick={() => handleNavClick(item.path)}
-                            className={`flex items-center gap-3.5 px-4 py-3 rounded-xl transition-all w-full text-start group ${
+                            className={`flex items-center gap-2.5 sm:gap-3.5 px-3 sm:px-4 py-2 sm:py-3 rounded-xl transition-all w-full text-start group ${
                               active
                                 ? `${activeBg} ${activeText}`
                                 : hoverBg
@@ -385,14 +385,14 @@ const SidebarContent: React.FC<SidebarProps & { onClose?: () => void }> = ({
                             whileTap={{ scale: 0.98 }}
                           >
                             <ItemIcon
-                              className={`w-[22px] h-[22px] flex-shrink-0 transition-transform group-hover:scale-110 ${
+                              className={`w-[18px] h-[18px] sm:w-[22px] sm:h-[22px] flex-shrink-0 transition-transform group-hover:scale-110 ${
                                 active
                                   ? activeText
                                   : darkMode ? 'text-gray-500' : 'text-gray-400'
                               }`}
                             />
                             <span
-                              className={`font-bold text-sm flex-1 truncate ${
+                              className={`font-bold text-xs sm:text-sm flex-1 truncate ${
                                 active ? activeText : textSecondary
                               } group-hover:text-orange-600`}
                             >
@@ -749,7 +749,7 @@ export const Sidebar: React.FC<SidebarProps> = (props) => {
 
   return (
     <aside
-      className={`hidden lg:flex flex-col w-[300px] sticky top-14 h-[calc(100vh-3.5rem)] border-e ${bgPage} transition-colors`}
+      className={`hidden lg:flex flex-col w-[260px] xl:w-[300px] sticky top-14 h-[calc(100vh-3.5rem)] border-e ${bgPage} transition-colors overflow-x-hidden`}
     >
       <SidebarContent {...props} />
     </aside>

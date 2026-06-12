@@ -190,7 +190,7 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({ user, notifications 
   return (
     <aside
       dir={dir}
-      className={`hidden xl:flex flex-col gap-6 py-6 w-85 sticky top-14 h-[calc(100vh-3.5rem)] overflow-y-auto px-4 border-s ${bgPage}`}
+      className={`hidden xl:flex flex-col gap-6 py-6 w-80 sticky top-14 h-[calc(100vh-3.5rem)] overflow-y-auto overflow-x-hidden px-4 border-s ${bgPage}`}
     >
       {/* ─── Smart Wallet ─── */}
       <section>
@@ -293,9 +293,9 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({ user, notifications 
                 >
                   {getNotifIcon(notif.type)}
                 </div>
-                <div className="flex flex-col gap-0.5">
+                <div className="flex flex-col gap-0.5 min-w-0">
                   <p
-                    className={`text-[11px] font-bold leading-tight group-hover:text-orange-600 ${textSecondary}`}
+                    className={`text-[11px] font-bold leading-tight group-hover:text-orange-600 ${textSecondary} line-clamp-2`}
                   >
                     {notif.message}
                   </p>
@@ -342,7 +342,7 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({ user, notifications 
                     {categoryIcons[opp.category || ''] || '📦'}
                   </div>
                 )}
-                <div className="flex-1 min-w-0">
+                <div className="flex-1 min-w-0 overflow-hidden">
                   {/* Match reason badge */}
                   <div className="flex items-center gap-1.5 mb-1">
                     {opp.isPromoted && (
@@ -363,7 +363,7 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({ user, notifications 
                       </span>
                     )}
                   </div>
-                  <p className={`text-[11px] font-bold leading-tight line-clamp-2 group-hover:text-orange-600 transition-colors ${textSecondary}`}>
+                  <p className={`text-[11px] font-bold leading-tight line-clamp-2 group-hover:text-orange-600 transition-colors ${textSecondary} break-words`}>
                     {opp.content}
                   </p>
                   <div className="flex items-center gap-2 mt-1">

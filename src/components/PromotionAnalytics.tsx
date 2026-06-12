@@ -152,7 +152,7 @@ export const PromotionAnalytics: React.FC = () => {
     const post = posts.find(p => p.id === promo.postId);
     if (!post) return 0;
     const reach = post.reachCount || 0;
-    const estimated = promo.estimatedReach || post?.estimatedReach || promotionPackages.find(p => p.id === promo.tier)?.estimatedReach || 500;
+    const estimated = promo.estimatedReach || post?.estimatedReach || promotionPackages.find(p => p.id === promo.tier)?.reachEstimate || 500;
     return Math.min(100, Math.round((reach / estimated) * 100));
   };
 
@@ -353,7 +353,7 @@ export const PromotionAnalytics: React.FC = () => {
                 const progress = getPostProgressPercentage(promo);
                 const timeRemaining = getPostTimeRemaining(promo);
                 const reach = post?.reachCount || 0;
-                const estimated = promo.estimatedReach || post?.estimatedReach || pkg?.estimatedReach || 500;
+                const estimated = promo.estimatedReach || post?.estimatedReach || pkg?.reachEstimate || 500;
 
                 return (
                   <motion.div
@@ -453,7 +453,7 @@ export const PromotionAnalytics: React.FC = () => {
           {marketPromotions.length > 0 ? (
             <div className="space-y-3">
               {marketPromotions.map((promo, idx) => {
-                const pkg = marketPromotionPackages.find(p => p.id === promo.tier);
+                const pkg = marketPromotionPackages.find(p => p.tier === promo.tier || p.id === `market_${promo.tier}`);
                 return (
                   <motion.div
                     key={promo.id}
@@ -497,11 +497,11 @@ export const PromotionAnalytics: React.FC = () => {
                           </span>
                           <span className="flex items-center gap-1">
                             <Eye className="w-3 h-3" />
-                            {(promo.estimated_reach || pkg.estimatedReach)?.toLocaleString('ar-EG')} وصول
+                            {(promo.estimated_reach || pkg?.reachEstimate)?.toLocaleString('ar-EG')} وصول
                           </span>
                           <span className="flex items-center gap-1">
                             <Megaphone className="w-3 h-3" />
-                            {(pkg.maxNotifications)?.toLocaleString('ar-EG')} إشعار
+                            {(pkg?.maxNotifications)?.toLocaleString('ar-EG')} إشعار
                           </span>
                         </div>
                       )}
@@ -511,7 +511,7 @@ export const PromotionAnalytics: React.FC = () => {
                         <div className="mb-2">
                           {(() => {
                             const reach = (promo as any).reach_count || 0;
-                            const estimated = promo.estimated_reach || pkg?.estimatedReach || 500;
+                            const estimated = promo.estimated_reach || pkg?.reachEstimate || 500;
                             const progress = Math.min(100, Math.round((reach / estimated) * 100));
                             return (
                               <>
