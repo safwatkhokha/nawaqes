@@ -557,7 +557,7 @@ export const SmartReachPage: React.FC = () => {
               {stats?.promotionBreakdown && stats.promotionBreakdown.length > 0 ? (
                 <div className="space-y-3">
                   {stats.promotionBreakdown.map((pb, idx) => {
-                    const tierKey = ['vip', 'premium', 'standard', 'basic'].find(t => pb.tier === (t === 'vip' ? 'VIP' : t === 'premium' ? t('smartReach.tierPremium') : t === 'standard' ? t('smartReach.tierStandard') : t('smartReach.tierBasic'))) || 'basic';
+                    const tierKey = ['vip', 'premium', 'standard', 'basic'].find(tier => pb.tier === (tier === 'vip' ? 'VIP' : tier === 'premium' ? t('smartReach.tierPremium') : tier === 'standard' ? t('smartReach.tierStandard') : t('smartReach.tierBasic'))) || 'basic';
                     return (
                       <motion.div
                         key={pb.tier}
@@ -989,8 +989,8 @@ export const SmartReachPage: React.FC = () => {
               {compare?.tierComparison && compare.tierComparison.length > 0 ? (
                 <div className="space-y-3">
                   {compare.tierComparison.map((tc, idx) => {
-                    const tierKey = ['vip', 'premium', 'standard', 'basic'].find(t =>
-                      tc.tierName === (t === 'vip' ? 'VIP' : t === 'premium' ? t('smartReach.tierPremium') : t === 'standard' ? t('smartReach.tierStandard') : t('smartReach.tierBasic'))
+                    const tierKey = ['vip', 'premium', 'standard', 'basic'].find(tier =>
+                      tc.tierName === (tier === 'vip' ? 'VIP' : tier === 'premium' ? t('smartReach.tierPremium') : tier === 'standard' ? t('smartReach.tierStandard') : t('smartReach.tierBasic'))
                     ) || tc.tier;
                     return (
                       <motion.div

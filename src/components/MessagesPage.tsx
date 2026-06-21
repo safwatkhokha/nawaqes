@@ -1585,13 +1585,13 @@ export const MessagesPage: React.FC = () => {
                   onChange={handleImageUpload}
                 />
                 {/* Image upload button */}
-                <label htmlFor="imageInputRef-input" disabled={uploadingImage}
+                <label htmlFor="imageInputRef-input"
                   className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${
                     uploadingImage
                       ? (darkMode ? 'bg-gray-700 text-gray-500' : 'bg-gray-100 text-gray-400')
                       : (darkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-600 hover:bg-gray-200')
                   }`}
-                  title={t('messages.sendImage')} style={{cursor:"pointer"}}>
+                  title={t('messages.sendImage')} style={{cursor: uploadingImage ? 'not-allowed' : 'pointer', opacity: uploadingImage ? 0.5 : 1}}>
                   {uploadingImage ? <RefreshCw className="w-4 h-4 animate-spin" /> : <ImageIcon className="w-4 h-4" />}
                 </label>
                 <input type="text" placeholder={t('messages.typeMessage')} value={messageText} onChange={e => setMessageText(e.target.value)}

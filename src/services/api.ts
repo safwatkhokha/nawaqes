@@ -290,6 +290,10 @@ class ApiClient {
     return this.request<any[]>('/admin/users');
   }
 
+  async getActiveAdminAlerts() {
+    return this.request<{ alerts: any[] }>('/alerts/active');
+  }
+
   async createAlert(title: string, content: string, source?: string) {
     return this.request<any>('/admin/alerts', {
       method: 'POST', body: JSON.stringify({ title, content, source }),

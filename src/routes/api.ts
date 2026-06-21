@@ -199,6 +199,22 @@ router.get('/market-live/my-videos', authMiddleware, (req: Request, res: Respons
   }
 });
 
+// ─── Active Admin Alerts (for alert bar, auth required but not admin) ──
+router.get('/alerts/active', authMiddleware, (_req: Request, res: Response) => {
+  try {
+    const alerts = db.prepare(
+      `SELECT id, title, content, source, category, is_alert, created_at
+       FROM news_items
+       WHERE is_alert = 1
+       ORDER BY created_at DESC
+       LIMIT 20`
+    ).all() as any[];
+    res.json({ alerts });
+  } catch (err: any) {
+    res.status(500).json({ error: 'فشل جلب التنبيهات', details: err.message });
+  }
+});
+
 // ─── Categories ─────────────────────────────────────────────────────
 router.get('/categories', (_req: Request, res: Response) => {
   try {

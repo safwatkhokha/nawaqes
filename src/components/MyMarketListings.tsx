@@ -43,7 +43,6 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
-import { parseDBTimestamp } from '../utils/time';
 
 // ─── Types ──────────────────────────────────────────────────────────────
 type TabType = 'active' | 'promoted' | 'expired';
@@ -112,10 +111,9 @@ function formatPrice(t: (key: string) => string, price: number | undefined, curr
 function timeAgo(t: (key: string, options?: Record<string, unknown>) => string, dateStr: string | undefined): string {
   if (!dateStr) return '';
   try {
-    const date = parseDBTimestamp(dateStr);
+    const date = new Date(dateStr);
     const now = new Date();
     const diffMs = now.getTime() - date.getTime();
-    if (diffMs < 0) return t('common.now');
     const diffMins = Math.floor(diffMs / 60000);
     if (diffMins < 1) return t('common.now');
     if (diffMins < 60) return t('common.minutesAgo', { count: diffMins });
