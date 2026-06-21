@@ -1,0 +1,17 @@
+# Render service configuration  
+# Reference: https://render.com/docs/blueprint-spec
+services:
+  - type: web
+    name: nawaqes
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    region: oregon
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 7860
+      - key: JWT_SECRET
+        value: nawaqes_secret_2024_xK9pL2mN8qR3wY6

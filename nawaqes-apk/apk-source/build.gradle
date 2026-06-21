@@ -1,0 +1,109 @@
+// =====================================================
+// Nawaqes — Android build.gradle (Module: app)
+// =====================================================
+// This file is used when running the APK build via Gradle.
+// It is automatically picked up when `npx cap add android`
+// creates the Android project.
+// =====================================================
+
+apply plugin: 'com.android.application'
+
+android {
+    namespace 'com.nawaqes.app'
+    compileSdkVersion 34
+
+    defaultConfig {
+        applicationId "com.nawaqes.app"
+        minSdkVersion 24          // Android 7.0 (covers 98% of devices)
+        targetSdkVersion 34       // Android 14 (required by Play Store in 2026)
+        versionCode 1
+        versionName "2.0.0"
+
+        // Enable multidex for large apps
+        multiDexEnabled true
+
+        // Vector drawable support
+        vectorDrawables.useSupportLibrary = true
+
+        // Native architectures
+        ndk {
+            abiFilters 'armeabi-v7a', 'arm64-v8a', 'x86_64'
+        }
+    }
+
+    buildTypes {
+        release {
+            // For now: sign with debug key so users can sideload before Play Store launch.
+            // When ready for Play Store, replace with your own keystore config.
+            signingConfig signingConfigs.debug
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'),
+                          'proguard-rules.pro'
+        }
+        debug {
+            minifyEnabled false
+            debuggable true
+        }
+    }
+
+    // Required for Capacitor / better-sqlite3 native modules
+    packagingOptions {
+        exclude 'META-INF/DEPENDENCIES'
+        exclude 'META-INF/LICENSE'
+        exclude 'META-INF/LICENSE.txt'
+        exclude 'META-INF/license.txt'
+        exclude 'META-INF/NOTICE'
+        exclude 'META-INF/NOTICE.txt'
+        exclude 'META-INF/notice.txt'
+        exclude 'META-INF/ASL2.0'
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    lint {
+        abortOnError false
+        checkReleaseBuilds false
+    }
+}
+
+dependencies {
+    // Capacitor core
+    implementation 'com.getcapacitor:capacitor-android:6.1.2'
+
+    // Capacitor plugins
+    implementation 'com.getcapacitor:app:6.0.1'
+    implementation 'com.getcapacitor:camera:6.0.2'
+    implementation 'com.getcapacitor:filesystem:6.0.1'
+    implementation 'com.getcapacitor:geolocation:6.0.1'
+    implementation 'com.getcapacitor:haptics:6.0.1'
+    implementation 'com.getcapacitor:local-notifications:6.1.0'
+    implementation 'com.getcapacitor:network:6.0.2'
+    implementation 'com.getcapacitor:preferences:6.0.2'
+    implementation 'com.getcapacitor:push-notifications:6.0.3'
+    implementation 'com.getcapacitor:splash-screen:6.0.2'
+    implementation 'com.getcapacitor:status-bar:6.0.1'
+    implementation 'com.getcapacitor:toast:6.0.2'
+
+    // Firebase (FCM push notifications)
+    implementation platform('com.google.firebase:firebase-bom:33.1.2')
+    implementation 'com.google.firebase:firebase-messaging:24.0.0'
+    implementation 'com.google.firebase:firebase-analytics:22.0.2'
+
+    // AndroidX
+    implementation 'androidx.appcompat:appcompat:1.7.0'
+    implementation 'androidx.core:core:1.13.1'
+    implementation 'androidx.webkit:webkit:1.11.0'
+    implementation 'androidx.multidex:multidex:2.0.1'
+
+    // Material Components
+    implementation 'com.google.android.material:material:1.12.0'
+}
+
+// Apply Google Services plugin if google-services.json is present
+if (file('google-services.json').exists()) {
+    apply plugin: 'com.google.gms.google-services'
+}
