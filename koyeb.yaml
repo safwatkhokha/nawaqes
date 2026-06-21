@@ -1,0 +1,25 @@
+# Koyeb service configuration
+# Reference: https://www.koyeb.com/docs/configuration-file
+services:
+  - name: nawaqes
+    type: web
+    runtime: docker
+    dockerfile: ./Dockerfile
+    ports:
+      - port: 7860
+        protocol: http
+    env:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "7860"
+      - key: JWT_SECRET
+        value: nawaqes_secret_2024_xK9pL2mN8qR3wY6
+    resources:
+      memory: 512
+      cpu: 0.1
+    regions:
+      - fra
+    routes:
+      - path: /
+        port: 7860
