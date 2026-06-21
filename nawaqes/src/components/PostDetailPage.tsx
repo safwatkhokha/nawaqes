@@ -35,6 +35,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'sonner';
+import { formatRelativeTimeAr } from '../utils/time';
 
 interface CommentData {
   id: string;
@@ -531,7 +532,7 @@ export const PostDetailPage: React.FC = () => {
                 )}
               </div>
               <div className={`flex items-center gap-1.5 text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                <span>{post.timestamp}</span>
+                <span>{formatRelativeTimeAr(post.timestamp)}</span>
                 <span>·</span>
                 <Globe className="w-3 h-3" />
               </div>

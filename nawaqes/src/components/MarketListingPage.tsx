@@ -40,6 +40,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'sonner';
 import type { MarketListing } from '../types';
+import { parseDBTimestamp } from '../utils/time';
 
 // ─── Condition Labels ────────────────────────────────────────────────
 const conditionLabels: Record<string, { key: string; color: string; darkColor: string }> = {
@@ -59,13 +60,14 @@ const paymentMethodLabels: Record<string, { key: string; icon: string; color: st
 // ─── Format Date ─────────────────────────────────────────────────────
 function formatDate(dateStr: string, t: (key: string) => string): string {
   try {
-    const date = new Date(dateStr);
+    const date = parseDBTimestamp(dateStr);
     const now = new Date();
     const diffMs = now.getTime() - date.getTime();
     const diffMins = Math.floor(diffMs / 60000);
     const diffHours = Math.floor(diffMs / 3600000);
     const diffDays = Math.floor(diffMs / 86400000);
 
+    if (diffMs < 0) return t('common.now');
     if (diffMins < 1) return t('common.now');
     if (diffMins < 60) return `${diffMins} ${t('marketListing.minutesAgo')}`;
     if (diffHours < 24) return `${diffHours} ${t('marketListing.hoursAgo')}`;

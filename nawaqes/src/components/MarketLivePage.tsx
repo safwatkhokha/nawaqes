@@ -47,6 +47,7 @@ import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 import { useLanguage } from '../contexts/LanguageContext';
 import { VideoRecorder } from './VideoRecorder';
+import { parseDBTimestamp } from '../utils/time';
 
 // ─── Category icons map ───────────────────────────────────────────
 const categoryIcons: Record<string, string> = {
@@ -68,9 +69,9 @@ const formatCompact = (num: number): string => {
 const timeAgo = (dateStr: string): string => {
   if (!dateStr) return '';
   const now = new Date();
-  const date = new Date(dateStr);
+  const date = parseDBTimestamp(dateStr);
   const diff = Math.floor((now.getTime() - date.getTime()) / 1000);
-  if (diff < 60) return 'الآن';
+  if (diff < 0 || diff < 60) return 'الآن';
   if (diff < 3600) return `منذ ${Math.floor(diff / 60)} دقيقة`;
   if (diff < 86400) return `منذ ${Math.floor(diff / 3600)} ساعة`;
   if (diff < 604800) return `منذ ${Math.floor(diff / 86400)} يوم`;

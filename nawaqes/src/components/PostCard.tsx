@@ -16,6 +16,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'sonner';
 import { useLanguage } from '../contexts/LanguageContext';
+import { formatRelativeTimeAr } from '../utils/time';
 
 interface CommentData {
   id: string;
@@ -492,7 +493,7 @@ export const PostCard: React.FC<PostCardProps> = ({ post, onHidePost }) => {
                 {post.author.trustScore && <div className="bg-green-50 text-green-700 text-[8px] px-1 py-0 rounded-md font-bold flex items-center gap-0.5"><ShieldCheck className="w-2 h-2" />{post.author.trustScore}%</div>}
               </div>
               <div className={`flex items-center gap-1 text-[9px] ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                <span>{post.timestamp}</span><span>·</span><Globe className="w-2.5 h-2.5" />
+                <span>{formatRelativeTimeAr(post.timestamp)}</span><span>·</span><Globe className="w-2.5 h-2.5" />
               </div>
             </div>
           </div>

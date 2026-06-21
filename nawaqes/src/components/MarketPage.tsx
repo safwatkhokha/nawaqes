@@ -43,6 +43,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
+import { parseDBTimestamp } from '../utils/time';
 
 // ─── Types ──────────────────────────────────────────────────────────────
 type SortOption = 'newest' | 'cheapest' | 'expensive' | 'featured';
@@ -114,9 +115,10 @@ function formatPrice(price: number | undefined, currency: string = ''): string {
 function timeAgo(dateStr: string | undefined, t: any): string {
   if (!dateStr) return '';
   try {
-    const date = new Date(dateStr);
+    const date = parseDBTimestamp(dateStr);
     const now = new Date();
     const diffMs = now.getTime() - date.getTime();
+    if (diffMs < 0) return t('common.now');
     const diffMins = Math.floor(diffMs / 60000);
     if (diffMins < 1) return t('common.now');
     if (diffMins < 60) return t('common.minutesAgo', { count: diffMins });

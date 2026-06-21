@@ -8,6 +8,7 @@ import { Store as StoreIcon, MapPin, Phone, MessageCircle, Star, Megaphone, Zap,
 import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'sonner';
 import { Store, StorePromotionRequest } from '../types';
+import { formatRelativeTimeAr } from '../utils/time';
 
 const STORE_CATEGORIES = [
   { id: 'phones', nameKey: 'categories.phones' },
@@ -656,7 +657,7 @@ export const StorePage: React.FC = () => {
                           </span>
                         )}
                         <span className={`text-[11px] ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
-                          {post.timestamp}
+                          {formatRelativeTimeAr(post.timestamp)}
                         </span>
                       </div>
                       <p className={`text-sm mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>

@@ -23,6 +23,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 import { useLanguage } from '../contexts/LanguageContext';
+import { formatRelativeTimeAr } from '../utils/time';
 
 type ProfileTab = 'posts' | 'ads' | 'about';
 
@@ -362,7 +363,7 @@ export const UserProfilePage: React.FC = () => {
                     className={`rounded-xl border p-4 cursor-pointer transition-colors ${darkMode ? 'bg-gray-800 border-gray-700 hover:border-gray-600' : 'bg-white border-gray-100 hover:border-gray-200'}`}>
                     <p className={`text-sm leading-relaxed mb-2 ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>{post.content}</p>
                     <div className={`flex items-center gap-3 text-[11px] ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                      <span>{post.timestamp}</span><span>·</span><span>{post.likes} {t('userProfile.likes')}</span><span>·</span><span>{post.comments} {t('userProfile.comments')}</span>
+                      <span>{formatRelativeTimeAr(post.timestamp)}</span><span>·</span><span>{post.likes} {t('userProfile.likes')}</span><span>·</span><span>{post.comments} {t('userProfile.comments')}</span>
                     </div>
                   </div>
                 ))}
