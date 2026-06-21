@@ -1011,6 +1011,152 @@ try {
   db.prepare("ALTER TABLE market_promotion_requests ADD COLUMN listing_title TEXT NOT NULL DEFAULT ''").run();
 } catch { /* column already exists */ }
 
+// ─── Phase 3: Group chats, forwarding, mute, block ────────────────────
+try { db.exec(`
+  CREATE TABLE IF NOT EXISTS chat_groups (
+    id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+    name TEXT NOT NULL,
+    avatar TEXT DEFAULT '',
+    description TEXT DEFAULT '',
+    creator_id TEXT NOT NULL REFERENCES users(id),
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+  )
+`); } catch {}
+
+try { db.exec(`
+  CREATE TABLE IF NOT EXISTS chat_group_members (
+    id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+    group_id TEXT NOT NULL REFERENCES chat_groups(id),
+    user_id TEXT NOT NULL REFERENCES users(id),
+    role TEXT DEFAULT 'member',
+    joined_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(group_id, user_id)
+  )
+`); } catch {}
+
+// Add group_id to chat_messages
+try { db.prepare("ALTER TABLE chat_messages ADD COLUMN group_id TEXT").run(); } catch {}
+// Add forwarded fields
+try { db.prepare("ALTER TABLE chat_messages ADD COLUMN is_forwarded INTEGER DEFAULT 0").run(); } catch {}
+try { db.prepare("ALTER TABLE chat_messages ADD COLUMN forwarded_from TEXT DEFAULT ''").run(); } catch {}
+
+// Chat mutes
+try { db.exec(`
+  CREATE TABLE IF NOT EXISTS chat_mutes (
+    id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+    user_id TEXT NOT NULL REFERENCES users(id),
+    target_id TEXT NOT NULL,
+    is_group INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(user_id, target_id)
+  )
+`); } catch {}
+
+// User blocks
+try { db.exec(`
+  CREATE TABLE IF NOT EXISTS user_blocks (
+    id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+    blocker_id TEXT NOT NULL REFERENCES users(id),
+    blocked_id TEXT NOT NULL REFERENCES users(id),
+    created_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(blocker_id, blocked_id)
+  )
+`); } catch {}
+
+// ─── Phase 3: Devices table for FCM push notifications ───
+try { db.exec(`
+  CREATE TABLE IF NOT EXISTS devices (
+    id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+    user_id TEXT REFERENCES users(id),
+    token TEXT NOT NULL UNIQUE,
+    platform TEXT DEFAULT 'web',
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_devices_user ON devices(user_id);
+  CREATE INDEX IF NOT EXISTS idx_devices_token ON devices(token);
+`); } catch {}
+
+// ─── Phase 3: Story interaction tables ───
+try { db.exec(`
+  CREATE TABLE IF NOT EXISTS story_replies (
+    id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+    story_id TEXT NOT NULL REFERENCES stories(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES users(id),
+    text TEXT NOT NULL,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_story_replies_story ON story_replies(story_id);
+  CREATE INDEX IF NOT EXISTS idx_story_replies_user ON story_replies(user_id);
+`); } catch {}
+
+try { db.exec(`
+  CREATE TABLE IF NOT EXISTS story_reactions (
+    id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+    story_id TEXT NOT NULL REFERENCES stories(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES users(id),
+    emoji TEXT NOT NULL,
+    created_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(story_id, user_id, emoji)
+  );
+  CREATE INDEX IF NOT EXISTS idx_story_reactions_story ON story_reactions(story_id);
+`); } catch {}
+
+try { db.exec(`
+  CREATE TABLE IF NOT EXISTS story_views (
+    id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+    story_id TEXT NOT NULL REFERENCES stories(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES users(id),
+    created_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(story_id, user_id)
+  );
+  CREATE INDEX IF NOT EXISTS idx_story_views_story ON story_views(story_id);
+`); } catch {}
+
+try { db.exec(`
+  CREATE TABLE IF NOT EXISTS story_highlights (
+    id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+    user_id TEXT NOT NULL REFERENCES users(id),
+    name TEXT NOT NULL,
+    cover_image TEXT DEFAULT '',
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_story_highlights_user ON story_highlights(user_id);
+`); } catch {}
+
+try { db.exec(`
+  CREATE TABLE IF NOT EXISTS highlight_stories (
+    id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+    highlight_id TEXT NOT NULL REFERENCES story_highlights(id) ON DELETE CASCADE,
+    story_id TEXT NOT NULL REFERENCES stories(id),
+    added_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(highlight_id, story_id)
+  );
+  CREATE INDEX IF NOT EXISTS idx_highlight_stories_highlight ON highlight_stories(highlight_id);
+`); } catch {}
+
+// ─── Phase 3: Withdrawal requests table ───
+try { db.exec(`
+  CREATE TABLE IF NOT EXISTS withdrawal_requests (
+    id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+    user_id TEXT NOT NULL REFERENCES users(id),
+    amount REAL NOT NULL,
+    method TEXT NOT NULL,
+    account_details TEXT DEFAULT '',
+    status TEXT DEFAULT 'pending',
+    admin_note TEXT DEFAULT '',
+    created_at TEXT DEFAULT (datetime('now')),
+    processed_at TEXT
+  );
+  CREATE INDEX IF NOT EXISTS idx_withdrawals_user ON withdrawal_requests(user_id);
+  CREATE INDEX IF NOT EXISTS idx_withdrawals_status ON withdrawal_requests(status);
+`); } catch {}
+
+// ─── Phase 3: Stories migrations for video_url and expires_at ───
+try { db.prepare("ALTER TABLE stories ADD COLUMN video_url TEXT DEFAULT ''").run(); } catch {}
+try { db.prepare("ALTER TABLE stories ADD COLUMN expires_at TEXT").run(); } catch {}
+
 export default db;
 
 // ─── Force-fix admin password (in case it was created with random password before) ──

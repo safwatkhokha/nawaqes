@@ -14,3 +14,8 @@ export { ImagePreview } from './ImagePreview';
 export { ContextMenu } from './ContextMenu';
 export { VoicePlayer } from './VoicePlayer';
 export { MessageSearch } from './MessageSearch';
+export { ForwardDialog } from './ForwardDialog';
+export { CreateGroupDialog } from './CreateGroupDialog';
+export { GroupInfo } from './GroupInfo';
+export { StarredMessages } from './StarredMessages';
+export { ChatSettingsPanel } from './ChatSettingsPanel';

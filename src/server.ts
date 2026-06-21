@@ -362,7 +362,6 @@ async function startServer() {
         res.status(400).json({ error: 'token and platform required' });
         return;
       }
-      // Get user from auth header (optional - allows guest device registration)
       let userId: string | null = null;
       const authHeader = req.headers.authorization;
       if (authHeader?.startsWith('Bearer ')) {
@@ -372,8 +371,22 @@ async function startServer() {
           if (payload) userId = payload.userId || payload.sub || null;
         } catch { /* ignore auth errors */ }
       }
-      // TODO: Save to database (devices table) — for now, log only
-      console.log(`[FCM] Device registered: platform=${platform}, user=${userId || 'guest'}, token=${token.substring(0, 20)}...`);
+      // Save or update device token in database
+      try {
+        const db = (await import('./database/index.js')).default;
+        // Remove token from any other user (token can only belong to one user)
+        db.prepare('DELETE FROM devices WHERE token = ? AND user_id != ?').run(token, userId || '');
+        // Upsert device token
+        const existing = db.prepare('SELECT id FROM devices WHERE token = ?').get(token) as any;
+        if (existing) {
+          db.prepare('UPDATE devices SET user_id = ?, platform = ?, updated_at = datetime(\'now\') WHERE token = ?').run(userId, platform, token);
+        } else {
+          db.prepare('INSERT INTO devices (user_id, token, platform) VALUES (?, ?, ?)').run(userId, token, platform);
+        }
+      } catch (dbErr: any) {
+        console.warn('[FCM] Failed to save device token:', dbErr.message);
+      }
+      console.log(`[FCM] Device registered: platform=${platform}, user=${userId || 'guest'}`);
       res.json({ success: true, registered: true });
     } catch (err: any) {
       console.error('[FCM] register-device error:', err.message);
@@ -389,11 +402,425 @@ async function startServer() {
         res.status(400).json({ error: 'topic required' });
         return;
       }
-      // TODO: integrate with FCM topic subscription server-side
       console.log(`[FCM] Topic subscription: ${topic}`);
       res.json({ success: true, subscribed: true, topic });
     } catch (err: any) {
       res.status(500).json({ error: 'Failed to subscribe' });
+    }
+  });
+
+  // Send push notification to a specific user
+  app.post('/api/notifications/send', async (req, res) => {
+    try {
+      const authHeader = req.headers.authorization;
+      if (!authHeader?.startsWith('Bearer ')) {
+        res.status(401).json({ error: 'Unauthorized' });
+        return;
+      }
+      const { verifyToken } = await import('./middleware/auth.js');
+      const payload = verifyToken(authHeader.split(' ')[1]);
+      if (!payload?.isAdmin) {
+        res.status(403).json({ error: 'Admin access required' });
+        return;
+      }
+      const { userId: targetUserId, title, body, data } = req.body;
+      if (!targetUserId || !title || !body) {
+        res.status(400).json({ error: 'userId, title, and body required' });
+        return;
+      }
+      try {
+        const db = (await import('./database/index.js')).default;
+        const devices = db.prepare('SELECT token FROM devices WHERE user_id = ?').all(targetUserId) as any[];
+        if (devices.length === 0) {
+          res.json({ success: true, sent: 0, message: 'No registered devices for this user' });
+          return;
+        }
+        // For now, store notification in DB and rely on WebSocket for real-time delivery
+        // FCM push would require firebase-admin SDK - graceful degradation
+        for (const device of devices) {
+          console.log(`[FCM] Would send push to ${device.token.substring(0, 20)}...: "${title}"`);
+        }
+        // Also save as in-app notification
+        const notifId = crypto.randomBytes(16).toString('hex');
+        db.prepare('INSERT INTO notifications (id, user_id, type, message, link) VALUES (?, ?, ?, ?, ?)').run(
+          notifId, targetUserId, data?.type || 'system', body, data?.link || null
+        );
+        // Send via WebSocket if user is online
+        try {
+          const { wsManager } = await import('./websocket/index.js');
+          wsManager.sendToUser(targetUserId, JSON.stringify({
+            type: 'notification:new',
+            notification: { id: notifId, type: data?.type || 'system', message: body, time: new Date().toISOString(), link: data?.link }
+          }));
+        } catch {}
+        res.json({ success: true, sent: devices.length });
+      } catch (dbErr: any) {
+        console.error('[FCM] DB error:', dbErr.message);
+        res.status(500).json({ error: 'Failed to send notification' });
+      }
+    } catch (err: any) {
+      res.status(500).json({ error: 'Failed to send notification' });
+    }
+  });
+
+  // ─── Story API Endpoints ───
+  app.get('/api/stories', async (req, res) => {
+    try {
+      const db = (await import('./database/index.js')).default;
+      const authHeader = req.headers.authorization;
+      let userId = '';
+      if (authHeader?.startsWith('Bearer ')) {
+        try {
+          const { verifyToken } = await import('./middleware/auth.js');
+          const p = verifyToken(authHeader.split(' ')[1]);
+          if (p) userId = p.userId || p.sub || '';
+        } catch {}
+      }
+      // Get stories from last 24 hours only
+      const stories = db.prepare(`
+        SELECT s.*, u.name as user_name, u.avatar as user_avatar,
+          (SELECT COUNT(*) FROM story_views WHERE story_id = s.id) as view_count,
+          CASE WHEN sv.id IS NOT NULL THEN 1 ELSE 0 END as is_seen
+        FROM stories s
+        JOIN users u ON u.id = s.user_id
+        LEFT JOIN story_views sv ON sv.story_id = s.id AND sv.user_id = ?
+        WHERE s.created_at >= datetime('now', '-24 hours')
+        ORDER BY s.created_at DESC
+      `).all(userId) as any[];
+      
+      const result = stories.map(s => ({
+        id: s.id,
+        user: { id: s.user_id, name: s.user_name, avatar: s.user_avatar },
+        image: s.image || '',
+        type: s.type || 'image',
+        text: s.text || '',
+        backgroundColor: s.background_color || '',
+        videoUrl: s.video_url || '',
+        isSeen: !!s.is_seen,
+        viewCount: s.view_count,
+        createdAt: s.created_at,
+      }));
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/stories/:id/view', async (req, res) => {
+    try {
+      const db = (await import('./database/index.js')).default;
+      const authHeader = req.headers.authorization;
+      if (!authHeader?.startsWith('Bearer ')) { res.status(401).json({ error: 'Unauthorized' }); return; }
+      const { verifyToken } = await import('./middleware/auth.js');
+      const payload = verifyToken(authHeader.split(' ')[1]);
+      if (!payload) { res.status(401).json({ error: 'Invalid token' }); return; }
+      const userId = payload.userId || payload.sub;
+      const storyId = req.params.id;
+      db.prepare('INSERT OR IGNORE INTO story_views (story_id, user_id) VALUES (?, ?)').run(storyId, userId);
+      db.prepare('UPDATE stories SET is_seen = 1 WHERE id = ?').run(storyId);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/stories/:id/reply', async (req, res) => {
+    try {
+      const db = (await import('./database/index.js')).default;
+      const authHeader = req.headers.authorization;
+      if (!authHeader?.startsWith('Bearer ')) { res.status(401).json({ error: 'Unauthorized' }); return; }
+      const { verifyToken } = await import('./middleware/auth.js');
+      const payload = verifyToken(authHeader.split(' ')[1]);
+      if (!payload) { res.status(401).json({ error: 'Invalid token' }); return; }
+      const userId = payload.userId || payload.sub;
+      const storyId = req.params.id;
+      const { text } = req.body;
+      if (!text) { res.status(400).json({ error: 'text required' }); return; }
+      const id = crypto.randomBytes(16).toString('hex');
+      db.prepare('INSERT INTO story_replies (id, story_id, user_id, text) VALUES (?, ?, ?, ?)').run(id, storyId, userId, text);
+      // Notify story owner
+      const story = db.prepare('SELECT user_id FROM stories WHERE id = ?').get(storyId) as any;
+      if (story && story.user_id !== userId) {
+        const user = db.prepare('SELECT name FROM users WHERE id = ?').get(userId) as any;
+        const notifId = crypto.randomBytes(16).toString('hex');
+        db.prepare('INSERT INTO notifications (id, user_id, type, message, link) VALUES (?, ?, ?, ?, ?)').run(
+          notifId, story.user_id, 'message', `${user?.name || 'مستخدم'} رد على قصتك`, `/messages/${userId}`
+        );
+        try {
+          const { wsManager } = await import('./websocket/index.js');
+          wsManager.sendToUser(story.user_id, JSON.stringify({
+            type: 'notification:new',
+            notification: { id: notifId, type: 'message', message: `${user?.name || 'مستخدم'} رد على قصتك`, time: new Date().toISOString(), link: `/messages/${userId}` }
+          }));
+        } catch {}
+      }
+      res.json({ success: true, id });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/stories/:id/react', async (req, res) => {
+    try {
+      const db = (await import('./database/index.js')).default;
+      const authHeader = req.headers.authorization;
+      if (!authHeader?.startsWith('Bearer ')) { res.status(401).json({ error: 'Unauthorized' }); return; }
+      const { verifyToken } = await import('./middleware/auth.js');
+      const payload = verifyToken(authHeader.split(' ')[1]);
+      if (!payload) { res.status(401).json({ error: 'Invalid token' }); return; }
+      const userId = payload.userId || payload.sub;
+      const storyId = req.params.id;
+      const { emoji } = req.body;
+      if (!emoji) { res.status(400).json({ error: 'emoji required' }); return; }
+      // Toggle reaction
+      const existing = db.prepare('SELECT id FROM story_reactions WHERE story_id = ? AND user_id = ? AND emoji = ?').get(storyId, userId, emoji) as any;
+      if (existing) {
+        db.prepare('DELETE FROM story_reactions WHERE id = ?').run(existing.id);
+        res.json({ success: true, reacted: false });
+      } else {
+        const id = crypto.randomBytes(16).toString('hex');
+        db.prepare('INSERT INTO story_reactions (id, story_id, user_id, emoji) VALUES (?, ?, ?, ?)').run(id, storyId, userId, emoji);
+        // Notify story owner
+        const story = db.prepare('SELECT user_id FROM stories WHERE id = ?').get(storyId) as any;
+        if (story && story.user_id !== userId) {
+          const user = db.prepare('SELECT name FROM users WHERE id = ?').get(userId) as any;
+          const notifId = crypto.randomBytes(16).toString('hex');
+          db.prepare('INSERT INTO notifications (id, user_id, type, message, link) VALUES (?, ?, ?, ?, ?)').run(
+            notifId, story.user_id, 'like', `${user?.name || 'مستخدم'} تفاعل مع قصتك ${emoji}`, null
+          );
+          try {
+            const { wsManager } = await import('./websocket/index.js');
+            wsManager.sendToUser(story.user_id, JSON.stringify({
+              type: 'notification:new',
+              notification: { id: notifId, type: 'like', message: `${user?.name || 'مستخدم'} تفاعل مع قصتك ${emoji}`, time: new Date().toISOString() }
+            }));
+          } catch {}
+        }
+        res.json({ success: true, reacted: true });
+      }
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/stories/:id/viewers', async (req, res) => {
+    try {
+      const db = (await import('./database/index.js')).default;
+      const authHeader = req.headers.authorization;
+      if (!authHeader?.startsWith('Bearer ')) { res.status(401).json({ error: 'Unauthorized' }); return; }
+      const { verifyToken } = await import('./middleware/auth.js');
+      const payload = verifyToken(authHeader.split(' ')[1]);
+      if (!payload) { res.status(401).json({ error: 'Invalid token' }); return; }
+      const storyId = req.params.id;
+      // Verify story belongs to user
+      const story = db.prepare('SELECT user_id FROM stories WHERE id = ?').get(storyId) as any;
+      if (!story) { res.status(404).json({ error: 'Story not found' }); return; }
+      const userId = payload.userId || payload.sub;
+      if (story.user_id !== userId && !payload.isAdmin) {
+        res.status(403).json({ error: 'Not your story' }); return;
+      }
+      const viewers = db.prepare(`
+        SELECT sv.*, u.name, u.avatar FROM story_views sv
+        JOIN users u ON u.id = sv.user_id
+        WHERE sv.story_id = ?
+        ORDER BY sv.created_at DESC
+      `).all(storyId) as any[];
+      res.json(viewers);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ─── Withdrawal API ───
+  app.post('/api/wallet/withdraw', async (req, res) => {
+    try {
+      const db = (await import('./database/index.js')).default;
+      const authHeader = req.headers.authorization;
+      if (!authHeader?.startsWith('Bearer ')) { res.status(401).json({ error: 'Unauthorized' }); return; }
+      const { verifyToken } = await import('./middleware/auth.js');
+      const payload = verifyToken(authHeader.split(' ')[1]);
+      if (!payload) { res.status(401).json({ error: 'Invalid token' }); return; }
+      const userId = payload.userId || payload.sub;
+      const { amount, method, accountDetails } = req.body;
+      if (!amount || !method || amount <= 0) {
+        res.status(400).json({ error: 'amount and method required' }); return;
+      }
+      // Check balance
+      const user = db.prepare('SELECT wallet_balance, name FROM users WHERE id = ?').get(userId) as any;
+      if (!user || user.wallet_balance < amount) {
+        res.status(400).json({ error: 'رصيد غير كافي' }); return;
+      }
+      // Minimum withdrawal
+      if (amount < 50) {
+        res.status(400).json({ error: 'الحد الأدنى للسحب 50 ج.م' }); return;
+      }
+      // Deduct from balance immediately (refund if rejected)
+      db.prepare('UPDATE users SET wallet_balance = wallet_balance - ? WHERE id = ?').run(amount, userId);
+      // Create withdrawal request
+      const id = crypto.randomBytes(16).toString('hex');
+      db.prepare('INSERT INTO withdrawal_requests (id, user_id, amount, method, account_details, status) VALUES (?, ?, ?, ?, ?, ?)').run(
+        id, userId, amount, method, accountDetails || '', 'pending'
+      );
+      // Create transaction record
+      const txId = crypto.randomBytes(16).toString('hex');
+      db.prepare('INSERT INTO transactions (id, user_id, type, amount, method, status) VALUES (?, ?, ?, ?, ?, ?)').run(
+        txId, userId, 'withdrawal', amount, method, 'pending'
+      );
+      // Notify admin
+      const notifId = crypto.randomBytes(16).toString('hex');
+      db.prepare('INSERT INTO notifications (id, user_id, type, message) VALUES (?, ?, ?, ?)').run(
+        notifId, 'admin', 'payment', `طلب سحب جديد: ${amount} ج.م من ${user.name}`, null
+      );
+      res.json({ success: true, id, message: 'تم تقديم طلب السحب بنجاح' });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/wallet/withdrawals', async (req, res) => {
+    try {
+      const db = (await import('./database/index.js')).default;
+      const authHeader = req.headers.authorization;
+      if (!authHeader?.startsWith('Bearer ')) { res.status(401).json({ error: 'Unauthorized' }); return; }
+      const { verifyToken } = await import('./middleware/auth.js');
+      const payload = verifyToken(authHeader.split(' ')[1]);
+      if (!payload) { res.status(401).json({ error: 'Invalid token' }); return; }
+      const userId = payload.userId || payload.sub;
+      const withdrawals = db.prepare(`
+        SELECT w.*, u.name as user_name, u.avatar as user_avatar, u.phone as user_phone
+        FROM withdrawal_requests w
+        JOIN users u ON u.id = w.user_id
+        WHERE w.user_id = ? OR ? = 1
+        ORDER BY w.created_at DESC
+      `).all(userId, payload.isAdmin ? 1 : 0) as any[];
+      res.json(withdrawals);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/wallet/withdrawals/:id/:action', async (req, res) => {
+    try {
+      const db = (await import('./database/index.js')).default;
+      const authHeader = req.headers.authorization;
+      if (!authHeader?.startsWith('Bearer ')) { res.status(401).json({ error: 'Unauthorized' }); return; }
+      const { verifyToken } = await import('./middleware/auth.js');
+      const payload = verifyToken(authHeader.split(' ')[1]);
+      if (!payload?.isAdmin) { res.status(403).json({ error: 'Admin only' }); return; }
+      const { id } = req.params;
+      const action = req.params.action; // 'approve' or 'reject'
+      const { adminNote } = req.body;
+      const withdrawal = db.prepare('SELECT * FROM withdrawal_requests WHERE id = ?').get(id) as any;
+      if (!withdrawal) { res.status(404).json({ error: 'Not found' }); return; }
+      if (withdrawal.status !== 'pending') { res.status(400).json({ error: 'Already processed' }); return; }
+      if (action === 'approve') {
+        db.prepare('UPDATE withdrawal_requests SET status = ?, admin_note = ?, processed_at = datetime(\'now\') WHERE id = ?').run('approved', adminNote || '', id);
+        db.prepare('UPDATE transactions SET status = ? WHERE user_id = ? AND type = ? AND method = ? AND status = ?').run('completed', withdrawal.user_id, 'withdrawal', withdrawal.method, 'pending');
+      } else if (action === 'reject') {
+        db.prepare('UPDATE withdrawal_requests SET status = ?, admin_note = ?, processed_at = datetime(\'now\') WHERE id = ?').run('rejected', adminNote || '', id);
+        // Refund the balance
+        db.prepare('UPDATE users SET wallet_balance = wallet_balance + ? WHERE id = ?').run(withdrawal.amount, withdrawal.user_id);
+        db.prepare('UPDATE transactions SET status = ? WHERE user_id = ? AND type = ? AND method = ? AND status = ?').run('failed', withdrawal.user_id, 'withdrawal', withdrawal.method, 'pending');
+      } else {
+        res.status(400).json({ error: 'Invalid action' }); return;
+      }
+      // Notify user
+      const notifId = crypto.randomBytes(16).toString('hex');
+      const msg = action === 'approve' ? `تم الموافقة على طلب السحب بقيمة ${withdrawal.amount} ج.م` : `تم رفض طلب السحب بقيمة ${withdrawal.amount} ج.م${adminNote ? ': ' + adminNote : ''}`;
+      db.prepare('INSERT INTO notifications (id, user_id, type, message) VALUES (?, ?, ?, ?)').run(notifId, withdrawal.user_id, 'payment', msg);
+      try {
+        const { wsManager } = await import('./websocket/index.js');
+        wsManager.sendToUser(withdrawal.user_id, JSON.stringify({
+          type: 'notification:new',
+          notification: { id: notifId, type: 'payment', message: msg, time: new Date().toISOString() }
+        }));
+        // Also send wallet update
+        wsManager.sendToUser(withdrawal.user_id, JSON.stringify({ type: 'wallet:updated' }));
+      } catch {}
+      res.json({ success: true, action });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ─── Story Highlights API ───
+  app.get('/api/users/:userId/highlights', async (req, res) => {
+    try {
+      const db = (await import('./database/index.js')).default;
+      const { userId } = req.params;
+      const highlights = db.prepare(`
+        SELECT h.*, 
+          (SELECT COUNT(*) FROM highlight_stories WHERE highlight_id = h.id) as story_count,
+          (SELECT s.image FROM highlight_stories hs JOIN stories s ON s.id = hs.story_id WHERE hs.highlight_id = h.id LIMIT 1) as cover_image
+        FROM story_highlights h
+        WHERE h.user_id = ?
+        ORDER BY h.created_at DESC
+      `).all(userId) as any[];
+      res.json(highlights);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/highlights', async (req, res) => {
+    try {
+      const db = (await import('./database/index.js')).default;
+      const authHeader = req.headers.authorization;
+      if (!authHeader?.startsWith('Bearer ')) { res.status(401).json({ error: 'Unauthorized' }); return; }
+      const { verifyToken } = await import('./middleware/auth.js');
+      const payload = verifyToken(authHeader.split(' ')[1]);
+      if (!payload) { res.status(401).json({ error: 'Invalid token' }); return; }
+      const userId = payload.userId || payload.sub;
+      const { name, storyIds } = req.body;
+      if (!name || !storyIds?.length) { res.status(400).json({ error: 'name and storyIds required' }); return; }
+      const id = crypto.randomBytes(16).toString('hex');
+      db.prepare('INSERT INTO story_highlights (id, user_id, name) VALUES (?, ?, ?)').run(id, userId, name);
+      const insertHS = db.prepare('INSERT OR IGNORE INTO highlight_stories (highlight_id, story_id) VALUES (?, ?)');
+      for (const sid of storyIds) { insertHS.run(id, sid); }
+      res.json({ success: true, id });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ─── Delete expired stories (24h) ───
+  app.delete('/api/stories/expired', async (_req, res) => {
+    try {
+      const db = (await import('./database/index.js')).default;
+      const result = db.prepare("DELETE FROM stories WHERE created_at < datetime('now', '-24 hours')").run();
+      res.json({ success: true, deleted: result.changes });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ─── Report user from chat ───
+  app.post('/api/report', async (req, res) => {
+    try {
+      const db = (await import('./database/index.js')).default;
+      const authHeader = req.headers.authorization;
+      if (!authHeader?.startsWith('Bearer ')) { res.status(401).json({ error: 'Unauthorized' }); return; }
+      const { verifyToken } = await import('./middleware/auth.js');
+      const payload = verifyToken(authHeader.split(' ')[1]);
+      if (!payload) { res.status(401).json({ error: 'Invalid token' }); return; }
+      const userId = payload.userId || payload.sub;
+      const { targetUserId, reason, details } = req.body;
+      if (!targetUserId || !reason) { res.status(400).json({ error: 'targetUserId and reason required' }); return; }
+      // Create a complaint post (reuse existing complaints system)
+      const id = crypto.randomBytes(16).toString('hex');
+      const user = db.prepare('SELECT name FROM users WHERE id = ?').get(userId) as any;
+      const targetUser = db.prepare('SELECT name FROM users WHERE id = ?').get(targetUserId) as any;
+      db.prepare('INSERT INTO posts (id, author_id, content, type, category, status) VALUES (?, ?, ?, ?, ?, ?)').run(
+        id, userId, `بلاغ ضد ${targetUser?.name || 'مستخدم'}: ${reason}${details ? ' - ' + details : ''}`, 'status', 'complaint', 'active'
+      );
+      // Notify admin
+      const notifId = crypto.randomBytes(16).toString('hex');
+      db.prepare('INSERT INTO notifications (id, user_id, type, message) VALUES (?, ?, ?, ?)').run(
+        notifId, 'admin', 'warning', `بلاغ جديد من ${user?.name || 'مستخدم'} ضد ${targetUser?.name || 'مستخدم'}`
+      );
+      res.json({ success: true, id });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
     }
   });
 

@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAppContext } from '../../contexts/AppContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { api } from '../../services/api';
-import { ChatMessage, ChatContact } from '../../types';
+import { ChatMessage, ChatContact, ChatGroup, ChatGroupMember } from '../../types';
 import { useTranslation } from 'react-i18next';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { toast } from 'sonner';
@@ -64,6 +64,20 @@ export interface ChatContextType {
   sharedMedia: ChatMessage[];
   pinnedMessages: ChatMessage[];
   isRecording: boolean;
+
+  // Phase 3 state
+  groups: ChatGroup[];
+  mutedChats: Set<string>;
+  blockedUsers: Set<string>;
+  showForwardDialog: string | null;
+  showCreateGroup: boolean;
+  showGroupInfo: boolean;
+  offlineQueue: ChatMessage[];
+
+  // Starred messages
+  showStarredPanel: boolean;
+  starredMessages: ChatMessage[];
+  handleToggleStar: (messageId: string) => Promise<void>;
 
   // Call state
   callState: CallStateType;
@@ -139,6 +153,21 @@ export interface ChatContextType {
   loadPinnedMessages: (contactId: string) => Promise<void>;
   startRecording: () => void;
   stopRecording: () => void;
+
+  // Phase 3 actions
+  createGroup: (name: string, avatar: string, description: string, memberIds: string[]) => Promise<void>;
+  leaveGroup: (groupId: string) => Promise<void>;
+  addGroupMember: (groupId: string, userId: string, role?: string) => Promise<void>;
+  removeGroupMember: (groupId: string, userId: string) => Promise<void>;
+  forwardMessage: (messageId: string, targetId: string, isGroup?: boolean) => Promise<void>;
+  toggleMuteChat: (targetId: string, isGroup?: boolean) => Promise<void>;
+  toggleBlockUser: (userId: string) => Promise<void>;
+  isChatMuted: (targetId: string) => boolean;
+  isUserBlocked: (userId: string) => boolean;
+  setShowForwardDialog: (id: string | null) => void;
+  setShowCreateGroup: (show: boolean) => void;
+  setShowGroupInfo: (show: boolean) => void;
+  processOfflineQueue: () => void;
 }
 
 const ChatContext = createContext<ChatContextType | null>(null);
@@ -161,6 +190,8 @@ const ICE_SERVERS: RTCConfiguration = {
     { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
   ],
 };
+
+const OFFLINE_QUEUE_KEY = 'nawaqes_offline_queue';
 
 export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const navigate = useNavigate();
@@ -205,6 +236,19 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Phase 3 state
+  const [groups, setGroups] = useState<ChatGroup[]>([]);
+  const [mutedChats, setMutedChats] = useState<Set<string>>(new Set());
+  const [blockedUsers, setBlockedUsers] = useState<Set<string>>(new Set());
+  const [showForwardDialog, setShowForwardDialog] = useState<string | null>(null);
+  const [showCreateGroup, setShowCreateGroup] = useState(false);
+  const [showGroupInfo, setShowGroupInfo] = useState(false);
+  const [offlineQueue, setOfflineQueue] = useState<ChatMessage[]>([]);
+
+  // Starred messages state
+  const [showStarredPanel, setShowStarredPanel] = useState(false);
+  const [starredMessages, setStarredMessages] = useState<ChatMessage[]>([]);
 
   // Call states
   const [callState, setCallState] = useState<CallStateType>('idle');
@@ -285,6 +329,23 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [currentUser]);
 
+  // ─── Load muted chats and blocked users ───────────────────────────
+  const loadMutesAndBlocks = useCallback(async () => {
+    if (!currentUser) return;
+    try {
+      const [mutes, blocks] = await Promise.all([
+        api.getMutedChats(),
+        api.getBlockedUsers(),
+      ]);
+      if (Array.isArray(mutes)) {
+        setMutedChats(new Set((mutes as any[]).map(m => m.target_id)));
+      }
+      if (Array.isArray(blocks)) {
+        setBlockedUsers(new Set((blocks as any[]).map(b => b.blocked_id)));
+      }
+    } catch {}
+  }, [currentUser]);
+
   // ─── Load messages for selected contact ────────────────────────────
   const loadMessages = useCallback(async (contactId: string) => {
     if (!currentUser) return;
@@ -310,6 +371,9 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
           delivered: !!(m.delivered),
           voiceUrl: m.voice_url || m.voiceUrl || '',
           voiceDuration: m.voice_duration || m.voiceDuration || 0,
+          groupId: m.group_id || m.groupId || undefined,
+          isForwarded: !!(m.is_forwarded),
+          forwardedFrom: m.forwarded_from || m.forwardedFrom || '',
         }));
         setApiMessages(mapped);
       }
@@ -323,6 +387,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // ─── Load contacts on mount ────────────────────────────────────────
   useEffect(() => {
     loadContacts();
+    loadMutesAndBlocks();
     api.getFriendsList().then((friends: any) => {
       if (Array.isArray(friends)) {
         setApiContacts(prev => {
@@ -346,7 +411,20 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
         });
       }
     }).catch(() => {});
-  }, [loadContacts]);
+  }, [loadContacts]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ─── Load offline queue from localStorage ──────────────────────────
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(OFFLINE_QUEUE_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed)) {
+          setOfflineQueue(parsed);
+        }
+      }
+    } catch {}
+  }, []);
 
   // ─── Auto-select contact from URL ?chat=userId parameter ───────────
   useEffect(() => {
@@ -359,16 +437,23 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     if (selectedContactId) {
       loadMessages(selectedContactId);
-      markMessagesRead(selectedContactId);
-      sendReadReceipt(selectedContactId);
-      if (currentUser && selectedContactId !== currentUser.id) {
-        api.getFriendshipStatus(selectedContactId).then(data => {
-          setFriendshipStatus(data?.friendshipStatus || null);
-          setContactLastSeen(data?.lastSeenAt || null);
-        }).catch(() => {
-          setFriendshipStatus(null);
-          setContactLastSeen(null);
-        });
+      // For DM contacts (not group_), mark messages read
+      if (!selectedContactId.startsWith('group_')) {
+        markMessagesRead(selectedContactId);
+        sendReadReceipt(selectedContactId);
+        if (currentUser && selectedContactId !== currentUser.id) {
+          api.getFriendshipStatus(selectedContactId).then(data => {
+            setFriendshipStatus(data?.friendshipStatus || null);
+            setContactLastSeen(data?.lastSeenAt || null);
+          }).catch(() => {
+            setFriendshipStatus(null);
+            setContactLastSeen(null);
+          });
+        }
+      } else {
+        // Group chat - reset DM-specific state
+        setFriendshipStatus(null);
+        setContactLastSeen(null);
       }
     } else {
       setApiMessages([]);
@@ -379,7 +464,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // ─── Refresh contactLastSeen every 30s ─────────────────────────────
   useEffect(() => {
-    if (!selectedContactId || !currentUser || selectedContactId === currentUser.id) return;
+    if (!selectedContactId || !currentUser || selectedContactId === currentUser.id || selectedContactId.startsWith('group_')) return;
     const interval = setInterval(() => {
       api.getFriendshipStatus(selectedContactId!).then(data => {
         setContactLastSeen(data?.lastSeenAt || null);
@@ -398,6 +483,8 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const contacts = Array.from(allContactsMap.values()).map(c => ({
     ...c,
     online: isUserOnlineWs(c.id) || isUserOnline(c.id),
+    isMuted: mutedChats.has(c.id) || (c.isGroup && c.groupId ? mutedChats.has(c.groupId) : false) || c.isMuted,
+    isBlocked: blockedUsers.has(c.id) || c.isBlocked,
   }));
 
   const selectedContact = contacts.find(c => c.id === selectedContactId) || null;
@@ -406,10 +493,13 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const getMessagesList = useCallback((): ChatMessage[] => {
     if (!selectedContactId || !currentUser) return [];
     const msgs = [...apiMessages];
-    const chatKey = [currentUser.id, selectedContactId].sort().join('_');
-    const localMsgs = chatMessages[chatKey] || [];
-    for (const lm of localMsgs) {
-      if (!msgs.find(m => m.id === lm.id)) msgs.push(lm);
+    // For group chats, no local merge needed (all messages come from API)
+    if (!selectedContactId.startsWith('group_')) {
+      const chatKey = [currentUser.id, selectedContactId].sort().join('_');
+      const localMsgs = chatMessages[chatKey] || [];
+      for (const lm of localMsgs) {
+        if (!msgs.find(m => m.id === lm.id)) msgs.push(lm);
+      }
     }
     msgs.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
     return msgs;
@@ -434,13 +524,19 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
         typingTimeoutRef.current = setTimeout(() => setShowTypingIndicator(false), 3000);
       }
+      // For group typing, show if in the same group
+      if (data?.groupId && selectedContact?.isGroup && selectedContact.groupId === data.groupId) {
+        setShowTypingIndicator(true);
+        if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+        typingTimeoutRef.current = setTimeout(() => setShowTypingIndicator(false), 3000);
+      }
     };
     window.addEventListener('ws:typing', handleWsTyping);
     return () => {
       window.removeEventListener('ws:typing', handleWsTyping);
       if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
     };
-  }, [selectedContactId]);
+  }, [selectedContactId, selectedContact]);
 
   // ─── WebSocket: read receipts ──────────────────────────────────────
   useEffect(() => {
@@ -486,6 +582,66 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => window.removeEventListener('ws:chat:message-deleted', handleWsMessageDeleted);
   }, []);
 
+  // ─── WebSocket: group created/deleted events ───────────────────────
+  useEffect(() => {
+    const handleGroupCreated = () => { loadContacts(); };
+    const handleGroupDeleted = () => {
+      loadContacts();
+      // If the deleted group was selected, deselect it
+      setSelectedContactId(prev => {
+        if (prev?.startsWith('group_')) return null;
+        return prev;
+      });
+    };
+    window.addEventListener('ws:chat:group-created', handleGroupCreated);
+    window.addEventListener('ws:chat:group-deleted', handleGroupDeleted);
+    return () => {
+      window.removeEventListener('ws:chat:group-created', handleGroupCreated);
+      window.removeEventListener('ws:chat:group-deleted', handleGroupDeleted);
+    };
+  }, [loadContacts]);
+
+  // ─── WebSocket: new chat message (real-time) ───────────────────────
+  useEffect(() => {
+    const handleWsMessage = (e: Event) => {
+      const data = (e as CustomEvent).detail;
+      if (!data) return;
+      const msg: ChatMessage = {
+        id: data.id,
+        senderId: data.senderId,
+        receiverId: data.receiverId,
+        text: data.text || '',
+        timestamp: data.timestamp || new Date().toISOString(),
+        read: false,
+        messageType: data.messageType || 'text',
+        imageUrl: data.imageUrl || '',
+        replyToId: data.replyToId || undefined,
+        voiceUrl: data.voiceUrl || '',
+        voiceDuration: data.voiceDuration || 0,
+        groupId: data.groupId || undefined,
+        isForwarded: data.isForwarded || false,
+        forwardedFrom: data.forwardedFrom || '',
+      };
+
+      // Check if this message is for the currently selected chat
+      const isForCurrentChat = selectedContactId?.startsWith('group_')
+        ? msg.groupId === selectedContact?.groupId
+        : (msg.senderId === selectedContactId || msg.receiverId === myId && msg.senderId === selectedContactId);
+
+      if (isForCurrentChat) {
+        setApiMessages(prev => {
+          if (prev.find(m => m.id === msg.id)) return prev;
+          return [...prev, msg];
+        });
+      }
+
+      // Refresh contacts to update last message
+      loadContacts();
+    };
+    window.addEventListener('ws:chat-message', handleWsMessage);
+    return () => window.removeEventListener('ws:chat-message', handleWsMessage);
+  }, [selectedContactId, selectedContact, myId, loadContacts]);
+
   // ─── Send typing indicator (debounced) ─────────────────────────────
   useEffect(() => {
     if (!messageText.trim() || !selectedContactId) return;
@@ -494,7 +650,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
       lastTypingSentRef.current = now;
       sendTyping(selectedContactId);
     }
-  }, [messageText, selectedContactId, sendTyping]);
+  }, [messageText, selectedContactId, sendTyping, selectedContact]);
 
   // ─── Close context/reaction/header menu on click outside ───────────
   useEffect(() => {
@@ -535,14 +691,24 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const textToSend = (isImageMsg || isVoiceMsg) ? '' : messageText.trim();
     if (!isImageMsg && !isVoiceMsg && !textToSend) return;
 
+    // Check if blocked
+    if (!selectedContactId.startsWith('group_') && blockedUsers.has(selectedContactId)) {
+      toast.error(t('messages.cannotMessageBlocked'));
+      return;
+    }
+
     if (!isImageMsg && !isVoiceMsg) setMessageText('');
     setSendingMessage(true);
+
+    const isGroupChat = selectedContactId.startsWith('group_');
+    const groupId = isGroupChat ? selectedContact?.groupId : undefined;
+    const receiverId = isGroupChat ? undefined : selectedContactId;
 
     const tempId = `temp_${Date.now()}`;
     const newMsg: ChatMessage = {
       id: tempId,
       senderId: myId,
-      receiverId: selectedContactId,
+      receiverId: isGroupChat ? 'group' : selectedContactId,
       text: textToSend,
       timestamp: new Date().toISOString(),
       read: false,
@@ -551,13 +717,30 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
       replyToId: replyToMessage?.id || undefined,
       voiceUrl: overrideVoiceUrl || '',
       voiceDuration: overrideVoiceDuration || 0,
+      groupId,
     };
+
+    // If offline, add to queue
+    if (!wsConnected) {
+      newMsg._queued = true;
+      setApiMessages(prev => [...prev, newMsg]);
+      setReplyToMessage(null);
+      setSendingMessage(false);
+
+      // Store in localStorage
+      const updatedQueue = [...offlineQueue, newMsg];
+      setOfflineQueue(updatedQueue);
+      localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(updatedQueue));
+      toast.info(t('messages.messageQueued'));
+      return;
+    }
+
     setApiMessages(prev => [...prev, newMsg]);
     setReplyToMessage(null);
 
     try {
       const result = await api.sendMessage(
-        selectedContactId,
+        receiverId || 'group',
         textToSend || (isVoiceMsg ? '🎤' : '📷'),
         undefined,
         isImageMsg ? 'image' : isVoiceMsg ? 'voice' : 'text',
@@ -565,10 +748,11 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
         newMsg.replyToId,
         overrideVoiceUrl,
         overrideVoiceDuration,
+        groupId,
       );
       setApiMessages(prev => prev.map(m =>
         m.id === tempId
-          ? { ...m, id: (result as any)?.id || tempId }
+          ? { ...m, id: (result as any)?.id || tempId, _queued: false }
           : m
       ));
       loadContacts();
@@ -582,6 +766,46 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setSendingMessage(false);
     }
   };
+
+  // ─── Process offline queue ─────────────────────────────────────────
+  const processOfflineQueue = useCallback(async () => {
+    if (offlineQueue.length === 0) return;
+    const queue = [...offlineQueue];
+    setOfflineQueue([]);
+    localStorage.removeItem(OFFLINE_QUEUE_KEY);
+
+    for (const msg of queue) {
+      try {
+        const isGroupChat = !!msg.groupId;
+        const receiverId = isGroupChat ? 'group' : msg.receiverId;
+        await api.sendMessage(
+          receiverId,
+          msg.text,
+          undefined,
+          msg.messageType,
+          msg.imageUrl,
+          msg.replyToId,
+          msg.voiceUrl,
+          msg.voiceDuration,
+          msg.groupId,
+        );
+        // Remove _queued flag from displayed message
+        setApiMessages(prev => prev.map(m =>
+          m.id === msg.id ? { ...m, _queued: false } : m
+        ));
+      } catch (err) {
+        console.error('Failed to send queued message:', err);
+      }
+    }
+    loadContacts();
+  }, [offlineQueue, loadContacts]);
+
+  // Process queue when back online
+  useEffect(() => {
+    if (wsConnected && offlineQueue.length > 0) {
+      processOfflineQueue();
+    }
+  }, [wsConnected, offlineQueue.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ─── Image upload ──────────────────────────────────────────────────
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -708,7 +932,6 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
       } else {
         toast.success(t('messages.unpinMessage'));
       }
-      // Refresh pinned messages
       if (selectedContactId) {
         loadPinnedMessagesFn(selectedContactId);
       }
@@ -825,16 +1048,11 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const audioBlob = new Blob(audioChunksRef.current, { type: mediaRecorder.mimeType });
         stream.getTracks().forEach(track => track.stop());
 
-        // Calculate duration
-        const durationSec = 0; // Will be estimated from file
-
-        // Create file from blob
         const ext = mediaRecorder.mimeType.includes('webm') ? 'webm' : 'ogg';
         const file = new File([audioBlob], `voice_${Date.now()}.${ext}`, { type: mediaRecorder.mimeType });
 
         try {
           const { url } = await api.uploadChatVoice(file);
-          // Estimate duration from blob size (rough: ~16KB per second for opus)
           const estimatedDuration = Math.max(1, Math.round(audioBlob.size / 16000));
           await sendMessageFn(undefined, 'voice', undefined, url, estimatedDuration);
         } catch (err: any) {
@@ -916,6 +1134,121 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const timer = setTimeout(() => handleUserSearch(userSearchQuery), 300);
     return () => clearTimeout(timer);
   }, [userSearchQuery, handleUserSearch]);
+
+  // ─── Phase 3: Create group ─────────────────────────────────────────
+  const createGroupFn = async (name: string, avatar: string, description: string, memberIds: string[]) => {
+    try {
+      const result = await api.createGroup(name, avatar, description, memberIds);
+      if (result) {
+        toast.success(t('messages.createGroup'));
+        setShowCreateGroup(false);
+        loadContacts();
+        // Select the new group
+        if ((result as any)?.id) {
+          setSelectedContactId(`group_${(result as any).id}`);
+        }
+      }
+    } catch (err: any) {
+      toast.error(err?.message || t('common.error'));
+    }
+  };
+
+  // ─── Phase 3: Leave group ──────────────────────────────────────────
+  const leaveGroupFn = async (groupId: string) => {
+    try {
+      await api.leaveGroup(groupId);
+      toast.success(t('messages.leaveGroup'));
+      setSelectedContactId(null);
+      loadContacts();
+    } catch (err: any) {
+      toast.error(err?.message || t('common.error'));
+    }
+  };
+
+  // ─── Phase 3: Add group member ─────────────────────────────────────
+  const addGroupMemberFn = async (groupId: string, userId: string, role?: string) => {
+    try {
+      await api.addGroupMember(groupId, userId, role);
+      toast.success(t('messages.addMembers'));
+      loadContacts();
+    } catch (err: any) {
+      toast.error(err?.message || t('common.error'));
+    }
+  };
+
+  // ─── Phase 3: Remove group member ──────────────────────────────────
+  const removeGroupMemberFn = async (groupId: string, userId: string) => {
+    try {
+      await api.removeGroupMember(groupId, userId);
+      toast.success(t('messages.removeMember'));
+      loadContacts();
+    } catch (err: any) {
+      toast.error(err?.message || t('common.error'));
+    }
+  };
+
+  // ─── Phase 3: Forward message ──────────────────────────────────────
+  const forwardMessageFn = async (messageId: string, targetId: string, isGroup?: boolean) => {
+    try {
+      await api.forwardMessage(messageId, targetId, isGroup);
+      toast.success(t('messages.forward'));
+      setShowForwardDialog(null);
+      loadContacts();
+    } catch (err: any) {
+      toast.error(err?.message || t('common.error'));
+    }
+  };
+
+  // ─── Phase 3: Toggle mute chat ─────────────────────────────────────
+  const toggleMuteChatFn = async (targetId: string, isGroup?: boolean) => {
+    try {
+      const result = await api.toggleMuteChat(targetId, isGroup);
+      if (result.isMuted) {
+        setMutedChats(prev => new Set([...prev, targetId]));
+        toast.success(t('messages.muteChat'));
+      } else {
+        setMutedChats(prev => {
+          const next = new Set(prev);
+          next.delete(targetId);
+          return next;
+        });
+        toast.success(t('messages.unmuteChat'));
+      }
+      loadContacts();
+    } catch (err: any) {
+      toast.error(err?.message || t('common.error'));
+    }
+  };
+
+  // ─── Phase 3: Toggle block user ────────────────────────────────────
+  const toggleBlockUserFn = async (userId: string) => {
+    try {
+      const result = await api.toggleBlockUser(userId);
+      if (result.isBlocked) {
+        setBlockedUsers(prev => new Set([...prev, userId]));
+        toast.success(t('messages.blockUser'));
+      } else {
+        setBlockedUsers(prev => {
+          const next = new Set(prev);
+          next.delete(userId);
+          return next;
+        });
+        toast.success(t('messages.unblockUser'));
+      }
+      loadContacts();
+    } catch (err: any) {
+      toast.error(err?.message || t('common.error'));
+    }
+  };
+
+  // ─── Phase 3: Check helpers ────────────────────────────────────────
+  const isChatMutedFn = useCallback((targetId: string): boolean => {
+    return mutedChats.has(targetId);
+  }, [mutedChats]);
+
+  const isUserBlockedFn = useCallback((userId: string): boolean => {
+    return blockedUsers.has(userId);
+  }, [blockedUsers]);
 
   // ─── WebRTC: call functions ────────────────────────────────────────
   // Keep localStreamRef in sync
@@ -1348,6 +1681,8 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     uploadingImage, friendshipStatus, contactLastSeen, contextMenu,
     showReactionPicker, showImagePreview, showHeaderMenu, sendingFriendRequest,
     editingMessage, messageSearchQuery, searchedMessages, sharedMedia, pinnedMessages, isRecording,
+    // Phase 3 state
+    groups, mutedChats, blockedUsers, showForwardDialog, showCreateGroup, showGroupInfo, offlineQueue,
     callState, activeCall, incomingCall, callDuration, isMuted, isCameraOff,
     isSpeakerOn, callError, showPermissionGuide, localStream, remoteStream,
     apiContacts,
@@ -1368,6 +1703,13 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     handleEditMessage, handleDeleteForEveryone, handleTogglePin,
     loadSharedMedia: loadSharedMediaFn, loadPinnedMessages: loadPinnedMessagesFn,
     startRecording, stopRecording,
+    // Phase 3 actions
+    createGroup: createGroupFn, leaveGroup: leaveGroupFn,
+    addGroupMember: addGroupMemberFn, removeGroupMember: removeGroupMemberFn,
+    forwardMessage: forwardMessageFn, toggleMuteChat: toggleMuteChatFn,
+    toggleBlockUser: toggleBlockUserFn, isChatMuted: isChatMutedFn,
+    isUserBlocked: isUserBlockedFn, setShowForwardDialog, setShowCreateGroup,
+    setShowGroupInfo, processOfflineQueue,
   };
 
   // Also expose some internal state for NewChatDialog

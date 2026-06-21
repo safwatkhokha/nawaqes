@@ -1,9 +1,15 @@
 import React, { useState } from 'react';
-import { ArrowRight, Phone, Video, MoreVertical, Eye, UserPlus, RefreshCw, Info, Search } from 'lucide-react';
+import { ArrowRight, Phone, Video, MoreVertical, Eye, UserPlus, RefreshCw, Info, Search, Settings, Star, BellOff, Clock } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useChatContext } from './ChatContext';
 import { MessageSearch } from './MessageSearch';
+import { ChatSettingsPanel } from './ChatSettingsPanel';
 import { useTranslation } from 'react-i18next';
+
+// Wrapper to avoid circular import issues
+const ChatSettingsPanelWrapper: React.FC<{ show: boolean; onClose: () => void }> = ({ show, onClose }) => (
+  <ChatSettingsPanel show={show} onClose={onClose} />
+);
 
 export const ChatHeader: React.FC = () => {
   const {
@@ -11,13 +17,15 @@ export const ChatHeader: React.FC = () => {
     startCall, setShowHeaderMenu, showHeaderMenu, setShowContactInfo, showContactInfo,
     friendshipStatus, loadMessages, loadingMessages, formatLastSeen,
     myId, selectContact, sendFriendRequest, sendingFriendRequest,
-  } = useChatContext();
+    chatSettings, setShowStarredPanel,
+  } = useChatContext() as any;
   const ctx = useChatContext();
   const darkMode = (ctx as any).darkMode as boolean;
   const navigate = (ctx as any).navigate as (path: string) => void;
   const { t } = useTranslation();
 
   const [showSearch, setShowSearch] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
 
   if (!selectedContact) return null;
 
@@ -61,9 +69,13 @@ export const ChatHeader: React.FC = () => {
             className="cursor-pointer"
             onClick={() => { if (selectedContactId && selectedContactId !== myId) navigate(`/user/${selectedContactId}`); }}
           >
-            <h4 className={`text-sm font-bold ${textPrimary} hover:text-orange-600 transition-colors`}>
-              {selectedContact.name}
-            </h4>
+            <div className="flex items-center gap-1.5">
+              <h4 className={`text-sm font-bold ${textPrimary} hover:text-orange-600 transition-colors`}>
+                {selectedContact.name}
+              </h4>
+              {chatSettings.isMuted && <BellOff className="w-3 h-3 text-red-400" />}
+              {chatSettings.isDisappearing && <Clock className="w-3 h-3 text-purple-400" />}
+            </div>
             <span className={`text-[10px] ${
               showTypingIndicator
                 ? 'text-orange-500'
@@ -221,6 +233,28 @@ export const ChatHeader: React.FC = () => {
                     <Info className="w-4 h-4" />
                     {t('messages.contactInfo', 'معلومات جهة الاتصال')}
                   </button>
+
+                  {/* Starred Messages */}
+                  <button
+                    onClick={() => { setShowStarredPanel(true); setShowHeaderMenu(false); }}
+                    className={`w-full flex items-center gap-2.5 px-4 py-2.5 text-sm transition-colors ${
+                      darkMode ? 'text-gray-200 hover:bg-gray-700' : 'text-gray-700 hover:bg-gray-50'
+                    }`}
+                  >
+                    <Star className="w-4 h-4 text-orange-500" />
+                    {t('messages.starredMessages', 'الرسائل المميزة')}
+                  </button>
+
+                  {/* Chat Settings */}
+                  <button
+                    onClick={() => { setShowSettings(true); setShowHeaderMenu(false); }}
+                    className={`w-full flex items-center gap-2.5 px-4 py-2.5 text-sm transition-colors ${
+                      darkMode ? 'text-gray-200 hover:bg-gray-700' : 'text-gray-700 hover:bg-gray-50'
+                    }`}
+                  >
+                    <Settings className="w-4 h-4" />
+                    {t('messages.chatSettings', 'إعدادات المحادثة')}
+                  </button>
                 </motion.div>
               )}
             </AnimatePresence>
@@ -230,6 +264,11 @@ export const ChatHeader: React.FC = () => {
 
       {/* Search bar */}
       <MessageSearch isOpen={showSearch} onClose={() => setShowSearch(false)} />
+
+      {/* Chat Settings Panel */}
+      {showSettings && (
+        <ChatSettingsPanelWrapper show={showSettings} onClose={() => setShowSettings(false)} />
+      )}
     </>
   );
 };

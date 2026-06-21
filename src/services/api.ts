@@ -207,9 +207,9 @@ class ApiClient {
     return this.request<any[]>(`/chat/messages/${contactId}${query}`);
   }
 
-  async sendMessage(receiverId: string, text: string, postId?: string, messageType?: string, imageUrl?: string, replyToId?: string, voiceUrl?: string, voiceDuration?: number) {
+  async sendMessage(receiverId: string, text: string, postId?: string, messageType?: string, imageUrl?: string, replyToId?: string, voiceUrl?: string, voiceDuration?: number, groupId?: string) {
     return this.request<any>('/chat/send', {
-      method: 'POST', body: JSON.stringify({ receiverId, text, postId, messageType, imageUrl, replyToId, voiceUrl, voiceDuration }),
+      method: 'POST', body: JSON.stringify({ receiverId, text, postId, messageType, imageUrl, replyToId, voiceUrl, voiceDuration, groupId }),
     });
   }
 
@@ -273,6 +273,85 @@ class ApiClient {
       throw new Error(data.error);
     }
     return res.json();
+  }
+
+  // ─── Phase 3: Group Chat ────────────────────────────────────────────
+  async createGroup(name: string, avatar: string, description: string, memberIds: string[]) {
+    return this.request<any>('/chat/groups', {
+      method: 'POST',
+      body: JSON.stringify({ name, avatar, description, memberIds }),
+    });
+  }
+
+  async getGroups() {
+    return this.request<any[]>('/chat/groups');
+  }
+
+  async getGroupDetails(groupId: string) {
+    return this.request<any>(`/chat/groups/${groupId}`);
+  }
+
+  async updateGroup(groupId: string, data: { name?: string; avatar?: string; description?: string }) {
+    return this.request<any>(`/chat/groups/${groupId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async addGroupMember(groupId: string, userId: string, role?: string) {
+    return this.request<{ message: string }>(`/chat/groups/${groupId}/members`, {
+      method: 'POST',
+      body: JSON.stringify({ userId, role }),
+    });
+  }
+
+  async removeGroupMember(groupId: string, userId: string) {
+    return this.request<{ message: string }>(`/chat/groups/${groupId}/members/${userId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async deleteGroup(groupId: string) {
+    return this.request<{ message: string }>(`/chat/groups/${groupId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async leaveGroup(groupId: string) {
+    return this.request<{ message: string }>(`/chat/groups/${groupId}/leave`, {
+      method: 'POST',
+    });
+  }
+
+  // ─── Phase 3: Forward Message ──────────────────────────────────────
+  async forwardMessage(messageId: string, targetId: string, isGroup?: boolean) {
+    return this.request<any>(`/chat/messages/${messageId}/forward`, {
+      method: 'POST',
+      body: JSON.stringify({ targetId, isGroup: !!isGroup }),
+    });
+  }
+
+  // ─── Phase 3: Mute Notifications ───────────────────────────────────
+  async toggleMuteChat(targetId: string, isGroup?: boolean) {
+    return this.request<{ message: string; isMuted: boolean }>(`/chat/mute/${targetId}`, {
+      method: 'POST',
+      body: JSON.stringify({ isGroup: !!isGroup }),
+    });
+  }
+
+  async getMutedChats() {
+    return this.request<any[]>('/chat/mutes');
+  }
+
+  // ─── Phase 3: Block User ───────────────────────────────────────────
+  async toggleBlockUser(userId: string) {
+    return this.request<{ message: string; isBlocked: boolean }>(`/chat/block/${userId}`, {
+      method: 'POST',
+    });
+  }
+
+  async getBlockedUsers() {
+    return this.request<any[]>('/chat/blocks');
   }
 
   // ─── Wallet ────────────────────────────────────────────────────────
@@ -825,6 +904,47 @@ class ApiClient {
     if (days !== undefined) params.set('days', days.toString());
     const query = params.toString() ? `?${params.toString()}` : '';
     return this.request<{ success: boolean; data: any }>(`/ai/placement-analytics${query}`);
+  }
+
+  // ─── Phase 3: Story Interactions ─────────────────────────────────
+  async viewStory(storyId: string) { return this.request<{ success: boolean }>(`/stories/${storyId}/view`, { method: 'POST' }); }
+  async replyToStory(storyId: string, text: string) { return this.request<{ success: boolean; id: string }>(`/stories/${storyId}/reply`, { method: 'POST', body: JSON.stringify({ text }) }); }
+  async reactToStory(storyId: string, emoji: string) { return this.request<{ success: boolean; reacted: boolean }>(`/stories/${storyId}/react`, { method: 'POST', body: JSON.stringify({ emoji }) }); }
+  async getStoryViewers(storyId: string) { return this.request<any[]>(`/stories/${storyId}/viewers`); }
+  async deleteExpiredStories() { return this.request<{ success: boolean; deleted: number }>('/stories/expired', { method: 'DELETE' }); }
+  async getUserHighlights(userId: string) { return this.request<any[]>(`/users/${userId}/highlights`); }
+  async createHighlight(name: string, storyIds: string[]) { return this.request<{ success: boolean; id: string }>('/highlights', { method: 'POST', body: JSON.stringify({ name, storyIds }) }); }
+
+  // ─── Phase 3: Wallet Withdrawal ─────────────────────────────────
+  async requestWithdrawal(amount: number, method: string, accountDetails?: string) {
+    return this.request<{ success: boolean; id: string; message: string }>('/wallet/withdraw', {
+      method: 'POST', body: JSON.stringify({ amount, method, accountDetails }),
+    });
+  }
+  async getWithdrawals() { return this.request<any[]>('/wallet/withdrawals'); }
+  async processWithdrawal(id: string, action: 'approve' | 'reject', adminNote?: string) {
+    return this.request<{ success: boolean; action: string }>(`/wallet/withdrawals/${id}/${action}`, {
+      method: 'POST', body: JSON.stringify({ adminNote }),
+    });
+  }
+
+  // ─── Phase 3: Push Notifications ─────────────────────────────────
+  async registerDevice(token: string, platform: string) {
+    return this.request<{ success: boolean; registered: boolean }>('/notifications/register-device', {
+      method: 'POST', body: JSON.stringify({ token, platform }),
+    });
+  }
+  async sendNotification(userId: string, title: string, body: string, data?: Record<string, string>) {
+    return this.request<{ success: boolean; sent: number }>('/notifications/send', {
+      method: 'POST', body: JSON.stringify({ userId, title, body, data }),
+    });
+  }
+
+  // ─── Phase 3: Report User ──────────────────────────────────────
+  async reportUser(targetUserId: string, reason: string, details?: string) {
+    return this.request<{ success: boolean; id: string }>('/report', {
+      method: 'POST', body: JSON.stringify({ targetUserId, reason, details }),
+    });
   }
 }
 

@@ -1,5 +1,5 @@
-import React from 'react';
-import { ArrowRight, RefreshCw, UserPlus } from 'lucide-react';
+import React, { useState } from 'react';
+import { ArrowRight, RefreshCw, UserPlus, Users, Star } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAppContext } from '../contexts/AppContext';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -13,12 +13,15 @@ import {
   ImagePreview,
   ContextMenu,
   ReactionPicker,
+  ForwardDialog,
+  CreateGroupDialog,
+  StarredMessages,
 } from './chat';
 import { useChatContext } from './chat';
 
 // ─── Inner layout component (needs ChatContext) ──────────────────────
 const ChatLayout: React.FC = () => {
-  const { selectedContact, loadContacts, loadingContacts, setShowNewChat, showNewChat } = useChatContext();
+  const { selectedContact, loadContacts, loadingContacts, setShowNewChat, showNewChat, setShowCreateGroup } = useChatContext();
   const ctx = useChatContext();
   const darkMode = (ctx as any).darkMode as boolean;
   const dir = (ctx as any).dir as 'rtl' | 'ltr';
@@ -46,12 +49,30 @@ const ChatLayout: React.FC = () => {
           <p className={`text-sm ${textMuted}`}>{t('messages.titleDesc')}</p>
         </div>
         <button
+          onClick={() => (ctx as any).setShowStarredPanel(true)}
+          className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors ${
+            darkMode ? 'bg-gray-800 hover:bg-gray-700 text-gray-300' : 'bg-orange-50 hover:bg-orange-100 text-orange-600'
+          }`}
+          title={t('messages.starredMessages', 'الرسائل المميزة')}
+        >
+          <Star className="w-4 h-4" />
+        </button>
+        <button
           onClick={loadContacts}
           className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors ${
             darkMode ? 'bg-gray-800 hover:bg-gray-700 text-gray-300' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
           }`}
         >
           <RefreshCw className={`w-4 h-4 ${loadingContacts ? 'animate-spin' : ''}`} />
+        </button>
+        <button
+          onClick={() => setShowCreateGroup(true)}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${
+            darkMode ? 'bg-orange-900/20 text-orange-400 hover:bg-orange-900/30' : 'bg-orange-50 text-orange-600 hover:bg-orange-100'
+          }`}
+        >
+          <Users className="w-4 h-4" />
+          {t('messages.createGroup')}
         </button>
         <button
           onClick={() => setShowNewChat(!showNewChat)}
@@ -66,6 +87,8 @@ const ChatLayout: React.FC = () => {
 
       {/* New Chat Dialog */}
       <NewChatDialog />
+      <CreateGroupDialog />
+      <ForwardDialog />
 
       {/* Chat Container */}
       <div
@@ -88,6 +111,7 @@ const ChatLayout: React.FC = () => {
       <ReactionPicker floating />
       <CallOverlay />
       <ImagePreview />
+      <StarredMessages />
     </div>
   );
 };

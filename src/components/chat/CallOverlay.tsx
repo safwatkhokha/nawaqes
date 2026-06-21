@@ -1,7 +1,7 @@
 import React from 'react';
 import {
   Phone, Video, PhoneOff, Mic, MicOff, CameraOff, PhoneCall,
-  Volume2, VolumeX, AlertCircle,
+  Volume2, VolumeX, AlertCircle, Monitor, MonitorOff,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useChatContext } from './ChatContext';
@@ -19,6 +19,79 @@ export const CallOverlay: React.FC = () => {
   const darkMode = (ctx as any).darkMode as boolean;
   const dir = (ctx as any).dir as 'rtl' | 'ltr';
   const { t } = useTranslation();
+
+  // ─── Screen sharing state ──────────────────────────────────────
+  const [isScreenSharing, setIsScreenSharing] = React.useState(false);
+  const screenStreamRef = React.useRef<MediaStream | null>(null);
+  const originalVideoTrackRef = React.useRef<MediaStreamTrack | null>(null);
+
+  const toggleScreenShare = async () => {
+    try {
+      if (!isScreenSharing) {
+        // Start screen sharing
+        const screenStream = await navigator.mediaDevices.getDisplayMedia({
+          video: { cursor: 'always' },
+          audio: false,
+        });
+        screenStreamRef.current = screenStream;
+        const screenTrack = screenStream.getVideoTracks()[0];
+
+        // Replace video track in peer connection
+        const pc = (ctx as any).peerConnectionRef?.current as RTCPeerConnection | null;
+        if (pc) {
+          const senders = pc.getSenders();
+          const videoSender = senders.find(s => s.track?.kind === 'video');
+          if (videoSender) {
+            originalVideoTrackRef.current = videoSender.track;
+            await videoSender.replaceTrack(screenTrack);
+          }
+        }
+
+        // Update local video preview
+        if (localVideoRef?.current) {
+          localVideoRef.current.srcObject = screenStream;
+        }
+
+        // Handle screen share stop (user clicks browser's "Stop sharing" button)
+        screenTrack.onended = () => {
+          stopScreenShare();
+        };
+
+        setIsScreenSharing(true);
+      } else {
+        stopScreenShare();
+      }
+    } catch (err: any) {
+      console.error('[ScreenShare] Error:', err.message);
+      setIsScreenSharing(false);
+    }
+  };
+
+  const stopScreenShare = async () => {
+    // Stop screen stream
+    if (screenStreamRef.current) {
+      screenStreamRef.current.getTracks().forEach(t => t.stop());
+      screenStreamRef.current = null;
+    }
+
+    // Restore original video track
+    const pc = (ctx as any).peerConnectionRef?.current as RTCPeerConnection | null;
+    if (pc && originalVideoTrackRef.current) {
+      const senders = pc.getSenders();
+      const videoSender = senders.find(s => s.track?.kind === 'video');
+      if (videoSender) {
+        await videoSender.replaceTrack(originalVideoTrackRef.current);
+      }
+    }
+
+    // Restore local video preview
+    if (localVideoRef?.current && localStream) {
+      localVideoRef.current.srcObject = localStream;
+    }
+
+    originalVideoTrackRef.current = null;
+    setIsScreenSharing(false);
+  };
 
   return (
     <>
@@ -229,6 +302,19 @@ export const CallOverlay: React.FC = () => {
                   }`}
                 >
                   {isCameraOff ? <CameraOff className="w-6 h-6" /> : <Video className="w-6 h-6" />}
+                </button>
+              )}
+
+              {/* Screen share toggle (video calls only) */}
+              {activeCall.type === 'video' && callState === 'connected' && (
+                <button
+                  onClick={toggleScreenShare}
+                  className={`w-14 h-14 rounded-full flex items-center justify-center transition-all active:scale-90 ${
+                    isScreenSharing ? 'bg-blue-500 text-white' : 'bg-white/20 text-white hover:bg-white/30'
+                  }`}
+                  title={isScreenSharing ? t('messages.stopScreenShare', 'إيقاف مشاركة الشاشة') : t('messages.startScreenShare', 'مشاركة الشاشة')}
+                >
+                  {isScreenSharing ? <MonitorOff className="w-6 h-6" /> : <Monitor className="w-6 h-6" />}
                 </button>
               )}
 

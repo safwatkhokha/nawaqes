@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
-import { Check, CheckCircle2, Pin } from 'lucide-react';
+import { Check, CheckCircle2, Pin, Forward, Clock, WifiOff } from 'lucide-react';
 import { ChatMessage } from '../../types';
 import { useChatContext } from './ChatContext';
 import { VoicePlayer } from './VoicePlayer';
@@ -23,6 +23,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ msg }) => {
 
   const isMine = msg.senderId === myId;
   const isFailed = msg._failed;
+  const isQueued = msg._queued;
   const isDeletedForEveryone = msg.deletedFor === 'everyone';
   const isEditing = editingMessage?.id === msg.id;
 
@@ -84,6 +85,13 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ msg }) => {
   // ─── Read/delivered receipt icon ──────────────────────────────────
   const renderReadReceipt = () => {
     if (!isMine || isFailed) return null;
+    if (isQueued) {
+      return (
+        <span className="flex items-center gap-0.5" title={t('messages.messageQueued')}>
+          <Clock className="w-3 h-3 text-yellow-400" />
+        </span>
+      );
+    }
     if (msg.read) {
       return (
         <span className="flex items-center">
@@ -106,11 +114,13 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ msg }) => {
   // ─── Bubble styling ──────────────────────────────────────────────
   const bubbleClasses = isFailed
     ? 'bg-red-100 text-red-700 border border-red-200 rounded-2xl rounded-bl-sm'
-    : isMine
-      ? `bg-gradient-to-bl from-orange-500 to-amber-500 text-white rounded-2xl rounded-bl-sm shadow-sm shadow-orange-500/20`
-      : darkMode
-        ? 'bg-gray-700 text-gray-100 rounded-2xl rounded-br-sm shadow-sm'
-        : 'bg-white text-gray-900 rounded-2xl rounded-br-sm shadow-sm border border-gray-100';
+    : isQueued
+      ? `bg-gradient-to-bl from-yellow-500/80 to-amber-500/80 text-white rounded-2xl rounded-bl-sm shadow-sm shadow-yellow-500/20 ring-1 ring-yellow-400/40`
+      : isMine
+        ? `bg-gradient-to-bl from-orange-500 to-amber-500 text-white rounded-2xl rounded-bl-sm shadow-sm shadow-orange-500/20`
+        : darkMode
+          ? 'bg-gray-700 text-gray-100 rounded-2xl rounded-br-sm shadow-sm'
+          : 'bg-white text-gray-900 rounded-2xl rounded-br-sm shadow-sm border border-gray-100';
 
   // ─── Edit mode ──────────────────────────────────────────────────
   const renderEditMode = () => (
@@ -212,6 +222,25 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ msg }) => {
 
         {/* Reply preview */}
         {renderReplyPreview()}
+
+        {/* Forwarded label */}
+        {msg.isForwarded && (
+          <div className={`flex items-center gap-1 mb-1 ${isMine ? 'text-white/60' : (darkMode ? 'text-orange-400' : 'text-orange-500')}`}>
+            <Forward className="w-3 h-3" />
+            <span className="text-[10px] font-bold">
+              {t('messages.forwarded')}
+              {msg.forwardedFrom ? ` ${t('messages.from', 'من')} ${msg.forwardedFrom}` : ''}
+            </span>
+          </div>
+        )}
+
+        {/* Queued indicator */}
+        {isQueued && (
+          <div className="flex items-center gap-1 mb-1 text-yellow-200">
+            <WifiOff className="w-3 h-3" />
+            <span className="text-[10px] font-bold">{t('messages.messageQueued')}</span>
+          </div>
+        )}
 
         {/* Image message */}
         {msg.messageType === 'image' && msg.imageUrl && (

@@ -307,6 +307,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     window.dispatchEvent(new CustomEvent('ws:chat:message-deleted', { detail: data }));
   }, []);
 
+  const handleWSChatGroupCreated = useCallback((data: any) => {
+    // Dispatch a custom event for group created
+    window.dispatchEvent(new CustomEvent('ws:chat:group-created', { detail: data }));
+  }, []);
+
+  const handleWSChatGroupDeleted = useCallback((data: any) => {
+    // Dispatch a custom event for group deleted
+    window.dispatchEvent(new CustomEvent('ws:chat:group-deleted', { detail: data }));
+  }, []);
+
   // ─── New WebSocket handlers for post/story real-time updates ─────
   const handleWSPostCreated = useCallback((data: any) => {
     const newPost = mapApiPost(data);
@@ -374,6 +384,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     onCallSignal: handleWSCallSignal,
     onChatMessageEdited: handleWSChatMessageEdited,
     onChatMessageDeleted: handleWSChatMessageDeleted,
+    onChatGroupCreated: handleWSChatGroupCreated,
+    onChatGroupDeleted: handleWSChatGroupDeleted,
     onPostCreated: handleWSPostCreated,
     onPostDeleted: handleWSPostDeleted,
     onPostCommented: handleWSPostCommented,

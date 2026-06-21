@@ -33,6 +33,8 @@ interface UseWebSocketOptions {
   onLivestreamSignal?: WSEventHandler;
   onChatMessageEdited?: WSEventHandler;
   onChatMessageDeleted?: WSEventHandler;
+  onChatGroupCreated?: WSEventHandler;
+  onChatGroupDeleted?: WSEventHandler;
   autoConnect?: boolean;
 }
 
@@ -217,6 +219,8 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
     if (options.onCallSignal) typeToHandler['call:signal'] = options.onCallSignal;
     if (options.onChatMessageEdited) typeToHandler['chat:message-edited'] = options.onChatMessageEdited;
     if (options.onChatMessageDeleted) typeToHandler['chat:message-deleted'] = options.onChatMessageDeleted;
+    if (options.onChatGroupCreated) typeToHandler['chat:group-created'] = options.onChatGroupCreated;
+    if (options.onChatGroupDeleted) typeToHandler['chat:group-deleted'] = options.onChatGroupDeleted;
     if (options.onLivestreamStarted) typeToHandler['livestream:started'] = options.onLivestreamStarted;
     if (options.onLivestreamEnded) typeToHandler['livestream:ended'] = options.onLivestreamEnded;
     if (options.onLivestreamChat) typeToHandler['livestream:chat'] = options.onLivestreamChat;

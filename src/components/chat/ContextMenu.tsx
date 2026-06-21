@@ -1,5 +1,5 @@
 import React from 'react';
-import { Reply, Smile, Copy, Trash2, Edit3, Pin, XCircle } from 'lucide-react';
+import { Reply, Smile, Copy, Trash2, Edit3, Pin, XCircle, Star, Forward } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useChatContext } from './ChatContext';
 import { ReactionPicker } from './ReactionPicker';
@@ -11,6 +11,7 @@ export const ContextMenu: React.FC = () => {
     setShowReactionPicker, showReactionPicker, handleCopyMessage,
     handleDeleteMessage, handleReactToMessage, myId,
     setEditingMessage, handleDeleteForEveryone, handleTogglePin,
+    handleToggleStar, setShowForwardDialog,
   } = useChatContext();
   const ctx = useChatContext();
   const darkMode = (ctx as any).darkMode as boolean;
@@ -33,7 +34,7 @@ export const ContextMenu: React.FC = () => {
         className="fixed z-50"
         style={{
           left: Math.min(contextMenu.x, window.innerWidth - 200),
-          top: Math.min(contextMenu.y, window.innerHeight - 300),
+          top: Math.min(contextMenu.y, window.innerHeight - 380),
         }}
         onClick={(e) => e.stopPropagation()}
       >
@@ -92,6 +93,19 @@ export const ContextMenu: React.FC = () => {
             </button>
           )}
 
+          {/* Forward */}
+          {!isDeletedForEveryone && (
+            <button
+              onClick={() => { setShowForwardDialog(contextMenu.messageId); setContextMenu(null); }}
+              className={`w-full flex items-center gap-2 px-4 py-2.5 text-sm transition-colors ${
+                darkMode ? 'text-gray-200 hover:bg-gray-700' : 'text-gray-700 hover:bg-gray-50'
+              }`}
+            >
+              <Forward className="w-4 h-4" />
+              {t('messages.forward', 'إعادة توجيه')}
+            </button>
+          )}
+
           {/* Pin/Unpin */}
           <button
             onClick={() => handleTogglePin(contextMenu.messageId)}
@@ -101,6 +115,17 @@ export const ContextMenu: React.FC = () => {
           >
             <Pin className="w-4 h-4" />
             {msg.isPinned ? t('messages.unpinMessage') : t('messages.pinMessage')}
+          </button>
+
+          {/* Star/Unstar */}
+          <button
+            onClick={() => handleToggleStar(contextMenu.messageId)}
+            className={`w-full flex items-center gap-2 px-4 py-2.5 text-sm transition-colors ${
+              darkMode ? 'text-gray-200 hover:bg-gray-700' : 'text-gray-700 hover:bg-gray-50'
+            }`}
+          >
+            <Star className={`w-4 h-4 ${msg.isStarred ? 'text-orange-500 fill-orange-500' : ''}`} />
+            {msg.isStarred ? t('messages.unstarMessage', 'إلغاء التمييز') : t('messages.starMessage', 'تمييز الرسالة')}
           </button>
 
           {/* Divider */}

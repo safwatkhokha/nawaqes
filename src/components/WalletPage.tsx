@@ -66,7 +66,7 @@ export const WalletPage: React.FC = () => {
   const [txFilter, setTxFilter] = useState<'all' | 'charge_request' | 'deposit' | 'promotion_debit' | 'promotion_refund'>('all');
   const [showAnalytics, setShowAnalytics] = useState(true);
   const [showHistory, setShowHistory] = useState(true);
-  const [activeWalletTab, setActiveWalletTab] = useState<'overview' | 'charge' | 'history' | 'savings'>('overview');
+  const [activeWalletTab, setActiveWalletTab] = useState<'overview' | 'charge' | 'withdraw' | 'history' | 'savings'>('overview');
   const [txSearch, setTxSearch] = useState('');
   const [showNewGoalForm, setShowNewGoalForm] = useState(false);
   const [newGoalName, setNewGoalName] = useState('');
@@ -419,6 +419,7 @@ export const WalletPage: React.FC = () => {
           { id: 'overview' as const, label: t('wallet.overview'), icon: <Wallet className="w-4 h-4" /> },
           { id: 'charge' as const, label: t('wallet.chargeWallet'), icon: <ArrowUpRight className="w-4 h-4" /> },
           { id: 'history' as const, label: t('wallet.history'), icon: <Clock className="w-4 h-4" /> },
+          { id: 'withdraw' as const, label: t('wallet.withdraw', 'سحب'), icon: <ArrowDownRight className="w-4 h-4" /> },
           { id: 'savings' as const, label: t('wallet.savingsGoals'), icon: <PiggyBank className="w-4 h-4" /> },
         ].map(tab => (
           <button
@@ -986,6 +987,15 @@ export const WalletPage: React.FC = () => {
           </motion.div>
         )}
 
+        {/* ═══════════ WITHDRAW TAB ═══════════ */}
+        {activeWalletTab === 'withdraw' && (
+          <WithdrawTab
+            darkMode={darkMode}
+            currentUser={currentUser}
+            refreshCurrentUser={refreshCurrentUser}
+          />
+        )}
+
         {/* ═══════════ HISTORY TAB ═══════════ */}
         {activeWalletTab === 'history' && (
           <motion.div
@@ -1385,5 +1395,242 @@ export const WalletPage: React.FC = () => {
         )}
       </AnimatePresence>
     </div>
+  );
+};
+
+// ─── Withdraw Tab Component ──────────────────────────────────────
+const WITHDRAWAL_METHODS = [
+  { id: 'vfcash', name: 'Vodafone Cash', icon: '📱', color: 'from-red-500 to-red-600' },
+  { id: 'instapay', name: 'InstaPay', icon: '💸', color: 'from-blue-500 to-blue-600' },
+  { id: 'etisalat', name: 'Etisalat Cash', icon: '📶', color: 'from-green-500 to-green-600' },
+  { id: 'bank', name: t2('تحويل بنكي', 'Bank Transfer'), icon: '🏦', color: 'from-purple-500 to-purple-600' },
+];
+
+function t2(ar: string, en: string) { return en; } // fallback
+
+interface WithdrawTabProps {
+  darkMode: boolean;
+  currentUser: any;
+  refreshCurrentUser: () => void;
+}
+
+const WithdrawTab: React.FC<WithdrawTabProps> = ({ darkMode, currentUser, refreshCurrentUser }) => {
+  const [withdrawAmount, setWithdrawAmount] = useState('');
+  const [withdrawMethod, setWithdrawMethod] = useState('vfcash');
+  const [accountDetails, setAccountDetails] = useState('');
+  const [withdrawLoading, setWithdrawLoading] = useState(false);
+  const [withdrawals, setWithdrawals] = useState<any[]>([]);
+  const [showConfirm, setShowConfirm] = useState(false);
+  const { t } = useTranslation();
+
+  const bgCard = darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100';
+  const textPrimary = darkMode ? 'text-gray-100' : 'text-gray-900';
+  const textMuted = darkMode ? 'text-gray-400' : 'text-gray-500';
+
+  useEffect(() => {
+    loadWithdrawals();
+  }, []);
+
+  const loadWithdrawals = async () => {
+    try {
+      const data = await api.getWithdrawals();
+      setWithdrawals(data);
+    } catch {}
+  };
+
+  const handleSubmitWithdraw = async () => {
+    const amount = parseFloat(withdrawAmount);
+    if (!amount || amount < 50) {
+      toast.error(t('wallet.minWithdraw', 'الحد الأدنى للسحب 50 ج.م'));
+      return;
+    }
+    if (!currentUser?.walletBalance || amount > currentUser.walletBalance) {
+      toast.error(t('wallet.insufficientBalance', 'رصيد غير كافي'));
+      return;
+    }
+    setShowConfirm(true);
+  };
+
+  const confirmWithdraw = async () => {
+    setWithdrawLoading(true);
+    try {
+      const amount = parseFloat(withdrawAmount);
+      await api.requestWithdrawal(amount, withdrawMethod, accountDetails);
+      toast.success(t('wallet.withdrawSubmitted', 'تم تقديم طلب السحب بنجاح'));
+      setWithdrawAmount('');
+      setAccountDetails('');
+      setShowConfirm(false);
+      refreshCurrentUser();
+      loadWithdrawals();
+    } catch (err: any) {
+      toast.error(err.message || t('wallet.withdrawFailed', 'فشل تقديم طلب السحب'));
+    } finally {
+      setWithdrawLoading(false);
+    }
+  };
+
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case 'pending': return <span className="px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-700 text-xs font-bold">{t('wallet.pending', 'قيد المراجعة')}</span>;
+      case 'approved': return <span className="px-2 py-0.5 rounded-full bg-green-100 text-green-700 text-xs font-bold">{t('wallet.approved', 'تمت الموافقة')}</span>;
+      case 'rejected': return <span className="px-2 py-0.5 rounded-full bg-red-100 text-red-700 text-xs font-bold">{t('wallet.rejected', 'مرفوض')}</span>;
+      default: return null;
+    }
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 15 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -15 }}
+      className="space-y-5"
+    >
+      {/* Balance Card */}
+      <div className={`rounded-2xl border p-5 ${bgCard}`}>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className={`font-black text-sm ${textPrimary}`}>{t('wallet.withdrawFunds', 'سحب الأموال')}</h3>
+          <div className="flex items-center gap-1">
+            <Wallet className={`w-4 h-4 ${darkMode ? 'text-orange-400' : 'text-orange-600'}`} />
+            <span className={`font-black text-lg ${textPrimary}`}>{(currentUser?.walletBalance || 0).toLocaleString()}</span>
+            <span className={`text-xs ${textMuted}`}>ج.م</span>
+          </div>
+        </div>
+
+        {/* Amount Input */}
+        <div className="mb-4">
+          <label className={`text-xs font-bold mb-1.5 block ${textMuted}`}>{t('wallet.amount', 'المبلغ')}</label>
+          <div className={`flex items-center gap-2 rounded-xl border-2 p-3 ${darkMode ? 'bg-gray-700 border-gray-600 focus-within:border-orange-500' : 'bg-gray-50 border-gray-200 focus-within:border-orange-400'} transition-colors`}>
+            <span className={`font-black text-lg ${textMuted}`}>ج.م</span>
+            <input
+              type="number"
+              value={withdrawAmount}
+              onChange={e => setWithdrawAmount(e.target.value)}
+              placeholder="0"
+              min="50"
+              className={`flex-1 bg-transparent text-right font-black text-lg outline-none ${textPrimary}`}
+            />
+          </div>
+          <p className={`text-[10px] mt-1 ${textMuted}`}>{t('wallet.minWithdrawNote', 'الحد الأدنى للسحب 50 ج.م')}</p>
+        </div>
+
+        {/* Quick amounts */}
+        <div className="flex gap-2 mb-4">
+          {[50, 100, 200, 500].map(amt => (
+            <button
+              key={amt}
+              onClick={() => setWithdrawAmount(amt.toString())}
+              className={`flex-1 py-2 rounded-xl text-xs font-bold border transition-all ${
+                withdrawAmount === amt.toString()
+                  ? 'bg-orange-500 text-white border-orange-500'
+                  : darkMode ? 'bg-gray-700 text-gray-300 border-gray-600 hover:border-orange-400' : 'bg-gray-50 text-gray-600 border-gray-200 hover:border-orange-300'
+              }`}
+            >
+              {amt} ج.م
+            </button>
+          ))}
+        </div>
+
+        {/* Method Selection */}
+        <div className="mb-4">
+          <label className={`text-xs font-bold mb-1.5 block ${textMuted}`}>{t('wallet.withdrawMethod', 'طريقة السحب')}</label>
+          <div className="grid grid-cols-2 gap-2">
+            {WITHDRAWAL_METHODS.map(m => (
+              <button
+                key={m.id}
+                onClick={() => setWithdrawMethod(m.id)}
+                className={`flex items-center gap-2 p-3 rounded-xl border-2 transition-all ${
+                  withdrawMethod === m.id
+                    ? 'border-orange-500 bg-orange-50 dark:bg-orange-900/20'
+                    : darkMode ? 'border-gray-600 bg-gray-700' : 'border-gray-200 bg-gray-50'
+                }`}
+              >
+                <span className="text-lg">{m.icon}</span>
+                <span className={`text-xs font-bold ${textPrimary}`}>{m.name}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Account Details */}
+        <div className="mb-4">
+          <label className={`text-xs font-bold mb-1.5 block ${textMuted}`}>{t('wallet.accountDetails', 'بيانات الحساب')}</label>
+          <input
+            type="text"
+            value={accountDetails}
+            onChange={e => setAccountDetails(e.target.value)}
+            placeholder={t('wallet.accountDetailsPlaceholder', 'رقم الهاتف / رقم الحساب البنكي')}
+            className={`w-full rounded-xl border-2 p-3 text-sm outline-none transition-colors ${
+              darkMode ? 'bg-gray-700 border-gray-600 text-gray-100 placeholder-gray-500 focus:border-orange-500' : 'bg-gray-50 border-gray-200 text-gray-900 placeholder-gray-400 focus:border-orange-400'
+            }`}
+          />
+        </div>
+
+        {/* Submit */}
+        <button
+          onClick={handleSubmitWithdraw}
+          disabled={withdrawLoading || !withdrawAmount || parseFloat(withdrawAmount) < 50}
+          className="w-full py-3 rounded-xl bg-gradient-to-l from-orange-500 to-orange-600 text-white font-bold text-sm shadow-lg shadow-orange-200/30 hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+        >
+          {withdrawLoading ? t('wallet.processing', 'جارٍ المعالجة...') : t('wallet.submitWithdraw', 'تقديم طلب السحب')}
+        </button>
+      </div>
+
+      {/* Withdrawal History */}
+      {withdrawals.length > 0 && (
+        <div className={`rounded-2xl border p-4 ${bgCard}`}>
+          <h3 className={`font-black text-sm mb-3 ${textPrimary}`}>{t('wallet.withdrawalHistory', 'سجل السحوبات')}</h3>
+          <div className="space-y-2">
+            {withdrawals.map((w: any) => (
+              <div key={w.id} className={`flex items-center justify-between p-3 rounded-xl ${darkMode ? 'bg-gray-700' : 'bg-gray-50'}`}>
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
+                    <ArrowDownRight className="w-5 h-5 text-red-600" />
+                  </div>
+                  <div>
+                    <p className={`text-sm font-bold ${textPrimary}`}>{w.amount} ج.م</p>
+                    <p className={`text-[10px] ${textMuted}`}>{w.method} • {new Date(w.created_at).toLocaleDateString('ar-EG')}</p>
+                  </div>
+                </div>
+                {getStatusBadge(w.status)}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Confirm Modal */}
+      <AnimatePresence>
+        {showConfirm && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[300] bg-black/60 flex items-center justify-center p-4"
+            onClick={() => setShowConfirm(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              onClick={e => e.stopPropagation()}
+              className={`w-full max-w-sm rounded-2xl p-6 ${darkMode ? 'bg-gray-800' : 'bg-white'} shadow-2xl`}
+            >
+              <h3 className={`font-black text-lg mb-2 ${textPrimary}`}>{t('wallet.confirmWithdraw', 'تأكيد السحب')}</h3>
+              <p className={`text-sm mb-4 ${textMuted}`}>
+                {t('wallet.confirmWithdrawMsg', 'هل أنت متأكد من سحب')} {withdrawAmount} ج.م {t('wallet.via', 'عبر')} {WITHDRAWAL_METHODS.find(m => m.id === withdrawMethod)?.name}؟
+              </p>
+              <div className="flex gap-3">
+                <button onClick={() => setShowConfirm(false)} className={`flex-1 py-3 rounded-xl font-bold text-sm ${darkMode ? 'bg-gray-700 text-gray-300' : 'bg-gray-100 text-gray-600'}`}>
+                  {t('wallet.cancel', 'إلغاء')}
+                </button>
+                <button onClick={confirmWithdraw} className="flex-1 py-3 rounded-xl bg-gradient-to-l from-orange-500 to-orange-600 text-white font-bold text-sm">
+                  {t('wallet.confirm', 'تأكيد')}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
   );
 };
