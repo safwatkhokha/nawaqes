@@ -57,6 +57,14 @@ export interface ChatContextType {
   showHeaderMenu: boolean;
   sendingFriendRequest: boolean;
 
+  // Phase 2 state
+  editingMessage: ChatMessage | null;
+  messageSearchQuery: string;
+  searchedMessages: ChatMessage[];
+  sharedMedia: ChatMessage[];
+  pinnedMessages: ChatMessage[];
+  isRecording: boolean;
+
   // Call state
   callState: CallStateType;
   activeCall: ActiveCallInfo | null;
@@ -85,7 +93,7 @@ export interface ChatContextType {
 
   // Actions
   selectContact: (id: string | null) => void;
-  sendMessage: (e?: React.FormEvent, overrideMessageType?: string, overrideImageUrl?: string) => void;
+  sendMessage: (e?: React.FormEvent, overrideMessageType?: string, overrideImageUrl?: string, overrideVoiceUrl?: string, overrideVoiceDuration?: number) => void;
   handleImageUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
   handleReactToMessage: (messageId: string, emoji: string) => void;
   handleDeleteMessage: (messageId: string) => void;
@@ -119,6 +127,18 @@ export interface ChatContextType {
   retryCallWithPermission: () => void;
   formatLastSeen: (lastSeenAt: string | null) => string;
   formatCallDuration: (seconds: number) => string;
+
+  // Phase 2 actions
+  setEditingMessage: (msg: ChatMessage | null) => void;
+  setMessageSearchQuery: (q: string) => void;
+  searchMessages: (contactId: string, query: string) => Promise<void>;
+  handleEditMessage: (messageId: string, newText: string) => Promise<void>;
+  handleDeleteForEveryone: (messageId: string) => Promise<void>;
+  handleTogglePin: (messageId: string) => Promise<void>;
+  loadSharedMedia: (contactId: string) => Promise<void>;
+  loadPinnedMessages: (contactId: string) => Promise<void>;
+  startRecording: () => void;
+  stopRecording: () => void;
 }
 
 const ChatContext = createContext<ChatContextType | null>(null);
@@ -174,6 +194,17 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [showImagePreview, setShowImagePreview] = useState<string | null>(null);
   const [showTypingIndicator, setShowTypingIndicator] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
+
+  // Phase 2 state
+  const [editingMessage, setEditingMessage] = useState<ChatMessage | null>(null);
+  const [messageSearchQuery, setMessageSearchQuery] = useState('');
+  const [searchedMessages, setSearchedMessages] = useState<ChatMessage[]>([]);
+  const [sharedMedia, setSharedMedia] = useState<ChatMessage[]>([]);
+  const [pinnedMessages, setPinnedMessages] = useState<ChatMessage[]>([]);
+  const [isRecording, setIsRecording] = useState(false);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Call states
   const [callState, setCallState] = useState<CallStateType>('idle');
@@ -274,6 +305,11 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
           replyToId: m.reply_to_id || m.replyToId || undefined,
           reactions: (() => { try { return JSON.parse(m.reactions || '{}'); } catch { return {}; } })(),
           deletedFor: m.deleted_for || '',
+          isEdited: !!(m.is_edited),
+          isPinned: !!(m.is_pinned),
+          delivered: !!(m.delivered),
+          voiceUrl: m.voice_url || m.voiceUrl || '',
+          voiceDuration: m.voice_duration || m.voiceDuration || 0,
         }));
         setApiMessages(mapped);
       }
@@ -422,6 +458,34 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => window.removeEventListener('ws:read', handleWsRead);
   }, [selectedContactId, myId]);
 
+  // ─── WebSocket: message edited ─────────────────────────────────────
+  useEffect(() => {
+    const handleWsMessageEdited = (e: Event) => {
+      const data = (e as CustomEvent).detail;
+      if (data?.id) {
+        setApiMessages(prev => prev.map(m =>
+          m.id === data.id ? { ...m, text: data.text || m.text, isEdited: true } : m
+        ));
+      }
+    };
+    window.addEventListener('ws:chat:message-edited', handleWsMessageEdited);
+    return () => window.removeEventListener('ws:chat:message-edited', handleWsMessageEdited);
+  }, []);
+
+  // ─── WebSocket: message deleted for everyone ───────────────────────
+  useEffect(() => {
+    const handleWsMessageDeleted = (e: Event) => {
+      const data = (e as CustomEvent).detail;
+      if (data?.id && data?.deletedFor === 'everyone') {
+        setApiMessages(prev => prev.map(m =>
+          m.id === data.id ? { ...m, text: '', messageType: 'system' as const, deletedFor: 'everyone', imageUrl: '', voiceUrl: '' } : m
+        ));
+      }
+    };
+    window.addEventListener('ws:chat:message-deleted', handleWsMessageDeleted);
+    return () => window.removeEventListener('ws:chat:message-deleted', handleWsMessageDeleted);
+  }, []);
+
   // ─── Send typing indicator (debounced) ─────────────────────────────
   useEffect(() => {
     if (!messageText.trim() || !selectedContactId) return;
@@ -462,15 +526,16 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [currentMessages, shouldAutoScroll]);
 
   // ─── Send message ──────────────────────────────────────────────────
-  const sendMessageFn = async (e?: React.FormEvent, overrideMessageType?: string, overrideImageUrl?: string) => {
+  const sendMessageFn = async (e?: React.FormEvent, overrideMessageType?: string, overrideImageUrl?: string, overrideVoiceUrl?: string, overrideVoiceDuration?: number) => {
     if (e) e.preventDefault();
     if (!selectedContactId || !myId) return;
 
     const isImageMsg = overrideMessageType === 'image';
-    const textToSend = isImageMsg ? '' : messageText.trim();
-    if (!isImageMsg && !textToSend) return;
+    const isVoiceMsg = overrideMessageType === 'voice';
+    const textToSend = (isImageMsg || isVoiceMsg) ? '' : messageText.trim();
+    if (!isImageMsg && !isVoiceMsg && !textToSend) return;
 
-    if (!isImageMsg) setMessageText('');
+    if (!isImageMsg && !isVoiceMsg) setMessageText('');
     setSendingMessage(true);
 
     const tempId = `temp_${Date.now()}`;
@@ -481,9 +546,11 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
       text: textToSend,
       timestamp: new Date().toISOString(),
       read: false,
-      messageType: isImageMsg ? 'image' : 'text',
+      messageType: isImageMsg ? 'image' : isVoiceMsg ? 'voice' : 'text',
       imageUrl: overrideImageUrl || '',
       replyToId: replyToMessage?.id || undefined,
+      voiceUrl: overrideVoiceUrl || '',
+      voiceDuration: overrideVoiceDuration || 0,
     };
     setApiMessages(prev => [...prev, newMsg]);
     setReplyToMessage(null);
@@ -491,11 +558,13 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const result = await api.sendMessage(
         selectedContactId,
-        textToSend || '📷',
+        textToSend || (isVoiceMsg ? '🎤' : '📷'),
         undefined,
-        isImageMsg ? 'image' : 'text',
+        isImageMsg ? 'image' : isVoiceMsg ? 'voice' : 'text',
         overrideImageUrl,
         newMsg.replyToId,
+        overrideVoiceUrl,
+        overrideVoiceDuration,
       );
       setApiMessages(prev => prev.map(m =>
         m.id === tempId
@@ -596,6 +665,202 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const handleDoubleClick = (messageId: string) => {
     setShowReactionPicker(messageId);
+  };
+
+  // ─── Phase 2: Edit message ─────────────────────────────────────────
+  const handleEditMessage = async (messageId: string, newText: string) => {
+    try {
+      await api.editMessage(messageId, newText);
+      setApiMessages(prev => prev.map(m =>
+        m.id === messageId ? { ...m, text: newText, isEdited: true } : m
+      ));
+      toast.success(t('messages.editMessage'));
+    } catch (err: any) {
+      toast.error(err?.message || t('common.error'));
+    }
+    setEditingMessage(null);
+    setContextMenu(null);
+  };
+
+  // ─── Phase 2: Delete for everyone ──────────────────────────────────
+  const handleDeleteForEveryone = async (messageId: string) => {
+    try {
+      await api.deleteMessageForEveryone(messageId);
+      setApiMessages(prev => prev.map(m =>
+        m.id === messageId ? { ...m, text: '', messageType: 'system', deletedFor: 'everyone', imageUrl: '', voiceUrl: '' } : m
+      ));
+      toast.success(t('messages.deleteForEveryone'));
+    } catch (err: any) {
+      toast.error(err?.message || t('common.error'));
+    }
+    setContextMenu(null);
+  };
+
+  // ─── Phase 2: Toggle pin ───────────────────────────────────────────
+  const handleTogglePin = async (messageId: string) => {
+    try {
+      const result = await api.togglePinMessage(messageId);
+      setApiMessages(prev => prev.map(m =>
+        m.id === messageId ? { ...m, isPinned: result.isPinned } : m
+      ));
+      if (result.isPinned) {
+        toast.success(t('messages.pinMessage'));
+      } else {
+        toast.success(t('messages.unpinMessage'));
+      }
+      // Refresh pinned messages
+      if (selectedContactId) {
+        loadPinnedMessagesFn(selectedContactId);
+      }
+    } catch (err: any) {
+      toast.error(err?.message || t('common.error'));
+    }
+    setContextMenu(null);
+  };
+
+  // ─── Phase 2: Search messages ──────────────────────────────────────
+  const searchMessagesFn = async (contactId: string, query: string) => {
+    if (!query.trim()) {
+      setSearchedMessages([]);
+      return;
+    }
+    try {
+      const results = await api.searchMessages(contactId, query);
+      if (Array.isArray(results)) {
+        const mapped: ChatMessage[] = (results as any[]).map((m: any) => ({
+          id: m.id,
+          senderId: m.sender_id || m.senderId,
+          receiverId: m.receiver_id || m.receiverId,
+          text: m.text,
+          timestamp: m.created_at || m.timestamp || new Date().toISOString(),
+          read: !!(m.read),
+          messageType: m.message_type || m.messageType || 'text',
+          imageUrl: m.image_url || m.imageUrl || '',
+          voiceUrl: m.voice_url || m.voiceUrl || '',
+          voiceDuration: m.voice_duration || m.voiceDuration || 0,
+          isEdited: !!(m.is_edited),
+          isPinned: !!(m.is_pinned),
+          delivered: !!(m.delivered),
+          reactions: (() => { try { return JSON.parse(m.reactions || '{}'); } catch { return {}; } })(),
+          deletedFor: m.deleted_for || '',
+        }));
+        setSearchedMessages(mapped);
+      }
+    } catch (err) {
+      console.error('Error searching messages:', err);
+      setSearchedMessages([]);
+    }
+  };
+
+  // ─── Phase 2: Load shared media ────────────────────────────────────
+  const loadSharedMediaFn = async (contactId: string) => {
+    try {
+      const results = await api.getSharedMedia(contactId);
+      if (Array.isArray(results)) {
+        const mapped: ChatMessage[] = (results as any[]).map((m: any) => ({
+          id: m.id,
+          senderId: m.sender_id || m.senderId,
+          receiverId: m.receiver_id || m.receiverId,
+          text: m.text,
+          timestamp: m.created_at || m.timestamp || new Date().toISOString(),
+          read: !!(m.read),
+          messageType: m.message_type || m.messageType || 'text',
+          imageUrl: m.image_url || m.imageUrl || '',
+          voiceUrl: m.voice_url || m.voiceUrl || '',
+          voiceDuration: m.voice_duration || m.voiceDuration || 0,
+        }));
+        setSharedMedia(mapped);
+      }
+    } catch (err) {
+      console.error('Error loading shared media:', err);
+    }
+  };
+
+  // ─── Phase 2: Load pinned messages ─────────────────────────────────
+  const loadPinnedMessagesFn = async (contactId: string) => {
+    try {
+      const messages = await api.getChatMessages(contactId);
+      if (Array.isArray(messages)) {
+        const pinned = (messages as any[])
+          .filter((m: any) => m.is_pinned)
+          .map((m: any) => ({
+            id: m.id,
+            senderId: m.sender_id || m.senderId,
+            receiverId: m.receiver_id || m.receiverId,
+            text: m.text,
+            timestamp: m.created_at || m.timestamp || new Date().toISOString(),
+            read: !!(m.read),
+            messageType: m.message_type || m.messageType || 'text',
+            imageUrl: m.image_url || m.imageUrl || '',
+            voiceUrl: m.voice_url || m.voiceUrl || '',
+            isPinned: true,
+          }));
+        setPinnedMessages(pinned);
+      }
+    } catch (err) {
+      console.error('Error loading pinned messages:', err);
+    }
+  };
+
+  // ─── Phase 2: Voice recording ──────────────────────────────────────
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream, {
+        mimeType: MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+          ? 'audio/webm;codecs=opus'
+          : MediaRecorder.isTypeSupported('audio/webm')
+            ? 'audio/webm'
+            : 'audio/ogg',
+      });
+      audioChunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      mediaRecorder.onstop = async () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: mediaRecorder.mimeType });
+        stream.getTracks().forEach(track => track.stop());
+
+        // Calculate duration
+        const durationSec = 0; // Will be estimated from file
+
+        // Create file from blob
+        const ext = mediaRecorder.mimeType.includes('webm') ? 'webm' : 'ogg';
+        const file = new File([audioBlob], `voice_${Date.now()}.${ext}`, { type: mediaRecorder.mimeType });
+
+        try {
+          const { url } = await api.uploadChatVoice(file);
+          // Estimate duration from blob size (rough: ~16KB per second for opus)
+          const estimatedDuration = Math.max(1, Math.round(audioBlob.size / 16000));
+          await sendMessageFn(undefined, 'voice', undefined, url, estimatedDuration);
+        } catch (err: any) {
+          toast.error(err?.message || t('common.error'));
+        }
+
+        setIsRecording(false);
+        if (recordingTimerRef.current) {
+          clearInterval(recordingTimerRef.current);
+          recordingTimerRef.current = null;
+        }
+      };
+
+      mediaRecorder.start();
+      mediaRecorderRef.current = mediaRecorder;
+      setIsRecording(true);
+    } catch (err: any) {
+      toast.error(t('messages.permissionAudioTitle'));
+      setIsRecording(false);
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+      mediaRecorderRef.current.stop();
+    }
   };
 
   // ─── Start new chat ────────────────────────────────────────────────
@@ -1082,6 +1347,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     showTypingIndicator, loadingContacts, loadingMessages, sendingMessage,
     uploadingImage, friendshipStatus, contactLastSeen, contextMenu,
     showReactionPicker, showImagePreview, showHeaderMenu, sendingFriendRequest,
+    editingMessage, messageSearchQuery, searchedMessages, sharedMedia, pinnedMessages, isRecording,
     callState, activeCall, incomingCall, callDuration, isMuted, isCameraOff,
     isSpeakerOn, callError, showPermissionGuide, localStream, remoteStream,
     apiContacts,
@@ -1098,6 +1364,10 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setShowImagePreview, setContextMenu, setShowHeaderMenu, setShowPermissionGuide,
     loadContacts, loadMessages, sendFriendRequest: sendFriendRequestFn,
     retryCallWithPermission, formatLastSeen, formatCallDuration,
+    setEditingMessage, setMessageSearchQuery, searchMessages: searchMessagesFn,
+    handleEditMessage, handleDeleteForEveryone, handleTogglePin,
+    loadSharedMedia: loadSharedMediaFn, loadPinnedMessages: loadPinnedMessagesFn,
+    startRecording, stopRecording,
   };
 
   // Also expose some internal state for NewChatDialog

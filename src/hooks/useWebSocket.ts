@@ -31,6 +31,8 @@ interface UseWebSocketOptions {
   onLivestreamViewerJoined?: WSEventHandler;
   onLivestreamViewerLeft?: WSEventHandler;
   onLivestreamSignal?: WSEventHandler;
+  onChatMessageEdited?: WSEventHandler;
+  onChatMessageDeleted?: WSEventHandler;
   autoConnect?: boolean;
 }
 
@@ -213,6 +215,8 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
     if (options.onPostCommentDeleted) typeToHandler['post:comment_deleted'] = options.onPostCommentDeleted;
     if (options.onStoryCreated) typeToHandler['story:created'] = options.onStoryCreated;
     if (options.onCallSignal) typeToHandler['call:signal'] = options.onCallSignal;
+    if (options.onChatMessageEdited) typeToHandler['chat:message-edited'] = options.onChatMessageEdited;
+    if (options.onChatMessageDeleted) typeToHandler['chat:message-deleted'] = options.onChatMessageDeleted;
     if (options.onLivestreamStarted) typeToHandler['livestream:started'] = options.onLivestreamStarted;
     if (options.onLivestreamEnded) typeToHandler['livestream:ended'] = options.onLivestreamEnded;
     if (options.onLivestreamChat) typeToHandler['livestream:chat'] = options.onLivestreamChat;
@@ -292,6 +296,8 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
     options.onLivestreamViewerJoined,
     options.onLivestreamViewerLeft,
     options.onLivestreamSignal,
+    options.onChatMessageEdited,
+    options.onChatMessageDeleted,
   ]);
 
   // Auto-connect when logged in

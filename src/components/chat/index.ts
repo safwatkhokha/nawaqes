@@ -12,3 +12,5 @@ export { CallOverlay } from './CallOverlay';
 export { NewChatDialog } from './NewChatDialog';
 export { ImagePreview } from './ImagePreview';
 export { ContextMenu } from './ContextMenu';
+export { VoicePlayer } from './VoicePlayer';
+export { MessageSearch } from './MessageSearch';

@@ -8,6 +8,7 @@ import { useTranslation } from 'react-i18next';
 export const MessageList: React.FC = () => {
   const {
     messages, loadingMessages, selectedContact, showTypingIndicator, myId,
+    messageSearchQuery,
   } = useChatContext();
   const ctx = useChatContext();
   const darkMode = (ctx as any).darkMode as boolean;
@@ -61,8 +62,8 @@ export const MessageList: React.FC = () => {
         );
       }
 
-      // System message
-      if (msg.messageType === 'system') {
+      // System message (includes deleted-for-everyone)
+      if (msg.messageType === 'system' && msg.deletedFor !== 'everyone') {
         elements.push(
           <div key={`sys-${msg.id}`} className="flex items-center justify-center my-2">
             <span className={`text-[11px] italic ${textMuted} px-3 py-1 rounded-full ${
@@ -75,8 +76,11 @@ export const MessageList: React.FC = () => {
         return;
       }
 
-      // Skip soft-deleted messages for current user
-      if (msg.deletedFor && msg.deletedFor === myId) return;
+      // Skip soft-deleted messages for current user (but show deleted-for-everyone)
+      if (msg.deletedFor && msg.deletedFor !== 'everyone') {
+        const deletedForUsers = msg.deletedFor.split(',').map(id => id.trim()).filter(Boolean);
+        if (deletedForUsers.includes(myId)) return;
+      }
 
       elements.push(
         <MessageBubble key={msg.id} msg={msg} />

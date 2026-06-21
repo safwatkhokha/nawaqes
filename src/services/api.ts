@@ -207,9 +207,9 @@ class ApiClient {
     return this.request<any[]>(`/chat/messages/${contactId}${query}`);
   }
 
-  async sendMessage(receiverId: string, text: string, postId?: string, messageType?: string, imageUrl?: string, replyToId?: string) {
+  async sendMessage(receiverId: string, text: string, postId?: string, messageType?: string, imageUrl?: string, replyToId?: string, voiceUrl?: string, voiceDuration?: number) {
     return this.request<any>('/chat/send', {
-      method: 'POST', body: JSON.stringify({ receiverId, text, postId, messageType, imageUrl, replyToId }),
+      method: 'POST', body: JSON.stringify({ receiverId, text, postId, messageType, imageUrl, replyToId, voiceUrl, voiceDuration }),
     });
   }
 
@@ -233,6 +233,43 @@ class ApiClient {
     });
     if (!res.ok) {
       const data = await res.json().catch(() => ({ error: 'Image upload failed' }));
+      throw new Error(data.error);
+    }
+    return res.json();
+  }
+
+  async editMessage(messageId: string, text: string) {
+    return this.request<any>(`/chat/messages/${messageId}`, {
+      method: 'PUT', body: JSON.stringify({ text }),
+    });
+  }
+
+  async deleteMessageForEveryone(messageId: string) {
+    return this.request<{ message: string }>(`/chat/messages/${messageId}/everyone`, { method: 'DELETE' });
+  }
+
+  async searchMessages(contactId: string, query: string) {
+    return this.request<any[]>(`/chat/messages/${contactId}/search?q=${encodeURIComponent(query)}`);
+  }
+
+  async togglePinMessage(messageId: string) {
+    return this.request<{ message: string; isPinned: boolean }>(`/chat/messages/${messageId}/pin`, { method: 'POST' });
+  }
+
+  async getSharedMedia(contactId: string) {
+    return this.request<any[]>(`/chat/messages/${contactId}/media`);
+  }
+
+  async uploadChatVoice(file: File): Promise<{ url: string; filename: string }> {
+    const formData = new FormData();
+    formData.append('voice', file);
+    const headers: Record<string, string> = {};
+    if (this.token) headers['Authorization'] = `Bearer ${this.token}`;
+    const res = await fetch(`${API_BASE}/chat/upload-voice`, {
+      method: 'POST', headers, body: formData,
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({ error: 'Voice upload failed' }));
       throw new Error(data.error);
     }
     return res.json();

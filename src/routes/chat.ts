@@ -66,6 +66,8 @@ router.get('/contacts', authMiddleware, (req: Request, res: Response) => {
       let lastMessageText = lastMsg?.text || '';
       if (lastMsg?.message_type === 'image') {
         lastMessageText = '📷 صورة';
+      } else if (lastMsg?.message_type === 'voice') {
+        lastMessageText = '🎤 رسالة صوتية';
       }
 
       return {
@@ -116,6 +118,10 @@ router.get('/messages/:contactId', authMiddleware, (req: Request, res: Response)
     db.prepare('UPDATE chat_messages SET read = 1 WHERE sender_id = ? AND receiver_id = ? AND read = 0')
       .run(contactId, payload.userId);
 
+    // Mark as delivered
+    db.prepare('UPDATE chat_messages SET delivered = 1 WHERE sender_id = ? AND receiver_id = ? AND delivered = 0')
+      .run(contactId, payload.userId);
+
     res.json(filteredMessages);
   } catch (err: any) {
     res.status(500).json({ error: 'فشل جلب الرسائل', details: err.message });
@@ -126,7 +132,7 @@ router.get('/messages/:contactId', authMiddleware, (req: Request, res: Response)
 router.post('/send', authMiddleware, (req: Request, res: Response) => {
   try {
     const payload = (req as any).user as JwtPayload;
-    const { receiverId, text, postId, messageType, imageUrl, replyToId } = req.body;
+    const { receiverId, text, postId, messageType, imageUrl, replyToId, voiceUrl, voiceDuration } = req.body;
 
     const msgType = messageType || 'text';
 
@@ -135,7 +141,7 @@ router.post('/send', authMiddleware, (req: Request, res: Response) => {
       return;
     }
 
-    // Text messages require text; image messages require imageUrl
+    // Text messages require text; image messages require imageUrl; voice messages require voiceUrl
     if (msgType === 'text' && !text) {
       res.status(400).json({ error: 'النص مطلوب' });
       return;
@@ -144,18 +150,22 @@ router.post('/send', authMiddleware, (req: Request, res: Response) => {
       res.status(400).json({ error: 'رابط الصورة مطلوب' });
       return;
     }
+    if (msgType === 'voice' && !voiceUrl) {
+      res.status(400).json({ error: 'رابط الرسالة الصوتية مطلوب' });
+      return;
+    }
 
     // Generate a TEXT id manually (matching the DEFAULT expression in the schema)
     const messageId = crypto.randomBytes(16).toString('hex').toLowerCase();
 
     db.prepare(`
-      INSERT INTO chat_messages (id, sender_id, receiver_id, text, post_id, message_type, image_url, reply_to_id, reactions, deleted_for)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO chat_messages (id, sender_id, receiver_id, text, post_id, message_type, image_url, reply_to_id, reactions, deleted_for, voice_url, voice_duration)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       messageId, payload.userId, receiverId,
       text || '', postId || null,
       msgType, imageUrl || '', replyToId || null,
-      '{}', ''
+      '{}', '', voiceUrl || '', voiceDuration || 0
     );
 
     // Create notification for the receiver
@@ -163,7 +173,9 @@ router.post('/send', authMiddleware, (req: Request, res: Response) => {
     if (sender) {
       const notifText = msgType === 'image'
         ? `رسالة جديدة من ${sender.name}: 📷 صورة`
-        : `رسالة جديدة من ${sender.name}: ${(text || '').slice(0, 50)}${(text || '').length > 50 ? '...' : ''}`;
+        : msgType === 'voice'
+          ? `رسالة جديدة من ${sender.name}: 🎤 رسالة صوتية`
+          : `رسالة جديدة من ${sender.name}: ${(text || '').slice(0, 50)}${(text || '').length > 50 ? '...' : ''}`;
       db.prepare('INSERT INTO notifications (user_id, type, message, user_id_ref, link) VALUES (?, ?, ?, ?, ?)')
         .run(receiverId, 'message', notifText, payload.userId, '/messages');
     }
@@ -184,6 +196,8 @@ router.post('/send', authMiddleware, (req: Request, res: Response) => {
           imageUrl: imageUrl || '',
           postId: postId || null,
           replyToId: replyToId || null,
+          voiceUrl: voiceUrl || '',
+          voiceDuration: voiceDuration || 0,
           timestamp: new Date().toISOString(),
           senderName: senderUser?.name || '',
           senderAvatar: senderUser?.avatar || '',
@@ -289,6 +303,218 @@ router.post('/upload-image', authMiddleware, chatImageUpload.single('image'), (r
   }
   const url = `/uploads/chat/${req.file.filename}`;
   res.json({ url, filename: req.file.filename });
+});
+
+// ─── Voice Upload Setup ──────────────────────────────────────────────
+const chatVoiceStorage = multer.diskStorage({
+  destination: (_req, _file, cb) => {
+    const uploadDir = path.resolve('uploads/chat/voice');
+    if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+    cb(null, uploadDir);
+  },
+  filename: (_req, file, cb) => {
+    const ext = path.extname(file.originalname) || '.webm';
+    cb(null, `${crypto.randomBytes(16).toString('hex')}${ext}`);
+  },
+});
+const chatVoiceUpload = multer({
+  storage: chatVoiceStorage,
+  limits: { fileSize: 20 * 1024 * 1024 }, // 20MB
+  fileFilter: (_req, file, cb) => {
+    const allowedMime = /^audio\/|^video\/webm/;
+    const allowedExt = /\.webm$|\.ogg$|\.mp3$|\.wav$|\.m4a$|\.mp4$|\.oga$/i;
+    const ext = allowedExt.test(path.extname(file.originalname).toLowerCase());
+    const mime = allowedMime.test(file.mimetype);
+    cb(null, ext || mime);
+  },
+});
+
+// POST /api/chat/upload-voice — Upload voice note for chat
+router.post('/upload-voice', authMiddleware, chatVoiceUpload.single('voice'), (req: Request, res: Response) => {
+  if (!req.file) {
+    res.status(400).json({ error: 'لم يتم رفع أي ملف صوتي' });
+    return;
+  }
+  const url = `/uploads/chat/voice/${req.file.filename}`;
+  res.json({ url, filename: req.file.filename });
+});
+
+// PUT /api/chat/messages/:messageId — Edit message
+router.put('/messages/:messageId', authMiddleware, (req: Request, res: Response) => {
+  try {
+    const payload = (req as any).user as JwtPayload;
+    const { messageId } = req.params;
+    const { text } = req.body;
+
+    if (!text || !text.trim()) {
+      res.status(400).json({ error: 'النص مطلوب' });
+      return;
+    }
+
+    const message = db.prepare('SELECT * FROM chat_messages WHERE id = ?').get(messageId) as any;
+    if (!message) {
+      res.status(404).json({ error: 'الرسالة غير موجودة' });
+      return;
+    }
+
+    // Only sender can edit
+    if (message.sender_id !== payload.userId) {
+      res.status(403).json({ error: 'لا يمكنك تعديل هذه الرسالة' });
+      return;
+    }
+
+    // Cannot edit deleted-for-everyone messages
+    if (message.deleted_for === 'everyone') {
+      res.status(400).json({ error: 'لا يمكن تعديل رسالة محذوفة' });
+      return;
+    }
+
+    db.prepare('UPDATE chat_messages SET text = ?, is_edited = 1 WHERE id = ?').run(text.trim(), messageId);
+
+    const updatedMessage = db.prepare('SELECT * FROM chat_messages WHERE id = ?').get(messageId);
+
+    // Emit WebSocket event to receiver
+    try {
+      const wsManager = (req.app.locals as any).wsManager;
+      if (wsManager) {
+        wsManager.sendToUser(message.receiver_id, {
+          type: 'chat:message-edited',
+          data: {
+            id: messageId,
+            text: text.trim(),
+            isEdited: true,
+          },
+        });
+      }
+    } catch (wsErr: any) {
+      console.error('[WS] Failed to emit message-edited:', wsErr.message);
+    }
+
+    res.json(updatedMessage);
+  } catch (err: any) {
+    res.status(500).json({ error: 'فشل تعديل الرسالة', details: err.message });
+  }
+});
+
+// DELETE /api/chat/messages/:messageId/everyone — Delete for everyone
+router.delete('/messages/:messageId/everyone', authMiddleware, (req: Request, res: Response) => {
+  try {
+    const payload = (req as any).user as JwtPayload;
+    const { messageId } = req.params;
+
+    const message = db.prepare('SELECT * FROM chat_messages WHERE id = ?').get(messageId) as any;
+    if (!message) {
+      res.status(404).json({ error: 'الرسالة غير موجودة' });
+      return;
+    }
+
+    // Only sender can delete for everyone
+    if (message.sender_id !== payload.userId) {
+      res.status(403).json({ error: 'لا يمكنك حذف هذه الرسالة للجميع' });
+      return;
+    }
+
+    // Mark as deleted for everyone
+    db.prepare(
+      "UPDATE chat_messages SET text = '', message_type = 'system', image_url = '', deleted_for = 'everyone', voice_url = '', voice_duration = 0 WHERE id = ?"
+    ).run(messageId);
+
+    // Emit WebSocket event to receiver
+    try {
+      const wsManager = (req.app.locals as any).wsManager;
+      if (wsManager) {
+        wsManager.sendToUser(message.receiver_id, {
+          type: 'chat:message-deleted',
+          data: {
+            id: messageId,
+            deletedFor: 'everyone',
+          },
+        });
+      }
+    } catch (wsErr: any) {
+      console.error('[WS] Failed to emit message-deleted:', wsErr.message);
+    }
+
+    res.json({ message: 'تم حذف الرسالة للجميع' });
+  } catch (err: any) {
+    res.status(500).json({ error: 'فشل حذف الرسالة للجميع', details: err.message });
+  }
+});
+
+// GET /api/chat/messages/:contactId/search — Search messages
+router.get('/messages/:contactId/search', authMiddleware, (req: Request, res: Response) => {
+  try {
+    const payload = (req as any).user as JwtPayload;
+    const { contactId } = req.params;
+    const { q } = req.query;
+
+    if (!q || typeof q !== 'string' || !q.trim()) {
+      res.json([]);
+      return;
+    }
+
+    const searchTerm = `%${q.trim()}%`;
+    const messages = db.prepare(`
+      SELECT * FROM chat_messages
+      WHERE ((sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?))
+        AND text LIKE ?
+        AND deleted_for != 'everyone'
+      ORDER BY created_at DESC
+      LIMIT 50
+    `).all(payload.userId, contactId, contactId, payload.userId, searchTerm);
+
+    res.json(messages);
+  } catch (err: any) {
+    res.status(500).json({ error: 'فشل البحث في الرسائل', details: err.message });
+  }
+});
+
+// POST /api/chat/messages/:messageId/pin — Toggle pin status
+router.post('/messages/:messageId/pin', authMiddleware, (req: Request, res: Response) => {
+  try {
+    const payload = (req as any).user as JwtPayload;
+    const { messageId } = req.params;
+
+    const message = db.prepare('SELECT * FROM chat_messages WHERE id = ?').get(messageId) as any;
+    if (!message) {
+      res.status(404).json({ error: 'الرسالة غير موجودة' });
+      return;
+    }
+
+    // Only participants can pin
+    if (message.sender_id !== payload.userId && message.receiver_id !== payload.userId) {
+      res.status(403).json({ error: 'لا يمكنك تثبيت هذه الرسالة' });
+      return;
+    }
+
+    const newPinStatus = message.is_pinned ? 0 : 1;
+    db.prepare('UPDATE chat_messages SET is_pinned = ? WHERE id = ?').run(newPinStatus, messageId);
+
+    res.json({ message: newPinStatus ? 'تم تثبيت الرسالة' : 'تم إلغاء تثبيت الرسالة', isPinned: !!newPinStatus });
+  } catch (err: any) {
+    res.status(500).json({ error: 'فشل تثبيت الرسالة', details: err.message });
+  }
+});
+
+// GET /api/chat/messages/:contactId/media — Get shared media
+router.get('/messages/:contactId/media', authMiddleware, (req: Request, res: Response) => {
+  try {
+    const payload = (req as any).user as JwtPayload;
+    const { contactId } = req.params;
+
+    const media = db.prepare(`
+      SELECT * FROM chat_messages
+      WHERE ((sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?))
+        AND (message_type = 'image' OR message_type = 'voice')
+        AND deleted_for != 'everyone'
+      ORDER BY created_at DESC
+      LIMIT 100
+    `).all(payload.userId, contactId, contactId, payload.userId);
+
+    res.json(media);
+  } catch (err: any) {
+    res.status(500).json({ error: 'فشل جلب الوسائط المشتركة', details: err.message });
+  }
 });
 
 export default router;

@@ -417,6 +417,11 @@ try { db.prepare("ALTER TABLE chat_messages ADD COLUMN image_url TEXT DEFAULT ''
 try { db.prepare('ALTER TABLE chat_messages ADD COLUMN reply_to_id TEXT').run(); } catch { /* column already exists */ }
 try { db.prepare("ALTER TABLE chat_messages ADD COLUMN reactions TEXT DEFAULT '{}'").run(); } catch { /* column already exists */ }
 try { db.prepare("ALTER TABLE chat_messages ADD COLUMN deleted_for TEXT DEFAULT ''").run(); } catch { /* column already exists */ }
+try { db.prepare("ALTER TABLE chat_messages ADD COLUMN is_edited INTEGER DEFAULT 0").run(); } catch { /* column already exists */ }
+try { db.prepare("ALTER TABLE chat_messages ADD COLUMN is_pinned INTEGER DEFAULT 0").run(); } catch { /* column already exists */ }
+try { db.prepare("ALTER TABLE chat_messages ADD COLUMN delivered INTEGER DEFAULT 0").run(); } catch { /* column already exists */ }
+try { db.prepare("ALTER TABLE chat_messages ADD COLUMN voice_url TEXT DEFAULT ''").run(); } catch { /* column already exists */ }
+try { db.prepare("ALTER TABLE chat_messages ADD COLUMN voice_duration REAL DEFAULT 0").run(); } catch { /* column already exists */ }
 
 // ─── Post Comments Migrations ──────────────────────────────────────
 // Add new columns for threaded comments, likes, images, and timestamps

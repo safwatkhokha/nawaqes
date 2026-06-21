@@ -135,12 +135,17 @@ export interface ChatMessage {
   timestamp: string;
   read: boolean;
   postId?: string;
-  messageType?: 'text' | 'image' | 'post' | 'system';
+  messageType?: 'text' | 'image' | 'post' | 'system' | 'voice';
   imageUrl?: string;
   replyToId?: string;
   reactions?: Record<string, string>;
   deletedFor?: string;
   _failed?: boolean;
+  isEdited?: boolean;
+  isPinned?: boolean;
+  delivered?: boolean;
+  voiceUrl?: string;
+  voiceDuration?: number;
 }
 
 export interface ChatContact {
