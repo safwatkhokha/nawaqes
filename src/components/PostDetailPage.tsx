@@ -35,6 +35,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'sonner';
+import { formatRelativeTimeAr } from '../utils/time';
 
 interface CommentData {
   id: string;
@@ -72,23 +73,6 @@ export const PostDetailPage: React.FC = () => {
   const [expandedReplies, setExpandedReplies] = useState<Set<string>>(new Set());
   const [commentImage, setCommentImage] = useState<string | null>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
-  const [activeImageIndex, setActiveImageIndex] = useState(0);
-
-  // Parse post.image: supports JSON array (multi-image) or single URL string
-  const getPostImages = (img: string | undefined | null): string[] => {
-    if (!img) return [];
-    try {
-      const parsed = JSON.parse(img);
-      if (Array.isArray(parsed)) {
-        return parsed.filter((x: any) => typeof x === 'string' && x.length > 0);
-      }
-      if (typeof parsed === 'string' && parsed.length > 0) return [parsed];
-    } catch {
-      // Not JSON — treat as a plain URL string
-      if (typeof img === 'string' && img.length > 0) return [img];
-    }
-    return [];
-  };
 
   // Try to find post from local state first, then from fetched data
   const localPost = posts.find(p => p.id === id);
@@ -548,7 +532,7 @@ export const PostDetailPage: React.FC = () => {
                 )}
               </div>
               <div className={`flex items-center gap-1.5 text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                <span>{post.timestamp}</span>
+                <span>{formatRelativeTimeAr(post.timestamp)}</span>
                 <span>·</span>
                 <Globe className="w-3 h-3" />
               </div>
@@ -614,102 +598,12 @@ export const PostDetailPage: React.FC = () => {
           </div>
         )}
 
-        {/* Image — supports multiple images (JSON array) or single image */}
-        {(() => {
-          const images = getPostImages(post.image);
-          if (images.length === 0) return null;
-
-          // Single image
-          if (images.length === 1) {
-            return (
-              <div className={`border-y ${darkMode ? 'bg-gray-700 border-gray-700' : 'bg-gray-50 border-gray-100'}`}>
-                <img
-                  src={images[0]}
-                  alt="Post content"
-                  className="w-full h-auto object-contain max-h-[500px]"
-                  loading="lazy"
-                  onError={(e) => {
-                    (e.target as HTMLImageElement).style.display = 'none';
-                  }}
-                />
-              </div>
-            );
-          }
-
-          // Multiple images — gallery with main view + thumbnail strip
-          const safeIndex = Math.min(activeImageIndex, images.length - 1);
-          return (
-            <div className={`border-y ${darkMode ? 'bg-gray-700 border-gray-700' : 'bg-gray-50 border-gray-100'}`}>
-              {/* Main image */}
-              <div className="relative w-full" style={{ minHeight: '280px', maxHeight: '500px' }}>
-                <img
-                  src={images[safeIndex]}
-                  alt={`صورة ${safeIndex + 1}`}
-                  className="w-full h-auto object-contain max-h-[500px]"
-                  loading="lazy"
-                  onError={(e) => {
-                    (e.target as HTMLImageElement).style.display = 'none';
-                  }}
-                />
-                {/* Image counter badge */}
-                <div className="absolute top-2 left-2 bg-black/60 text-white text-[11px] font-medium px-2.5 py-1 rounded-full backdrop-blur-sm">
-                  {safeIndex + 1} / {images.length}
-                </div>
-                {/* Navigation arrows */}
-                {images.length > 1 && (
-                  <>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setActiveImageIndex((safeIndex - 1 + images.length) % images.length);
-                      }}
-                      className="absolute top-1/2 right-2 -translate-y-1/2 w-9 h-9 rounded-full bg-black/50 hover:bg-black/70 text-white flex items-center justify-center backdrop-blur-sm transition-colors"
-                      aria-label="السابق"
-                    >
-                      <ChevronDown className="w-5 h-5 rotate-90" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setActiveImageIndex((safeIndex + 1) % images.length);
-                      }}
-                      className="absolute top-1/2 left-2 -translate-y-1/2 w-9 h-9 rounded-full bg-black/50 hover:bg-black/70 text-white flex items-center justify-center backdrop-blur-sm transition-colors"
-                      aria-label="التالي"
-                    >
-                      <ChevronUp className="w-5 h-5 rotate-90" />
-                    </button>
-                  </>
-                )}
-              </div>
-              {/* Thumbnail strip */}
-              {images.length > 1 && (
-                <div className={`flex gap-1 p-2 overflow-x-auto ${darkMode ? 'bg-gray-800' : 'bg-white'}`}>
-                  {images.map((img, idx) => (
-                    <button
-                      key={idx}
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setActiveImageIndex(idx);
-                      }}
-                      className={`flex-shrink-0 w-14 h-14 rounded-md overflow-hidden border-2 transition-all ${
-                        idx === safeIndex
-                          ? 'border-orange-500 scale-105'
-                          : darkMode
-                            ? 'border-gray-600 opacity-60 hover:opacity-100'
-                            : 'border-gray-200 opacity-60 hover:opacity-100'
-                      }`}
-                    >
-                      <img src={img} alt={`صورة ${idx + 1}`} className="w-full h-full object-cover" loading="lazy" />
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          );
-        })()}
+        {/* Image */}
+        {post.image && (
+          <div className={`border-y ${darkMode ? 'bg-gray-700 border-gray-700' : 'bg-gray-50 border-gray-100'}`}>
+            <img src={post.image} alt="Post content" className="w-full h-auto object-contain max-h-[500px]" loading="lazy" />
+          </div>
+        )}
 
         {/* Ad Details */}
         {post.type === 'ad' && (
@@ -879,13 +773,9 @@ export const PostDetailPage: React.FC = () => {
                 }`}
               >
                 <div className="flex items-start gap-3">
-                  {(() => {
-                    const adImgs = getPostImages(ad.image);
-                    if (adImgs.length === 0) return null;
-                    return (
-                      <img src={adImgs[0]} alt="" className="w-20 h-20 rounded-xl object-cover flex-shrink-0" />
-                    );
-                  })()}
+                  {ad.image && (
+                    <img src={ad.image} alt="" className="w-20 h-20 rounded-xl object-cover flex-shrink-0" />
+                  )}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
                       <img src={ad.author.avatar} alt="" className="w-5 h-5 rounded-full" />

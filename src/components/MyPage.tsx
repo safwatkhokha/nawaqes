@@ -16,6 +16,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'sonner';
 import { api } from '../services/api';
 import { isUserOnline } from '../utils/presence';
+import { formatRelativeTimeAr } from '../utils/time';
 import { PromotionWizard } from './PromotionWizard';
 import { promotionPackages } from '../data/promotionPackages';
 import { Post } from '../types';
@@ -645,7 +646,7 @@ export const MyPage: React.FC = () => {
                         {currentUser?.isVerified && <CheckCircle2 className="w-3.5 h-3.5 text-orange-600 fill-orange-600/10" />}
                       </div>
                       <div className={`flex items-center gap-1.5 text-[10px] ${textMuted}`}>
-                        <span>{post.timestamp}</span>
+                        <span>{formatRelativeTimeAr(post.timestamp)}</span>
                         <span>·</span>
                         <Globe className="w-3 h-3" />
                       </div>
@@ -794,7 +795,7 @@ export const MyPage: React.FC = () => {
                         {post.image && <img src={post.image} alt="" className="w-16 h-16 rounded-lg object-cover flex-shrink-0" />}
                         <div className="flex-1 min-w-0">
                           <p className={`text-sm leading-relaxed mb-1 line-clamp-2 ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>{post.content}</p>
-                          <span className={`text-[10px] ${textMuted}`}>{post.author.name} · {post.timestamp}</span>
+                          <span className={`text-[10px] ${textMuted}`}>{post.author.name} · {formatRelativeTimeAr(post.timestamp)}</span>
                         </div>
                       </div>
                     </div>
@@ -907,7 +908,7 @@ export const MyPage: React.FC = () => {
                     <div className={`flex items-center gap-3 text-[10px] ${textMuted}`}>
                       <span className="flex items-center gap-1"><Eye className="w-3 h-3" />{post.likes + (likedPosts.has(post.id) ? 1 : 0)} {t('myPage.like')}</span>
                       <span className="flex items-center gap-1"><MessageCircle className="w-3 h-3" />{post.comments} {t('myPage.comment')}</span>
-                      <span>{post.timestamp}</span>
+                      <span>{formatRelativeTimeAr(post.timestamp)}</span>
                     </div>
                   </div>
                 </motion.div>

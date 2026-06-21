@@ -13,6 +13,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 import { useLanguage } from '../contexts/LanguageContext';
+import { formatRelativeTimeAr } from '../utils/time';
 import { interestCategories, interestGroups, getInterestsByGroup, type InterestGroup } from '../config/interests';
 
 type ProfileTab = 'posts' | 'ads' | 'about' | 'activity' | 'friends';
@@ -182,7 +183,7 @@ export const ProfilePage: React.FC = () => {
   ];
 
   return (
-    <div className="max-w-2xl mx-auto overflow-x-hidden" dir={dir}>
+    <div className="max-w-2xl mx-auto" dir={dir}>
       <input id="avatarInputRef-input" ref={avatarInputRef} type="file" accept="image/*,.jpg,.jpeg,.png,.gif,.webp,.bmp,.svg,.tiff,.avif,.heic,.heif,.ico,.jfif" className="sr-only" onChange={handleAvatarChange} />
       <input id="coverInputRef-input" ref={coverInputRef} type="file" accept="image/*,.jpg,.jpeg,.png,.gif,.webp,.bmp,.svg,.tiff,.avif,.heic,.heif,.ico,.jfif" className="sr-only" onChange={handleCoverChange} />
 
@@ -542,27 +543,15 @@ export const ProfilePage: React.FC = () => {
                 {userPosts.map(post => (
                   <div key={post.id} onClick={() => navigate(`/post/${post.id}`)}
                     className={`rounded-2xl border p-4 cursor-pointer transition-all hover:shadow-md ${darkMode ? 'bg-gray-800 border-gray-700 hover:border-gray-600' : 'bg-white border-gray-100 hover:border-gray-200'}`}>
-                    {post.image && (() => {
-                      let imgs: string[] = [];
-                      try { const p = JSON.parse(post.image); imgs = Array.isArray(p) ? p : [post.image]; } catch { imgs = [post.image]; }
-                      if (imgs.length === 0) return null;
-                      return (
-                        <div className="relative mb-3">
-                          <img src={imgs[0]} alt="" className="w-full h-40 object-cover rounded-xl" loading="lazy" />
-                          {imgs.length > 1 && (
-                            <span className="absolute top-2 right-2 bg-black/60 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
-                              +{imgs.length - 1}
-                            </span>
-                          )}
-                        </div>
-                      );
-                    })()}
+                    {post.image && (
+                      <img src={post.image} alt="" className="w-full h-40 object-cover rounded-xl mb-3" />
+                    )}
                     <p className={`text-sm leading-relaxed mb-3 ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>{post.content}</p>
                     <div className={`flex items-center gap-4 text-[11px] ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
                       <span className="flex items-center gap-1"><Heart className="w-3 h-3" /> {post.likes}</span>
                       <span className="flex items-center gap-1"><MessageCircle className="w-3 h-3" /> {post.comments}</span>
                       <span className="flex items-center gap-1"><Eye className="w-3 h-3" /> {post.reachCount || 0}</span>
-                      <span className="mr-auto">{post.timestamp}</span>
+                      <span className="mr-auto">{formatRelativeTimeAr(post.timestamp)}</span>
                     </div>
                   </div>
                 ))}
@@ -588,11 +577,9 @@ export const ProfilePage: React.FC = () => {
                   <div key={ad.id} onClick={() => navigate(`/post/${ad.id}`)}
                     className={`rounded-2xl border p-4 cursor-pointer transition-all hover:shadow-md ${darkMode ? 'bg-gray-800 border-gray-700 hover:border-gray-600' : 'bg-white border-gray-100 hover:border-gray-200'}`}>
                     <div className="flex items-start gap-3">
-                      {ad.image && (() => {
-                        let imgs: string[] = [];
-                        try { const p = JSON.parse(ad.image); imgs = Array.isArray(p) ? p : [ad.image]; } catch { imgs = [ad.image]; }
-                        return imgs.length > 0 ? <img src={imgs[0]} alt="" className="w-24 h-24 rounded-xl object-cover flex-shrink-0" /> : null;
-                      })()}
+                      {ad.image && (
+                        <img src={ad.image} alt="" className="w-24 h-24 rounded-xl object-cover flex-shrink-0" />
+                      )}
                       <div className="flex-1 min-w-0">
                         <p className={`text-sm leading-relaxed mb-2 line-clamp-2 ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>{ad.content}</p>
                         <div className="flex items-center gap-2 flex-wrap">

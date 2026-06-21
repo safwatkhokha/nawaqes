@@ -1,6 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useNavigate } from 'react-router-dom';
 import { User, Post } from '../types';
 import { useAppContext } from '../contexts/AppContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -27,7 +26,6 @@ const storyColors = [
 
 export const CreatePost: React.FC<CreatePostProps> = ({ user, onPostCreated, isModal }) => {
   const { addPost, addStory, darkMode, refreshData, setShowCreatePost } = useAppContext();
-  const navigate = useNavigate();
   const { currentUser } = useAuth();
   const { t } = useTranslation();
   const { dir } = useLanguage();
@@ -67,9 +65,7 @@ export const CreatePost: React.FC<CreatePostProps> = ({ user, onPostCreated, isM
   // Auto-expand when opened as modal
   const [isOpen, setIsOpen] = useState(isModal ? true : false);
   const [content, setContent] = useState('');
-  const [selectedImages, setSelectedImages] = useState<string[]>([]);
-  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
-  const MAX_IMAGES = 8;
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [selectedFeeling, setSelectedFeeling] = useState<string | null>(null);
   const [selectedActivity, setSelectedActivity] = useState<string | null>(null);
   const [showFeelingPicker, setShowFeelingPicker] = useState(false);
@@ -107,21 +103,20 @@ export const CreatePost: React.FC<CreatePostProps> = ({ user, onPostCreated, isM
   }, [isOpen]);
 
   const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
-    const remaining = MAX_IMAGES - selectedImages.length;
-    if (remaining <= 0) { toast.error('الحد الأقصى ' + MAX_IMAGES + ' صور/فيديو'); e.target.value = ''; return; }
-    Array.from(files).slice(0, remaining).forEach((file) => {
+    const file = e.target.files?.[0];
+    if (file) {
       const isVideo = file.type.startsWith('video/');
-      const maxSize = isVideo ? 100 * 1024 * 1024 : 10 * 1024 * 1024;
-      if (file.size > maxSize) { toast.error(isVideo ? 'حجم الفيديو كبير' : 'حجم الصورة كبير'); return; }
-      // 🔧 FIX: Store BOTH the File object (for upload) AND the data URL (for preview)
-      setSelectedFiles(prev => [...prev, file]);
+      const maxSize = isVideo ? 100 * 1024 * 1024 : 10 * 1024 * 1024; // 100MB for video, 10MB for image
+      if (file.size > maxSize) {
+        toast.error(isVideo ? t('marketLive.fileTooLarge') : t('createPost.imageSizeError'));
+        return;
+      }
       const reader = new FileReader();
-      reader.onload = (ev) => { setSelectedImages(prev => [...prev, ev.target?.result as string]); };
+      reader.onload = (ev) => {
+        setSelectedImage(ev.target?.result as string);
+      };
       reader.readAsDataURL(file);
-    });
-    e.target.value = '';
+    }
   };
 
   const handleClose = () => {
@@ -131,8 +126,7 @@ export const CreatePost: React.FC<CreatePostProps> = ({ user, onPostCreated, isM
       setIsOpen(false);
     }
     setContent('');
-    setSelectedImages([]);
-    setSelectedFiles([]);
+    setSelectedImage(null);
     setSelectedFeeling(null);
     setSelectedActivity(null);
     setPostPrice('');
@@ -143,14 +137,13 @@ export const CreatePost: React.FC<CreatePostProps> = ({ user, onPostCreated, isM
   };
 
   const handleSubmit = async () => {
-    if ((!content.trim() && selectedImages.length === 0) || isSubmitting) return;
+    if ((!content.trim() && !selectedImage) || isSubmitting) return;
 
     const postContent = content.trim() + (selectedFeeling ? ` ${selectedFeeling}` : '') + (selectedActivity ? ` ${selectedActivity}` : '');
 
     // Clear form immediately for responsive UX
     const savedContent = content;
-    const savedImages = selectedImages;
-    const savedFiles = selectedFiles;
+    const savedImage = selectedImage;
     const savedFeeling = selectedFeeling;
     const savedActivity = selectedActivity;
     const savedLocation = postLocation;
@@ -158,8 +151,7 @@ export const CreatePost: React.FC<CreatePostProps> = ({ user, onPostCreated, isM
     const savedCategory = postCategory;
 
     setContent('');
-    setSelectedImages([]);
-    setSelectedFiles([]);
+    setSelectedImage(null);
     setSelectedFeeling(null);
     setSelectedActivity(null);
     setPostLocation('');
@@ -170,37 +162,11 @@ export const CreatePost: React.FC<CreatePostProps> = ({ user, onPostCreated, isM
 
     setIsSubmitting(true);
 
-    // 🔧 FIX: Upload each image to server first, then send URLs (not base64)
-    // This prevents timeout/failure from sending huge base64 JSON payloads
-    let uploadedImageUrls: string[] = [];
-    // 🔧 FIX: Use the original File objects directly (no base64 conversion)
-    if (savedFiles.length > 0) {
-      for (let i = 0; i < savedFiles.length; i++) {
-        const file = savedFiles[i];
-        try {
-          let result;
-          if (file.type.startsWith('video/')) {
-            result = await api.uploadVideo(file);
-          } else {
-            result = await api.uploadImage(file);
-          }
-          if (result?.url) {
-            uploadedImageUrls.push(result.url);
-          } else {
-            toast.error(`فشل رفع الصورة ${i + 1}`);
-          }
-        } catch (err: any) {
-          console.error('[CreatePost] Upload failed:', i, err);
-          toast.error(`فشل رفع الصورة ${i + 1}: ${err.message || ''}`);
-        }
-      }
-    }
-
-    // Persist to database via API — send server URLs (not base64)
+    // Persist to database via API first, then add to local state with correct server ID
     try {
       const savedPost = await api.createPost({
         content: postContent,
-        image: uploadedImageUrls.length > 0 ? JSON.stringify(uploadedImageUrls) : '',
+        image: savedImage || '',
         type: postType,
         price: savedPrice ? parseInt(savedPrice) : null,
         currency: savedPrice ? t('common.egp') : 'ج.م',
@@ -222,7 +188,7 @@ export const CreatePost: React.FC<CreatePostProps> = ({ user, onPostCreated, isM
           interests: savedPost.author?.interests,
         },
         content: savedPost.content || postContent,
-        image: savedPost.image || (uploadedImageUrls.length > 0 ? JSON.stringify(uploadedImageUrls) : undefined),
+        image: savedPost.image || savedImage || undefined,
         likes: savedPost.likes || 0,
         comments: savedPost.comments || 0,
         shares: savedPost.shares || 0,
@@ -246,7 +212,7 @@ export const CreatePost: React.FC<CreatePostProps> = ({ user, onPostCreated, isM
         id: `p_${Date.now()}`,
         author: user || { id: 'me', name: t('common.user'), avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Default' },
         content: postContent,
-        image: uploadedImageUrls.length > 0 ? JSON.stringify(uploadedImageUrls) : undefined,
+        image: savedImage || undefined,
         likes: 0,
         comments: 0,
         shares: 0,
@@ -301,11 +267,11 @@ export const CreatePost: React.FC<CreatePostProps> = ({ user, onPostCreated, isM
   };
 
   const handleLiveVideo = () => {
-    navigate("/live-stream");
+    toast.info(t('createPost.liveStreamComing'), { duration: 3000 });
   };
 
   // Validation: can submit if content or image provided
-  const canSubmit = (content.trim() || selectedImages.length > 0) && !isSubmitting;
+  const canSubmit = (content.trim() || selectedImage) && !isSubmitting;
 
   return (
     <div dir={dir} className={`${isModal ? 'pb-4' : `${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'} rounded-xl shadow-sm border p-4 mb-4`}`}>
@@ -420,28 +386,17 @@ export const CreatePost: React.FC<CreatePostProps> = ({ user, onPostCreated, isM
           />
 
           {/* Selected Image Preview */}
-          {selectedImages.length > 0 && (
-            <div className="mb-3">
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                {selectedImages.map((img, idx) => (
-                  <div key={idx} className="relative group aspect-square rounded-xl overflow-hidden">
-                    <img src={img} alt={'Selected ' + (idx+1)} className="w-full h-full object-cover" />
-                    <button onClick={() => setSelectedImages(prev => prev.filter((_, i) => i !== idx))} className="absolute top-1.5 left-1.5 w-7 h-7 bg-black/60 text-white rounded-full flex items-center justify-center hover:bg-black/80 transition-colors">
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-              {selectedImages.length < MAX_IMAGES && (
-                <label htmlFor="fileInputRef-input" className={'mt-2 w-full flex items-center justify-center gap-2 py-2 rounded-xl border-2 border-dashed cursor-pointer ' + (darkMode ? 'border-gray-600 hover:border-orange-500' : 'border-gray-200 hover:border-orange-400')}>
-                  <span className="text-xs font-bold">إضافة المزيد ({selectedImages.length}/{MAX_IMAGES})</span>
-                </label>
-              )}
+          {selectedImage && (
+            <div className="relative mb-3 group">
+              <img src={selectedImage} alt="Selected" className="w-full max-h-64 object-cover rounded-xl" />
+              <button onClick={() => setSelectedImage(null)} className="absolute top-2 left-2 w-8 h-8 bg-black/60 text-white rounded-full flex items-center justify-center hover:bg-black/80 transition-colors opacity-80 group-hover:opacity-100">
+                <X className="w-4 h-4" />
+              </button>
             </div>
           )}
 
           {/* Image upload area (when no image selected) */}
-          {selectedImages.length === 0 && (
+          {!selectedImage && (
             <label htmlFor="fileInputRef-input" className={`w-full mb-3 flex flex-col items-center justify-center gap-2 p-4 border-2 border-dashed rounded-xl transition-all ${
                 darkMode
                   ? 'border-gray-600 hover:border-orange-500 hover:bg-gray-700/50'
@@ -452,7 +407,7 @@ export const CreatePost: React.FC<CreatePostProps> = ({ user, onPostCreated, isM
             </label>
           )}
 
-          <input id="fileInputRef-input" ref={fileInputRef} type="file" accept="image/*,video/*" multiple className="sr-only" onChange={handleImageSelect} />
+          <input id="fileInputRef-input" ref={fileInputRef} type="file" accept="image/*,video/*,.jpg,.jpeg,.png,.gif,.webp,.bmp,.svg,.tiff,.tif,.avif,.heic,.heif,.ico,.jfif,.raw,.psd,.mp4,.webm,.mov,.avi,.3gp,.mkv,.flv,.wmv,.m4v,.ogg,.mpeg,.mpg,.ts,.m2ts,.vob,.asf,.rm,.rmvb,.divx,.xvid" className="sr-only" onChange={handleImageSelect} />
 
           {/* Selected Feeling/Activity */}
           {(selectedFeeling || selectedActivity) && (

@@ -16,6 +16,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'sonner';
 import { useLanguage } from '../contexts/LanguageContext';
+import { formatRelativeTimeAr } from '../utils/time';
 
 interface CommentData {
   id: string;
@@ -223,21 +224,6 @@ export const PostCard: React.FC<PostCardProps> = ({ post, onHidePost }) => {
       setComments(prev => updateLike(prev));
     } catch {
       // ignore
-    }
-  };
-
-  const handleDeletePost = async () => {
-    if (!window.confirm('هل أنت متأكد من حذف هذا المنشور؟ لا يمكن التراجع.')) return;
-    try {
-      await api.deletePost(post.id);
-      toast.success('تم حذف المنشور');
-      onHidePost?.(post.id);
-      // Navigate away if on post detail page
-      if (window.location.hash.includes(`/post/${post.id}`)) {
-        window.location.hash = '#/';
-      }
-    } catch (err: any) {
-      toast.error(err.message || 'فشل حذف المنشور');
     }
   };
 
@@ -507,7 +493,7 @@ export const PostCard: React.FC<PostCardProps> = ({ post, onHidePost }) => {
                 {post.author.trustScore && <div className="bg-green-50 text-green-700 text-[8px] px-1 py-0 rounded-md font-bold flex items-center gap-0.5"><ShieldCheck className="w-2 h-2" />{post.author.trustScore}%</div>}
               </div>
               <div className={`flex items-center gap-1 text-[9px] ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                <span>{post.timestamp}</span><span>·</span><Globe className="w-2.5 h-2.5" />
+                <span>{formatRelativeTimeAr(post.timestamp)}</span><span>·</span><Globe className="w-2.5 h-2.5" />
               </div>
             </div>
           </div>
@@ -526,12 +512,6 @@ export const PostCard: React.FC<PostCardProps> = ({ post, onHidePost }) => {
                     <button onClick={(e) => { e.stopPropagation(); setEditingPost(post); setShowMoreMenu(false); }}
                       className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium transition-colors ${darkMode ? 'text-blue-400 hover:bg-gray-700' : 'text-blue-600 hover:bg-blue-50'}`}>
                       <Edit3 className="w-4 h-4" />{t('common.edit')}
-                    </button>
-                  )}
-                  {isMyPost && (
-                    <button onClick={(e) => { e.stopPropagation(); setShowMoreMenu(false); handleDeletePost(); }}
-                      className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium transition-colors ${darkMode ? 'text-red-400 hover:bg-gray-700' : 'text-red-600 hover:bg-red-50'}`}>
-                      <Trash2 className="w-4 h-4" />حذف المنشور
                     </button>
                   )}
                   {isMyPost && !post.isPromoted && post.promotionStatus !== 'pending' && (
@@ -599,41 +579,12 @@ export const PostCard: React.FC<PostCardProps> = ({ post, onHidePost }) => {
           </div>
         )}
 
-        {/* Image — supports multiple images (JSON array) or single image */}
-        {post.image && (() => {
-          let images: string[] = [];
-          try {
-            const parsed = JSON.parse(post.image);
-            images = Array.isArray(parsed) ? parsed : [post.image];
-          } catch {
-            images = [post.image];
-          }
-          if (images.length === 0) return null;
-          if (images.length === 1) {
-            return (
-              <div className={`max-h-[280px] overflow-hidden border-y cursor-pointer ${darkMode ? 'bg-gray-700 border-gray-700' : 'bg-gray-50 border-gray-100'}`}>
-                <img src={images[0]} alt="Post content" className="w-full h-full object-contain" loading="lazy" />
-              </div>
-            );
-          }
-          // Multiple images — grid layout (2 columns)
-          return (
-            <div className={`border-y ${darkMode ? 'border-gray-700' : 'border-gray-100'}`}>
-              <div className="grid grid-cols-2 gap-0.5 p-0.5">
-                {images.slice(0, 4).map((img, idx) => (
-                  <div key={idx} className="relative overflow-hidden bg-gray-100 dark:bg-gray-800" style={{ aspectRatio: '1', maxHeight: '200px' }}>
-                    <img src={img} alt={'صورة ' + (idx+1)} className="w-full h-full object-cover" loading="lazy" />
-                    {idx === 3 && images.length > 4 && (
-                      <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
-                        <span className="text-white text-xl font-bold">+{images.length - 4}</span>
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          );
-        })()}
+        {/* Image */}
+        {post.image && (
+          <div className={`max-h-[280px] overflow-hidden border-y cursor-pointer ${darkMode ? 'bg-gray-700 border-gray-700' : 'bg-gray-50 border-gray-100'}`}>
+            <img src={post.image} alt="Post content" className="w-full h-full object-contain" loading="lazy" />
+          </div>
+        )}
 
         {/* Stats */}
         <div className={`px-3 py-1.5 flex items-center justify-between text-[10px] ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
