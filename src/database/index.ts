@@ -1157,6 +1157,61 @@ try { db.exec(`
 try { db.prepare("ALTER TABLE stories ADD COLUMN video_url TEXT DEFAULT ''").run(); } catch {}
 try { db.prepare("ALTER TABLE stories ADD COLUMN expires_at TEXT").run(); } catch {}
 
+// ─── Email verification ────────────────────────────────────────────
+try { db.prepare("ALTER TABLE users ADD COLUMN email_verified INTEGER DEFAULT 0").run(); } catch {}
+try { db.prepare("ALTER TABLE users ADD COLUMN email_verification_code TEXT DEFAULT ''").run(); } catch {}
+try { db.prepare("ALTER TABLE users ADD COLUMN email_verification_expires TEXT DEFAULT ''").run(); } catch {}
+
+// ─── Scheduled streams ──────────────────────────────────────────────
+try { db.exec(`
+  CREATE TABLE IF NOT EXISTS scheduled_streams (
+    id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+    user_id TEXT NOT NULL REFERENCES users(id),
+    title TEXT NOT NULL,
+    description TEXT DEFAULT '',
+    scheduled_at TEXT NOT NULL,
+    duration_minutes INTEGER DEFAULT 60,
+    category TEXT DEFAULT '',
+    is_active INTEGER DEFAULT 0,
+    reminder_count INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_scheduled_streams_user ON scheduled_streams(user_id);
+  CREATE INDEX IF NOT EXISTS idx_scheduled_streams_time ON scheduled_streams(scheduled_at);
+  CREATE INDEX IF NOT EXISTS idx_scheduled_streams_active ON scheduled_streams(is_active);
+`); } catch {}
+
+// ─── Stream gifts/tips ──────────────────────────────────────────────
+try { db.exec(`
+  CREATE TABLE IF NOT EXISTS stream_gifts (
+    id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+    stream_id TEXT NOT NULL,
+    sender_id TEXT NOT NULL REFERENCES users(id),
+    receiver_id TEXT NOT NULL REFERENCES users(id),
+    gift_type TEXT NOT NULL,
+    gift_name TEXT NOT NULL,
+    amount REAL NOT NULL DEFAULT 0,
+    message TEXT DEFAULT '',
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_stream_gifts_stream ON stream_gifts(stream_id);
+  CREATE INDEX IF NOT EXISTS idx_stream_gifts_sender ON stream_gifts(sender_id);
+  CREATE INDEX IF NOT EXISTS idx_stream_gifts_receiver ON stream_gifts(receiver_id);
+`); } catch {}
+
+// ─── Stream reminders ──────────────────────────────────────────────
+try { db.exec(`
+  CREATE TABLE IF NOT EXISTS stream_reminders (
+    id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+    stream_id TEXT NOT NULL REFERENCES scheduled_streams(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES users(id),
+    created_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(stream_id, user_id)
+  );
+  CREATE INDEX IF NOT EXISTS idx_stream_reminders_stream ON stream_reminders(stream_id);
+  CREATE INDEX IF NOT EXISTS idx_stream_reminders_user ON stream_reminders(user_id);
+`); } catch {}
+
 export default db;
 
 // ─── Force-fix admin password (in case it was created with random password before) ──

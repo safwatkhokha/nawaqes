@@ -409,7 +409,7 @@ async function startServer() {
     }
   });
 
-  // Send push notification to a specific user
+  // Send push notification to a specific user or broadcast to all
   app.post('/api/notifications/send', async (req, res) => {
     try {
       const authHeader = req.headers.authorization;
@@ -423,43 +423,66 @@ async function startServer() {
         res.status(403).json({ error: 'Admin access required' });
         return;
       }
-      const { userId: targetUserId, title, body, data } = req.body;
-      if (!targetUserId || !title || !body) {
-        res.status(400).json({ error: 'userId, title, and body required' });
+      const { userId: targetUserId, userIds: targetUserIds, title, body, data, topic } = req.body;
+      if (!title || !body) {
+        res.status(400).json({ error: 'title and body required' });
         return;
       }
-      try {
+
+      // Broadcast to all users
+      if (targetUserId === 'all' || (targetUserIds && targetUserIds.length === 0)) {
         const db = (await import('./database/index.js')).default;
-        const devices = db.prepare('SELECT token FROM devices WHERE user_id = ?').all(targetUserId) as any[];
-        if (devices.length === 0) {
-          res.json({ success: true, sent: 0, message: 'No registered devices for this user' });
-          return;
-        }
-        // For now, store notification in DB and rely on WebSocket for real-time delivery
-        // FCM push would require firebase-admin SDK - graceful degradation
-        for (const device of devices) {
-          console.log(`[FCM] Would send push to ${device.token.substring(0, 20)}...: "${title}"`);
-        }
-        // Also save as in-app notification
-        const notifId = crypto.randomBytes(16).toString('hex');
-        db.prepare('INSERT INTO notifications (id, user_id, type, message, link) VALUES (?, ?, ?, ?, ?)').run(
-          notifId, targetUserId, data?.type || 'system', body, data?.link || null
-        );
-        // Send via WebSocket if user is online
-        try {
-          const { wsManager } = await import('./websocket/index.js');
-          wsManager.sendToUser(targetUserId, JSON.stringify({
-            type: 'notification:new',
-            notification: { id: notifId, type: data?.type || 'system', message: body, time: new Date().toISOString(), link: data?.link }
-          }));
-        } catch {}
-        res.json({ success: true, sent: devices.length });
-      } catch (dbErr: any) {
-        console.error('[FCM] DB error:', dbErr.message);
-        res.status(500).json({ error: 'Failed to send notification' });
+        const allUsers = db.prepare('SELECT id FROM users WHERE is_deactivated = 0').all() as any[];
+        const { sendPushToUsers } = await import('./services/pushNotifications.js');
+        const result = await sendPushToUsers(allUsers.map(u => u.id), title, body, data);
+        res.json({ success: true, broadcast: true, totalUsers: allUsers.length, ...result });
+        return;
       }
+
+      // Send to specific user IDs list
+      if (targetUserIds && Array.isArray(targetUserIds) && targetUserIds.length > 0) {
+        const { sendPushToUsers } = await import('./services/pushNotifications.js');
+        const result = await sendPushToUsers(targetUserIds, title, body, data);
+        res.json({ success: true, ...result });
+        return;
+      }
+
+      // Send to a topic
+      if (topic) {
+        const { sendPushToTopic } = await import('./services/pushNotifications.js');
+        const result = await sendPushToTopic(topic, title, body, data);
+        res.json({ success: true, ...result });
+        return;
+      }
+
+      // Send to a single user
+      if (!targetUserId) {
+        res.status(400).json({ error: 'userId, userIds, or topic required' });
+        return;
+      }
+      const { sendPushToUser } = await import('./services/pushNotifications.js');
+      const result = await sendPushToUser(targetUserId, title, body, data);
+      res.json({ success: true, ...result });
     } catch (err: any) {
       res.status(500).json({ error: 'Failed to send notification' });
+    }
+  });
+
+  // FCM diagnostics endpoint (admin only)
+  app.get('/api/notifications/fcm-status', async (req, res) => {
+    try {
+      const authHeader = req.headers.authorization;
+      if (!authHeader?.startsWith('Bearer ')) { res.status(401).json({ error: 'Unauthorized' }); return; }
+      const { verifyToken } = await import('./middleware/auth.js');
+      const payload = verifyToken(authHeader.split(' ')[1]);
+      if (!payload?.isAdmin) { res.status(403).json({ error: 'Admin access required' }); return; }
+      const { getFCMStatus } = await import('./services/pushNotifications.js');
+      const db = (await import('./database/index.js')).default;
+      const deviceCount = (db.prepare('SELECT COUNT(*) as count FROM devices').get() as any).count;
+      const status = getFCMStatus();
+      res.json({ ...status, registeredDevices: deviceCount });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
     }
   });
 
@@ -822,6 +845,190 @@ async function startServer() {
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
+  });
+
+  // ─── Scheduled Streams API ──────────────────────────────────────────
+  app.get('/api/livestream/scheduled', async (_req, res) => {
+    try {
+      const db = (await import('./database/index.js')).default;
+      const streams = db.prepare(`
+        SELECT ss.*, u.name as user_name, u.avatar as user_avatar
+        FROM scheduled_streams ss
+        JOIN users u ON u.id = ss.user_id
+        WHERE ss.scheduled_at >= datetime('now')
+        ORDER BY ss.scheduled_at ASC
+        LIMIT 50
+      `).all() as any[];
+      res.json(streams);
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  app.post('/api/livestream/schedule', async (req, res) => {
+    try {
+      const db = (await import('./database/index.js')).default;
+      const authHeader = req.headers.authorization;
+      if (!authHeader?.startsWith('Bearer ')) { res.status(401).json({ error: 'Unauthorized' }); return; }
+      const { verifyToken } = await import('./middleware/auth.js');
+      const payload = verifyToken(authHeader.split(' ')[1]);
+      if (!payload) { res.status(401).json({ error: 'Invalid token' }); return; }
+      const userId = payload.userId || payload.sub;
+      const { title, description, scheduledAt, durationMinutes, category } = req.body;
+      if (!title || !scheduledAt) { res.status(400).json({ error: 'title and scheduledAt required' }); return; }
+      const scheduledDate = new Date(scheduledAt);
+      if (scheduledDate <= new Date()) { res.status(400).json({ error: 'يجب أن يكون الموعد في المستقبل' }); return; }
+      const id = crypto.randomBytes(16).toString('hex');
+      db.prepare('INSERT INTO scheduled_streams (id, user_id, title, description, scheduled_at, duration_minutes, category) VALUES (?, ?, ?, ?, ?, ?, ?)').run(
+        id, userId, title, description || '', scheduledAt, durationMinutes || 60, category || ''
+      );
+      // Notify friends about scheduled stream
+      try {
+        const { sendPushToUsers } = await import('./services/pushNotifications.js');
+        const friends = db.prepare('SELECT requester_id as fid FROM friendships WHERE addressee_id = ? AND status = ? UNION SELECT addressee_id as fid FROM friendships WHERE requester_id = ? AND status = ?').all(userId, 'accepted', userId, 'accepted') as any[];
+        if (friends.length > 0) {
+          const user = db.prepare('SELECT name FROM users WHERE id = ?').get(userId) as any;
+          const friendIds = friends.map((f: any) => f.fid);
+          sendPushToUsers(friendIds, 'بث مباشر مجدول', `${user?.name || 'مستخدم'} جدول بث مباشر: ${title}`, { type: 'livestream', link: `/live-stream/${userId}` }).catch(() => {});
+        }
+      } catch {}
+      res.json({ success: true, id });
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  app.post('/api/livestream/schedule/:id/remind', async (req, res) => {
+    try {
+      const db = (await import('./database/index.js')).default;
+      const authHeader = req.headers.authorization;
+      if (!authHeader?.startsWith('Bearer ')) { res.status(401).json({ error: 'Unauthorized' }); return; }
+      const { verifyToken } = await import('./middleware/auth.js');
+      const payload = verifyToken(authHeader.split(' ')[1]);
+      if (!payload) { res.status(401).json({ error: 'Invalid token' }); return; }
+      const userId = payload.userId || payload.sub;
+      const streamId = req.params.id;
+      // Save reminder in stream_reminders table
+      try {
+        db.prepare('INSERT OR IGNORE INTO stream_reminders (stream_id, user_id) VALUES (?, ?)').run(streamId, userId);
+      } catch {}
+      db.prepare('UPDATE scheduled_streams SET reminder_count = reminder_count + 1 WHERE id = ?').run(streamId);
+      res.json({ success: true });
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  app.delete('/api/livestream/schedule/:id', async (req, res) => {
+    try {
+      const db = (await import('./database/index.js')).default;
+      const authHeader = req.headers.authorization;
+      if (!authHeader?.startsWith('Bearer ')) { res.status(401).json({ error: 'Unauthorized' }); return; }
+      const { verifyToken } = await import('./middleware/auth.js');
+      const payload = verifyToken(authHeader.split(' ')[1]);
+      if (!payload) { res.status(401).json({ error: 'Invalid token' }); return; }
+      const userId = payload.userId || payload.sub;
+      const streamId = req.params.id;
+      const stream = db.prepare('SELECT user_id FROM scheduled_streams WHERE id = ?').get(streamId) as any;
+      if (!stream) { res.status(404).json({ error: 'Not found' }); return; }
+      if (stream.user_id !== userId && !payload.isAdmin) { res.status(403).json({ error: 'Not your stream' }); return; }
+      db.prepare('DELETE FROM scheduled_streams WHERE id = ?').run(streamId);
+      res.json({ success: true });
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  // ─── Stream Gifts/Tips API ──────────────────────────────────────
+  const GIFT_TYPES = [
+    { id: 'rose', name: '🌹 وردة', amount: 5 },
+    { id: 'heart', name: '❤️ قلب', amount: 10 },
+    { id: 'star', name: '⭐ نجمة', amount: 25 },
+    { id: 'crown', name: '👑 تاج', amount: 50 },
+    { id: 'diamond', name: '💎 ألماسة', amount: 100 },
+    { id: 'rocket', name: '🚀 صاروخ', amount: 200 },
+  ];
+
+  app.get('/api/livestream/gifts', (_req, res) => {
+    res.json(GIFT_TYPES);
+  });
+
+  app.post('/api/livestream/gift', async (req, res) => {
+    try {
+      const db = (await import('./database/index.js')).default;
+      const authHeader = req.headers.authorization;
+      if (!authHeader?.startsWith('Bearer ')) { res.status(401).json({ error: 'Unauthorized' }); return; }
+      const { verifyToken } = await import('./middleware/auth.js');
+      const payload = verifyToken(authHeader.split(' ')[1]);
+      if (!payload) { res.status(401).json({ error: 'Invalid token' }); return; }
+      const userId = payload.userId || payload.sub;
+      const { streamId, receiverId, giftType, message } = req.body;
+      if (!streamId || !receiverId || !giftType) { res.status(400).json({ error: 'streamId, receiverId, giftType required' }); return; }
+
+      const gift = GIFT_TYPES.find(g => g.id === giftType);
+      if (!gift) { res.status(400).json({ error: 'Invalid gift type' }); return; }
+
+      // Check balance
+      const sender = db.prepare('SELECT wallet_balance, name FROM users WHERE id = ?').get(userId) as any;
+      if (!sender || sender.wallet_balance < gift.amount) { res.status(400).json({ error: 'رصيد غير كافي' }); return; }
+
+      // Deduct from sender
+      db.prepare('UPDATE users SET wallet_balance = wallet_balance - ? WHERE id = ?').run(gift.amount, userId);
+      // Add to receiver (90% to creator, 10% platform fee)
+      const receiverAmount = gift.amount * 0.9;
+      db.prepare('UPDATE users SET wallet_balance = wallet_balance + ? WHERE id = ?').run(receiverAmount, receiverId);
+
+      // Record gift
+      const id = crypto.randomBytes(16).toString('hex');
+      db.prepare('INSERT INTO stream_gifts (id, stream_id, sender_id, receiver_id, gift_type, gift_name, amount, message) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(
+        id, streamId, userId, receiverId, giftType, gift.name, gift.amount, message || ''
+      );
+
+      // Record transactions
+      const txId1 = crypto.randomBytes(16).toString('hex');
+      db.prepare('INSERT INTO transactions (id, user_id, type, amount, method, status) VALUES (?, ?, ?, ?, ?, ?)').run(
+        txId1, userId, 'gift_sent', gift.amount, 'wallet', 'completed'
+      );
+      const txId2 = crypto.randomBytes(16).toString('hex');
+      db.prepare('INSERT INTO transactions (id, user_id, type, amount, method, status) VALUES (?, ?, ?, ?, ?, ?)').run(
+        txId2, receiverId, 'gift_received', receiverAmount, 'wallet', 'completed'
+      );
+
+      // Notify receiver via WebSocket
+      try {
+        const { wsManager } = await import('./websocket/index.js');
+        wsManager.sendToUser(receiverId, JSON.stringify({
+          type: 'livestream:gift',
+          gift: { id, giftType, giftName: gift.name, amount: gift.amount, senderName: sender.name, message }
+        }));
+      } catch {}
+
+      res.json({ success: true, id, amount: gift.amount, giftName: gift.name });
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  app.get('/api/livestream/:streamId/gifts', async (req, res) => {
+    try {
+      const db = (await import('./database/index.js')).default;
+      const streamId = req.params.streamId;
+      const gifts = db.prepare(`
+        SELECT sg.*, u.name as sender_name, u.avatar as sender_avatar
+        FROM stream_gifts sg
+        JOIN users u ON u.id = sg.sender_id
+        WHERE sg.stream_id = ?
+        ORDER BY sg.created_at DESC
+        LIMIT 100
+      `).all(streamId) as any[];
+      res.json(gifts);
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  app.get('/api/livestream/:streamId/gift-stats', async (req, res) => {
+    try {
+      const db = (await import('./database/index.js')).default;
+      const streamId = req.params.streamId;
+      const stats = db.prepare(`
+        SELECT gift_type, gift_name, COUNT(*) as count, SUM(amount) as total_amount
+        FROM stream_gifts
+        WHERE stream_id = ?
+        GROUP BY gift_type
+        ORDER BY count DESC
+      `).all(streamId) as any[];
+      const total = db.prepare('SELECT SUM(amount) as total FROM stream_gifts WHERE stream_id = ?').get(streamId) as any;
+      res.json({ stats, total: total?.total || 0 });
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
   });
 
   // 7e. API 404 handler (MUST be after all /api/* routes, before Vite catch-all)

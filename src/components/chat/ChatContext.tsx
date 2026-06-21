@@ -74,11 +74,6 @@ export interface ChatContextType {
   showGroupInfo: boolean;
   offlineQueue: ChatMessage[];
 
-  // Starred messages
-  showStarredPanel: boolean;
-  starredMessages: ChatMessage[];
-  handleToggleStar: (messageId: string) => Promise<void>;
-
   // Call state
   callState: CallStateType;
   activeCall: ActiveCallInfo | null;
@@ -245,10 +240,6 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [showCreateGroup, setShowCreateGroup] = useState(false);
   const [showGroupInfo, setShowGroupInfo] = useState(false);
   const [offlineQueue, setOfflineQueue] = useState<ChatMessage[]>([]);
-
-  // Starred messages state
-  const [showStarredPanel, setShowStarredPanel] = useState(false);
-  const [starredMessages, setStarredMessages] = useState<ChatMessage[]>([]);
 
   // Call states
   const [callState, setCallState] = useState<CallStateType>('idle');

@@ -17,5 +17,3 @@ export { MessageSearch } from './MessageSearch';
 export { ForwardDialog } from './ForwardDialog';
 export { CreateGroupDialog } from './CreateGroupDialog';
 export { GroupInfo } from './GroupInfo';
-export { StarredMessages } from './StarredMessages';
-export { ChatSettingsPanel } from './ChatSettingsPanel';

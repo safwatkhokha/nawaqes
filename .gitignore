@@ -10,8 +10,5 @@ backups/
 *.log
 bun.lock
 nawaqes/
-upload/*.jpg
-upload/*.png
-upload/*.jpeg
-upload/*.zip
-upload/*.db
+upload/
+nawaqes-apk/assets/*.png

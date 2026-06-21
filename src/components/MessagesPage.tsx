@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { ArrowRight, RefreshCw, UserPlus, Users, Star } from 'lucide-react';
+import React from 'react';
+import { ArrowRight, RefreshCw, UserPlus, Users } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAppContext } from '../contexts/AppContext';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -15,7 +15,6 @@ import {
   ReactionPicker,
   ForwardDialog,
   CreateGroupDialog,
-  StarredMessages,
 } from './chat';
 import { useChatContext } from './chat';
 
@@ -48,15 +47,6 @@ const ChatLayout: React.FC = () => {
           <h1 className={`text-2xl font-black ${textPrimary}`}>{t('messages.title')}</h1>
           <p className={`text-sm ${textMuted}`}>{t('messages.titleDesc')}</p>
         </div>
-        <button
-          onClick={() => (ctx as any).setShowStarredPanel(true)}
-          className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors ${
-            darkMode ? 'bg-gray-800 hover:bg-gray-700 text-gray-300' : 'bg-orange-50 hover:bg-orange-100 text-orange-600'
-          }`}
-          title={t('messages.starredMessages', 'الرسائل المميزة')}
-        >
-          <Star className="w-4 h-4" />
-        </button>
         <button
           onClick={loadContacts}
           className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors ${
@@ -111,7 +101,6 @@ const ChatLayout: React.FC = () => {
       <ReactionPicker floating />
       <CallOverlay />
       <ImagePreview />
-      <StarredMessages />
     </div>
   );
 };

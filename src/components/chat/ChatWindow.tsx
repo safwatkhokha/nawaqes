@@ -1,18 +1,21 @@
 import React, { useEffect } from 'react';
-import { MessageCircle, Pin } from 'lucide-react';
+import { MessageCircle, Pin, ShieldOff, WifiOff } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useChatContext } from './ChatContext';
 import { ChatHeader } from './ChatHeader';
 import { MessageList } from './MessageList';
 import { MessageInput } from './MessageInput';
 import { ContactInfo } from './ContactInfo';
+import { GroupInfo } from './GroupInfo';
 import { useTranslation } from 'react-i18next';
 
 export const ChatWindow: React.FC = () => {
-  const { selectedContact, selectedContactId, pinnedMessages, loadPinnedMessages, messages } = useChatContext();
+  const { selectedContact, selectedContactId, pinnedMessages, loadPinnedMessages, messages, isUserBlocked, showGroupInfo } = useChatContext();
   const ctx = useChatContext();
   const darkMode = (ctx as any).darkMode as boolean;
   const dir = (ctx as any).dir as 'rtl' | 'ltr';
+  const wsConnected = (ctx as any).wsConnected as boolean;
+  const offlineQueue = ctx.offlineQueue;
   const { t } = useTranslation();
 
   const textPrimary = darkMode ? 'text-white' : 'text-gray-900';
@@ -26,6 +29,8 @@ export const ChatWindow: React.FC = () => {
   }, [selectedContactId, messages]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (selectedContact) {
+    const isGroup = selectedContact.isGroup;
+    const blocked = !isGroup && isUserBlocked(selectedContactId || '');
     // Get pinned messages for current conversation
     const currentPinned = messages.filter(m => m.isPinned && m.deletedFor !== 'everyone');
 
@@ -33,6 +38,33 @@ export const ChatWindow: React.FC = () => {
       <div className="flex-1 flex flex-col min-w-0">
         <ChatHeader />
         <ContactInfo />
+
+        {/* Group info panel */}
+        <GroupInfo />
+
+        {/* Blocked user banner */}
+        {blocked && (
+          <div className={`flex items-center justify-center gap-2 px-4 py-2 ${
+            darkMode ? 'bg-red-900/30 border-b border-red-800' : 'bg-red-50 border-b border-red-200'
+          }`}>
+            <ShieldOff className={`w-4 h-4 ${darkMode ? 'text-red-400' : 'text-red-500'}`} />
+            <span className={`text-xs font-bold ${darkMode ? 'text-red-400' : 'text-red-600'}`}>
+              {t('messages.youAreBlocked')}
+            </span>
+          </div>
+        )}
+
+        {/* Offline queue banner */}
+        {!wsConnected && offlineQueue.length > 0 && (
+          <div className={`flex items-center justify-center gap-2 px-4 py-2 ${
+            darkMode ? 'bg-yellow-900/30 border-b border-yellow-800' : 'bg-yellow-50 border-b border-yellow-200'
+          }`}>
+            <WifiOff className={`w-4 h-4 ${darkMode ? 'text-yellow-400' : 'text-yellow-500'}`} />
+            <span className={`text-xs font-bold ${darkMode ? 'text-yellow-400' : 'text-yellow-600'}`}>
+              {t('messages.messageQueued')} ({offlineQueue.length})
+            </span>
+          </div>
+        )}
 
         {/* Pinned messages section */}
         <AnimatePresence>

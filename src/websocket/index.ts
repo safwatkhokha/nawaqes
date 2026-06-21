@@ -112,8 +112,21 @@ class WebSocketManager {
 
           // Handle typing indicator
           if (msg.type === 'chat:typing' && authenticated) {
-            const { receiverId } = msg.data || {};
-            if (receiverId) {
+            const { receiverId, groupId } = msg.data || {};
+            if (groupId) {
+              // Group typing - broadcast to all group members
+              try {
+                const members = db.prepare('SELECT user_id FROM chat_group_members WHERE group_id = ?').all(groupId) as any[];
+                for (const member of members) {
+                  if (member.user_id !== userId) {
+                    this.sendToUser(member.user_id, {
+                      type: 'chat:typing',
+                      data: { senderId: userId, groupId },
+                    });
+                  }
+                }
+              } catch {}
+            } else if (receiverId) {
               this.sendToUser(receiverId, {
                 type: 'chat:typing',
                 data: { senderId: userId },
@@ -124,12 +137,34 @@ class WebSocketManager {
 
           // Handle chat read receipts
           if (msg.type === 'chat:read' && authenticated) {
-            const { contactId } = msg.data || {};
-            if (contactId) {
+            const { contactId, groupId } = msg.data || {};
+            if (groupId) {
+              // Group read - notify all group members
+              try {
+                const members = db.prepare('SELECT user_id FROM chat_group_members WHERE group_id = ?').all(groupId) as any[];
+                for (const member of members) {
+                  if (member.user_id !== userId) {
+                    this.sendToUser(member.user_id, {
+                      type: 'chat:read',
+                      data: { readerId: userId, groupId },
+                    });
+                  }
+                }
+              } catch {}
+            } else if (contactId) {
               this.sendToUser(contactId, {
                 type: 'chat:read',
                 data: { readerId: userId },
               });
+            }
+            return;
+          }
+
+          // Handle group message relay
+          if (msg.type === 'chat:group-message' && authenticated) {
+            const { groupId, message } = msg.data || {};
+            if (groupId) {
+              this.emitGroupMessage(groupId, message, userId);
             }
             return;
           }
@@ -415,6 +450,25 @@ class WebSocketManager {
       type: 'chat:message',
       data: message,
     });
+  }
+
+  /**
+   * Emit a group message to all members of a group (excluding sender)
+   */
+  emitGroupMessage(groupId: string, message: any, excludeUserId?: string) {
+    try {
+      const members = db.prepare('SELECT user_id FROM chat_group_members WHERE group_id = ?').all(groupId) as any[];
+      for (const member of members) {
+        if (member.user_id !== excludeUserId) {
+          this.sendToUser(member.user_id, {
+            type: 'chat:group-message',
+            data: message,
+          });
+        }
+      }
+    } catch (err) {
+      console.error('[WS] Failed to emit group message:', err);
+    }
   }
 
   /**

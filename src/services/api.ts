@@ -939,6 +939,24 @@ class ApiClient {
       method: 'POST', body: JSON.stringify({ userId, title, body, data }),
     });
   }
+  async broadcastNotification(title: string, body: string, data?: Record<string, string>) {
+    return this.request<{ success: boolean; broadcast: boolean; totalUsers: number; sent: number }>('/notifications/send', {
+      method: 'POST', body: JSON.stringify({ userId: 'all', title, body, data }),
+    });
+  }
+  async sendNotificationToUsers(userIds: string[], title: string, body: string, data?: Record<string, string>) {
+    return this.request<{ success: boolean; sent: number }>('/notifications/send', {
+      method: 'POST', body: JSON.stringify({ userIds, title, body, data }),
+    });
+  }
+  async sendNotificationToTopic(topic: string, title: string, body: string, data?: Record<string, string>) {
+    return this.request<{ success: boolean; sent: number }>('/notifications/send', {
+      method: 'POST', body: JSON.stringify({ topic, title, body, data }),
+    });
+  }
+  async getFCMStatus() {
+    return this.request<{ available: boolean; appName: string | null; projectId: string | null; registeredDevices: number }>('/notifications/fcm-status');
+  }
 
   // ─── Phase 3: Report User ──────────────────────────────────────
   async reportUser(targetUserId: string, reason: string, details?: string) {
@@ -946,6 +964,34 @@ class ApiClient {
       method: 'POST', body: JSON.stringify({ targetUserId, reason, details }),
     });
   }
+
+  // ─── Phase 3+: Email Verification ─────────────────────────────────
+  async sendEmailVerification() {
+    return this.request<{ message: string; code?: string }>('/auth/send-verification', { method: 'POST' });
+  }
+  async verifyEmail(email: string, code: string) {
+    return this.request<{ message: string; user: any; token: string }>('/auth/verify-email', { method: 'POST', body: JSON.stringify({ email, code }) });
+  }
+
+  // ─── Phase 3+: Scheduled Streams ─────────────────────────────────
+  async getScheduledStreams() { return this.request<any[]>('/livestream/scheduled'); }
+  async scheduleStream(data: { title: string; description?: string; scheduledAt: string; durationMinutes?: number; category?: string }) {
+    return this.request<{ success: boolean; id: string }>('/livestream/schedule', { method: 'POST', body: JSON.stringify(data) });
+  }
+  async setStreamReminder(streamId: string) {
+    return this.request<{ success: boolean }>(`/livestream/schedule/${streamId}/remind`, { method: 'POST' });
+  }
+  async cancelScheduledStream(streamId: string) {
+    return this.request<{ success: boolean }>(`/livestream/schedule/${streamId}`, { method: 'DELETE' });
+  }
+
+  // ─── Phase 3+: Stream Gifts ───────────────────────────────────────
+  async getGiftTypes() { return this.request<any[]>('/livestream/gifts'); }
+  async sendStreamGift(data: { streamId: string; receiverId: string; giftType: string; message?: string }) {
+    return this.request<{ success: boolean; id: string; amount: number; giftName: string }>('/livestream/gift', { method: 'POST', body: JSON.stringify(data) });
+  }
+  async getStreamGifts(streamId: string) { return this.request<any[]>(`/livestream/${streamId}/gifts`); }
+  async getStreamGiftStats(streamId: string) { return this.request<{ stats: any[]; total: number }>(`/livestream/${streamId}/gift-stats`); }
 }
 
 export const api = new ApiClient();

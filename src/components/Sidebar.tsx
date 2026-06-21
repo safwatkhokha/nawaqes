@@ -44,6 +44,7 @@ import {
   Globe,
   Menu,
   Brain,
+  Calendar,
 } from 'lucide-react';
 import { promotionPackages } from '../data/promotionPackages';
 import { startPresenceHeartbeat } from '../utils/presence';
@@ -189,6 +190,7 @@ const SidebarContent: React.FC<SidebarProps & { onClose?: () => void }> = ({
     { id: 'market-pulse', label: t('sidebar.marketPulse'), icon: TrendingUp, path: '/market-pulse', color: darkMode ? 'text-green-400 bg-green-900/30' : 'text-green-600 bg-green-50' },
     { id: 'market-live', label: t('sidebar.marketLive'), icon: Video, path: '/market-live', color: darkMode ? 'text-red-400 bg-red-900/30' : 'text-red-600 bg-red-50' },
     { id: 'live-stream', label: t('sidebar.liveStream'), icon: Radio, path: '/live-stream', color: darkMode ? 'text-purple-400 bg-purple-900/30' : 'text-purple-600 bg-purple-50' },
+    { id: 'scheduled-streams', label: t('scheduledStream.title'), icon: Calendar, path: '/scheduled-streams', color: darkMode ? 'text-indigo-400 bg-indigo-900/30' : 'text-indigo-600 bg-indigo-50' },
     { id: 'complaint', label: t('sidebar.submitComplaint'), icon: Flag, path: '/complaint', color: darkMode ? 'text-red-400 bg-red-900/30' : 'text-red-600 bg-red-50' },
     { id: 'help', label: t('sidebar.helpSupport'), icon: HelpCircle, path: '/help', color: darkMode ? 'text-blue-400 bg-blue-900/30' : 'text-blue-600 bg-blue-50' },
     { id: 'dark-mode', label: darkMode ? t('sidebar.lightMode') : t('sidebar.darkMode'), icon: darkMode ? Sun : Moon, path: '', color: darkMode ? 'text-yellow-400 bg-yellow-900/30' : 'text-yellow-600 bg-yellow-50', action: toggleDarkMode },

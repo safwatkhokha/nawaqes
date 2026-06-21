@@ -1,15 +1,9 @@
 import React, { useState } from 'react';
-import { ArrowRight, Phone, Video, MoreVertical, Eye, UserPlus, RefreshCw, Info, Search, Settings, Star, BellOff, Clock } from 'lucide-react';
+import { ArrowRight, Phone, Video, MoreVertical, Eye, UserPlus, RefreshCw, Info, Search, BellOff, Bell, ShieldOff, Shield, Users } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useChatContext } from './ChatContext';
 import { MessageSearch } from './MessageSearch';
-import { ChatSettingsPanel } from './ChatSettingsPanel';
 import { useTranslation } from 'react-i18next';
-
-// Wrapper to avoid circular import issues
-const ChatSettingsPanelWrapper: React.FC<{ show: boolean; onClose: () => void }> = ({ show, onClose }) => (
-  <ChatSettingsPanel show={show} onClose={onClose} />
-);
 
 export const ChatHeader: React.FC = () => {
   const {
@@ -17,20 +11,24 @@ export const ChatHeader: React.FC = () => {
     startCall, setShowHeaderMenu, showHeaderMenu, setShowContactInfo, showContactInfo,
     friendshipStatus, loadMessages, loadingMessages, formatLastSeen,
     myId, selectContact, sendFriendRequest, sendingFriendRequest,
-    chatSettings, setShowStarredPanel,
-  } = useChatContext() as any;
+    toggleMuteChat, toggleBlockUser, isChatMuted, isUserBlocked, setShowGroupInfo,
+  } = useChatContext();
   const ctx = useChatContext();
   const darkMode = (ctx as any).darkMode as boolean;
   const navigate = (ctx as any).navigate as (path: string) => void;
   const { t } = useTranslation();
 
   const [showSearch, setShowSearch] = useState(false);
-  const [showSettings, setShowSettings] = useState(false);
 
   if (!selectedContact) return null;
 
   const textPrimary = darkMode ? 'text-white' : 'text-gray-900';
   const textMuted = darkMode ? 'text-gray-400' : 'text-gray-500';
+
+  const isGroup = selectedContact.isGroup;
+  const groupId = selectedContact.groupId;
+  const muted = isChatMuted(groupId || selectedContactId || '');
+  const blocked = !isGroup && isUserBlocked(selectedContactId || '');
 
   return (
     <>
@@ -52,14 +50,32 @@ export const ChatHeader: React.FC = () => {
           {/* Avatar */}
           <div
             className="relative cursor-pointer"
-            onClick={() => { if (selectedContactId && selectedContactId !== myId) navigate(`/user/${selectedContactId}`); }}
+            onClick={() => {
+              if (isGroup) {
+                setShowGroupInfo(true);
+              } else if (selectedContactId && selectedContactId !== myId) {
+                navigate(`/user/${selectedContactId}`);
+              }
+            }}
           >
-            <img
-              src={selectedContact.avatar}
-              alt={selectedContact.name}
-              className="w-10 h-10 rounded-full hover:opacity-80 transition-opacity object-cover"
-            />
-            {selectedContact.online && (
+            {isGroup ? (
+              <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                darkMode ? 'bg-gray-700' : 'bg-orange-100'
+              }`}>
+                {selectedContact.avatar && !selectedContact.avatar.includes('dicebear') ? (
+                  <img src={selectedContact.avatar} alt={selectedContact.name} className="w-10 h-10 rounded-full object-cover" />
+                ) : (
+                  <Users className={`w-5 h-5 ${darkMode ? 'text-orange-400' : 'text-orange-500'}`} />
+                )}
+              </div>
+            ) : (
+              <img
+                src={selectedContact.avatar}
+                alt={selectedContact.name}
+                className="w-10 h-10 rounded-full hover:opacity-80 transition-opacity object-cover"
+              />
+            )}
+            {selectedContact.online && !isGroup && (
               <div className="absolute bottom-0 left-0 w-3 h-3 bg-green-500 border-2 border-white dark:border-gray-900 rounded-full" />
             )}
           </div>
@@ -67,27 +83,37 @@ export const ChatHeader: React.FC = () => {
           {/* Name & status */}
           <div
             className="cursor-pointer"
-            onClick={() => { if (selectedContactId && selectedContactId !== myId) navigate(`/user/${selectedContactId}`); }}
+            onClick={() => {
+              if (isGroup) {
+                setShowGroupInfo(true);
+              } else if (selectedContactId && selectedContactId !== myId) {
+                navigate(`/user/${selectedContactId}`);
+              }
+            }}
           >
-            <div className="flex items-center gap-1.5">
-              <h4 className={`text-sm font-bold ${textPrimary} hover:text-orange-600 transition-colors`}>
-                {selectedContact.name}
-              </h4>
-              {chatSettings.isMuted && <BellOff className="w-3 h-3 text-red-400" />}
-              {chatSettings.isDisappearing && <Clock className="w-3 h-3 text-purple-400" />}
-            </div>
+            <h4 className={`text-sm font-bold ${textPrimary} hover:text-orange-600 transition-colors flex items-center gap-1.5`}>
+              {selectedContact.name}
+              {muted && <BellOff className="w-3 h-3 text-gray-400" />}
+              {blocked && <ShieldOff className="w-3 h-3 text-red-400" />}
+            </h4>
             <span className={`text-[10px] ${
-              showTypingIndicator
-                ? 'text-orange-500'
-                : selectedContact.online
-                  ? 'text-green-600'
-                  : textMuted
+              blocked
+                ? 'text-red-400'
+                : showTypingIndicator
+                  ? 'text-orange-500'
+                  : selectedContact.online
+                    ? 'text-green-600'
+                    : textMuted
             }`}>
-              {showTypingIndicator
-                ? t('messages.typing')
-                : selectedContact.online
-                  ? t('messages.onlineNow')
-                  : formatLastSeen(contactLastSeen)
+              {blocked
+                ? t('messages.userBlocked')
+                : showTypingIndicator
+                  ? t('messages.typing')
+                  : isGroup
+                    ? t('messages.memberCount', { count: selectedContact.memberCount || 0 })
+                    : selectedContact.online
+                      ? t('messages.onlineNow')
+                      : formatLastSeen(contactLastSeen)
               }
             </span>
           </div>
@@ -108,33 +134,37 @@ export const ChatHeader: React.FC = () => {
             <Search className="w-4 h-4" />
           </button>
 
-          {/* Audio call */}
-          <button
-            onClick={() => startCall('audio')}
-            title={t('messages.audioCall')}
-            className={`w-9 h-9 rounded-full flex items-center justify-center transition-colors ${
-              darkMode ? 'hover:bg-gray-700 text-green-400' : 'hover:bg-green-50 text-green-600'
-            }`}
-          >
-            <Phone className="w-4 h-4" />
-          </button>
+          {/* Audio call (DM only) */}
+          {!isGroup && (
+            <button
+              onClick={() => startCall('audio')}
+              title={t('messages.audioCall')}
+              className={`w-9 h-9 rounded-full flex items-center justify-center transition-colors ${
+                darkMode ? 'hover:bg-gray-700 text-green-400' : 'hover:bg-green-50 text-green-600'
+              }`}
+            >
+              <Phone className="w-4 h-4" />
+            </button>
+          )}
 
-          {/* Video call */}
-          <button
-            onClick={() => startCall('video')}
-            title={t('messages.videoCall')}
-            className={`w-9 h-9 rounded-full flex items-center justify-center transition-colors ${
-              darkMode ? 'hover:bg-gray-700 text-blue-400' : 'hover:bg-blue-50 text-blue-600'
-            }`}
-          >
-            <Video className="w-4 h-4" />
-          </button>
+          {/* Video call (DM only) */}
+          {!isGroup && (
+            <button
+              onClick={() => startCall('video')}
+              title={t('messages.videoCall')}
+              className={`w-9 h-9 rounded-full flex items-center justify-center transition-colors ${
+                darkMode ? 'hover:bg-gray-700 text-blue-400' : 'hover:bg-blue-50 text-blue-600'
+              }`}
+            >
+              <Video className="w-4 h-4" />
+            </button>
+          )}
 
           {/* More menu */}
           <div className="relative" data-header-menu>
             <button
               onClick={(e) => { e.stopPropagation(); setShowHeaderMenu(!showHeaderMenu); }}
-              title={t('messages.moreOptions', 'مزيد من الخيارات')}
+              title={t('messages.moreOptions')}
               className={`w-9 h-9 rounded-full flex items-center justify-center ${
                 darkMode ? 'hover:bg-gray-700 text-gray-400' : 'hover:bg-gray-100 text-gray-500'
               }`}
@@ -152,27 +182,33 @@ export const ChatHeader: React.FC = () => {
                   }`}
                   onClick={() => setShowHeaderMenu(false)}
                 >
-                  {/* Audio call */}
+                  {/* Mute/Unmute */}
                   <button
-                    onClick={() => startCall('audio')}
+                    onClick={() => toggleMuteChat(groupId || selectedContactId || '', isGroup)}
                     className={`w-full flex items-center gap-2.5 px-4 py-2.5 text-sm transition-colors ${
-                      darkMode ? 'text-gray-200 hover:bg-gray-700' : 'text-gray-700 hover:bg-gray-50'
+                      muted
+                        ? (darkMode ? 'text-orange-400 hover:bg-gray-700' : 'text-orange-600 hover:bg-orange-50')
+                        : (darkMode ? 'text-gray-200 hover:bg-gray-700' : 'text-gray-700 hover:bg-gray-50')
                     }`}
                   >
-                    <Phone className="w-4 h-4 text-green-500" />
-                    {t('messages.audioCall', 'مكالمة صوتية')}
+                    {muted ? <Bell className="w-4 h-4" /> : <BellOff className="w-4 h-4" />}
+                    {muted ? t('messages.unmuteChat') : t('messages.muteChat')}
                   </button>
 
-                  {/* Video call */}
-                  <button
-                    onClick={() => startCall('video')}
-                    className={`w-full flex items-center gap-2.5 px-4 py-2.5 text-sm transition-colors ${
-                      darkMode ? 'text-gray-200 hover:bg-gray-700' : 'text-gray-700 hover:bg-gray-50'
-                    }`}
-                  >
-                    <Video className="w-4 h-4 text-blue-500" />
-                    {t('messages.videoCall', 'مكالمة فيديو')}
-                  </button>
+                  {/* Block/Unblock (DM only) */}
+                  {!isGroup && selectedContactId && (
+                    <button
+                      onClick={() => toggleBlockUser(selectedContactId)}
+                      className={`w-full flex items-center gap-2.5 px-4 py-2.5 text-sm transition-colors ${
+                        blocked
+                          ? (darkMode ? 'text-green-400 hover:bg-gray-700' : 'text-green-600 hover:bg-green-50')
+                          : (darkMode ? 'text-yellow-400 hover:bg-gray-700' : 'text-yellow-600 hover:bg-yellow-50')
+                      }`}
+                    >
+                      {blocked ? <Shield className="w-4 h-4" /> : <ShieldOff className="w-4 h-4" />}
+                      {blocked ? t('messages.unblockUser') : t('messages.blockUser')}
+                    </button>
+                  )}
 
                   {/* Search */}
                   <button
@@ -185,19 +221,21 @@ export const ChatHeader: React.FC = () => {
                     {t('messages.searchMessages')}
                   </button>
 
-                  {/* View profile */}
-                  <button
-                    onClick={() => { if (selectedContactId && selectedContactId !== myId) navigate(`/user/${selectedContactId}`); }}
-                    className={`w-full flex items-center gap-2.5 px-4 py-2.5 text-sm transition-colors ${
-                      darkMode ? 'text-gray-200 hover:bg-gray-700' : 'text-gray-700 hover:bg-gray-50'
-                    }`}
-                  >
-                    <Eye className="w-4 h-4" />
-                    {t('messages.viewProfile', 'عرض الملف الشخصي')}
-                  </button>
+                  {/* View profile (DM only) */}
+                  {!isGroup && (
+                    <button
+                      onClick={() => { if (selectedContactId && selectedContactId !== myId) navigate(`/user/${selectedContactId}`); }}
+                      className={`w-full flex items-center gap-2.5 px-4 py-2.5 text-sm transition-colors ${
+                        darkMode ? 'text-gray-200 hover:bg-gray-700' : 'text-gray-700 hover:bg-gray-50'
+                      }`}
+                    >
+                      <Eye className="w-4 h-4" />
+                      {t('messages.viewProfile')}
+                    </button>
+                  )}
 
-                  {/* Add friend */}
-                  {friendshipStatus !== 'accepted' && selectedContactId && (
+                  {/* Add friend (DM only) */}
+                  {!isGroup && friendshipStatus !== 'accepted' && selectedContactId && (
                     <button
                       onClick={sendFriendRequest}
                       disabled={sendingFriendRequest || friendshipStatus === 'pending'}
@@ -208,7 +246,7 @@ export const ChatHeader: React.FC = () => {
                       }`}
                     >
                       {sendingFriendRequest ? <RefreshCw className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />}
-                      {friendshipStatus === 'pending' ? t('messages.pendingRequest', 'قيد الانتظار') : t('messages.addFriend', 'إضافة صديق')}
+                      {friendshipStatus === 'pending' ? t('messages.pendingRequest') : t('messages.addFriend')}
                     </button>
                   )}
 
@@ -220,40 +258,21 @@ export const ChatHeader: React.FC = () => {
                     }`}
                   >
                     <RefreshCw className={`w-4 h-4 ${loadingMessages ? 'animate-spin' : ''}`} />
-                    {t('messages.refreshMessages', 'تحديث الرسائل')}
+                    {t('messages.refreshMessages')}
                   </button>
 
-                  {/* Contact info */}
+                  {/* Contact/Group info */}
                   <button
-                    onClick={() => setShowContactInfo(!showContactInfo)}
+                    onClick={() => {
+                      if (isGroup) setShowGroupInfo(true);
+                      else setShowContactInfo(!showContactInfo);
+                    }}
                     className={`w-full flex items-center gap-2.5 px-4 py-2.5 text-sm transition-colors ${
                       darkMode ? 'text-gray-200 hover:bg-gray-700' : 'text-gray-700 hover:bg-gray-50'
                     }`}
                   >
                     <Info className="w-4 h-4" />
-                    {t('messages.contactInfo', 'معلومات جهة الاتصال')}
-                  </button>
-
-                  {/* Starred Messages */}
-                  <button
-                    onClick={() => { setShowStarredPanel(true); setShowHeaderMenu(false); }}
-                    className={`w-full flex items-center gap-2.5 px-4 py-2.5 text-sm transition-colors ${
-                      darkMode ? 'text-gray-200 hover:bg-gray-700' : 'text-gray-700 hover:bg-gray-50'
-                    }`}
-                  >
-                    <Star className="w-4 h-4 text-orange-500" />
-                    {t('messages.starredMessages', 'الرسائل المميزة')}
-                  </button>
-
-                  {/* Chat Settings */}
-                  <button
-                    onClick={() => { setShowSettings(true); setShowHeaderMenu(false); }}
-                    className={`w-full flex items-center gap-2.5 px-4 py-2.5 text-sm transition-colors ${
-                      darkMode ? 'text-gray-200 hover:bg-gray-700' : 'text-gray-700 hover:bg-gray-50'
-                    }`}
-                  >
-                    <Settings className="w-4 h-4" />
-                    {t('messages.chatSettings', 'إعدادات المحادثة')}
+                    {isGroup ? t('messages.groupMembers') : t('messages.contactInfo')}
                   </button>
                 </motion.div>
               )}
@@ -264,11 +283,6 @@ export const ChatHeader: React.FC = () => {
 
       {/* Search bar */}
       <MessageSearch isOpen={showSearch} onClose={() => setShowSearch(false)} />
-
-      {/* Chat Settings Panel */}
-      {showSettings && (
-        <ChatSettingsPanelWrapper show={showSettings} onClose={() => setShowSettings(false)} />
-      )}
     </>
   );
 };

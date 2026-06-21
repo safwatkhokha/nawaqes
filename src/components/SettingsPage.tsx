@@ -360,7 +360,7 @@ export const SettingsPage: React.FC = () => {
                     <div className="text-right">
                       <p className={`text-sm font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>{t('settings.profile')}</p>
                       <p className={`text-[11px] ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                        {currentUser?.name} · {currentUser?.isVerified ? t('settings.verified') : t('settings.unverified')}
+                        {currentUser?.name} · {currentUser?.isVerified ? t('settings.verified') : t('settings.unverified')} · {currentUser?.email_verified ? '✉️ ' + t('emailVerification.badge') : '⚠️ ' + t('emailVerification.notVerified')}
                       </p>
                     </div>
                   </div>
@@ -410,6 +410,24 @@ export const SettingsPage: React.FC = () => {
                   </div>
                   <ChevronLeft className={`w-4 h-4 ${darkMode ? 'text-gray-500' : 'text-gray-400'}`} />
                 </button>
+                {/* Email Verification */}
+                {!currentUser?.email_verified && (
+                  <button
+                    onClick={() => navigate('/verify-email')}
+                    className={`w-full flex items-center justify-between px-5 py-4 transition-colors ${darkMode ? 'hover:bg-gray-700/50' : 'hover:bg-gray-50'}`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${darkMode ? 'bg-amber-900/30 text-amber-400' : 'bg-amber-50 text-amber-600'}`}>
+                        <CheckCircle className="w-4 h-4" />
+                      </div>
+                      <div className="text-right">
+                        <p className={`text-sm font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>{t('emailVerification.verifyNow')}</p>
+                        <p className={`text-[11px] ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{t('emailVerification.verifyDesc')}</p>
+                      </div>
+                    </div>
+                    <ChevronLeft className={`w-4 h-4 ${darkMode ? 'text-gray-500' : 'text-gray-400'}`} />
+                  </button>
+                )}
               </div>
             </SectionCard>
           </motion.div>

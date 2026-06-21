@@ -13,7 +13,6 @@ import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 import { useLanguage } from '../contexts/LanguageContext';
-import { formatRelativeTimeAr } from '../utils/time';
 import { interestCategories, interestGroups, getInterestsByGroup, type InterestGroup } from '../config/interests';
 
 type ProfileTab = 'posts' | 'ads' | 'about' | 'activity' | 'friends';
@@ -551,7 +550,7 @@ export const ProfilePage: React.FC = () => {
                       <span className="flex items-center gap-1"><Heart className="w-3 h-3" /> {post.likes}</span>
                       <span className="flex items-center gap-1"><MessageCircle className="w-3 h-3" /> {post.comments}</span>
                       <span className="flex items-center gap-1"><Eye className="w-3 h-3" /> {post.reachCount || 0}</span>
-                      <span className="mr-auto">{formatRelativeTimeAr(post.timestamp)}</span>
+                      <span className="mr-auto">{post.timestamp}</span>
                     </div>
                   </div>
                 ))}

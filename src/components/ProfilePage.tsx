@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAppContext } from '../contexts/AppContext';
 import { useAuth } from '../contexts/AuthContext';
 import { api } from '../services/api';
+import { EmailBadge } from './EmailVerification';
 import {
   ArrowRight, CheckCircle2, ShieldCheck, MapPin, Phone, Edit3, ShoppingBag,
   FileText, User as UserIcon, Calendar, Award, Camera, X, Image as ImageIcon,
@@ -271,6 +272,7 @@ export const ProfilePage: React.FC = () => {
               {t('profile.verified')}
             </div>
           )}
+          <EmailBadge emailVerified={currentUser.email_verified} />
         </div>
 
         {/* Info Items */}

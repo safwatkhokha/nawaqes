@@ -22,11 +22,6 @@ RUN npm prune --production --no-audit --no-fund
 
 RUN mkdir -p /data/uploads /data/uploads/videos /data/backups
 
-# Copy Firebase service account if present
-RUN if [ -f /app/upload/nawaqes-app-firebase-adminsdk-fbsvc-f3fb773f21.json ]; then \
-      cp /app/upload/nawaqes-app-firebase-adminsdk-fbsvc-f3fb773f21.json /data/firebase-service-account.json; \
-    fi
-
 RUN printf '#!/bin/sh\nset -e\nmkdir -p /data/uploads /data/uploads/videos /data/backups\n[ -f /data/.env ] && cp /data/.env /app/.env || cp /app/.env.example /app/.env 2>/dev/null || true\n[ ! -L /app/uploads ] && { [ -d /app/uploads ] && cp -rn /app/uploads/* /data/uploads/ 2>/dev/null || true; [ -d /app/uploads ] && rm -rf /app/uploads; ln -sf /data/uploads /app/uploads; }\n[ ! -L /app/data ] && { [ -d /app/data ] && rm -rf /app/data; ln -sf /data /app/data; }\n[ ! -L /app/backups ] && { [ -d /app/backups ] && rm -rf /app/backups; ln -sf /data/backups /app/backups; }\nexec "$@"\n' > /app/entrypoint.sh \
     && chmod +x /app/entrypoint.sh
 
