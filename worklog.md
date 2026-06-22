@@ -88,3 +88,79 @@ Stage Summary:
 - commit: f0f39c7
 - جميع أخطاء TypeScript تم حلها (9 → 0)
 - جميع المكونات الجديدة تعمل: EmailVerification, ScheduledStreams, chat module (15 components), FCM, Smart Wallet improvements
+
+---
+Task ID: 11
+Agent: Super Z (main)
+Task: فحص المحفظة الذكية بالكامل ومعالجة جميع المشاكل
+
+Work Log:
+- فحصت src/routes/wallet.ts (399 سطر) و src/components/WalletPage.tsx (1741 سطر)
+- فحصت src/services/api.ts (API client) و src/database/index.ts (DB schema)
+- فحصت src/i18n/ar.json و en.json للترجمات
+
+اكتشفت 13 مشكلة:
+
+1. ❌ POST /api/wallet/savings-goals/:id/add — لا يتحقق من رصيد المحفظة
+2. ❌ POST /api/wallet/savings-goals/:id/add — لا يخصم من المحفظة
+3. ❌ POST /api/wallet/savings-goals/:id/add — لا ينشئ معاملة (transaction)
+4. ❌ POST /api/wallet/savings-goals/:id/add — لا يبث wallet:updated
+5. ❌ لا يوجد endpoint لسحب المبلغ من الهدف للمحفظة
+6. ❌ DELETE /api/wallet/savings-goals/:id — لا يسترد الرصيد المتبقي للمحفظة
+7. ❌ POST /api/wallet/withdraw — لا يتحقق من accountDetails
+8. ❌ WalletPage handleAddToGoal — لا يتحقق من الرصيد قبل الإرسال
+9. ❌ WalletPage handleAddToGoal — لا يحدّث الرصيد بعد النجاح
+10. ❌ WalletPage — لا يوجد زر "سحب من الهدف"
+11. ❌ WalletPage — أزرار +50/+100/+200 لا تُعطّل عند عدم وجود رصيد كافٍ
+12. ❌ txFilter union — لا يشمل savings_debit / savings_refund
+13. ❌ isCreditTx/isDebitTx/getTxLabel — لا تتعامل مع الأنواع الجديدة
+
+الإصلاحات المطبقة على src/routes/wallet.ts:
+- POST /savings-goals/:id/add — الآن:
+  • يتحقق من رصيد المحفظة (wallet_balance >= amount)
+  • يخصم من المحفظة
+  • ينشئ معاملة 'savings_debit'
+  • يرسل إشعار
+  • يبث wallet:updated عبر WebSocket
+- POST /savings-goals/:id/withdraw (جديد) — ينقل المال من الهدف للمحفظة:
+  • يتحقق من goal.current_amount >= amount
+  • يخصم من الهدف
+  • يضيف للمحفظة
+  • ينشئ معاملة 'savings_refund'
+  • إشعار + broadcast
+- DELETE /savings-goals/:id — الآن:
+  • يسترد goal.current_amount للمحفظة
+  • ينشئ معاملة 'savings_refund'
+  • إشعار + broadcast قبل الحذف
+- POST /withdraw — إضافة validation لـ accountDetails
+
+الإصلاحات على src/components/WalletPage.tsx:
+- handleAddToGoal: فحص الرصيد + رسالة خطأ + تحديث الرصيد
+- handleWithdrawFromGoal (دالة جديدة)
+- txFilter: إضافة 'savings_debit' | 'savings_refund'
+- isCreditTx: إضافة 'savings_refund'
+- isDebitTx: إضافة 'savings_debit'
+- getTxLabel: إضافة حالات للنوعين الجديدين
+- handleSubmitWithdraw: فحص accountDetails
+- UI: زر "سحب من الهدف" لكل هدف يحتوي على رصيد
+- UI: أزرار +50/+100/+200 تُعطّل عند عدم كفاية الرصيد
+- UI: حذف toast.success المكرر (الـ handler نفسه يعرض toast)
+
+الإصلاحات على src/services/api.ts:
+- إضافة withdrawFromSavingsGoal(id, amount)
+
+الإصلاحات على src/i18n/ar.json و en.json:
+- إضافة goalAmountAdded, goalAmountWithdrawn, withdrawFromGoal,
+  addToGoal, accountDetailsRequired, savingsDebit, savingsRefund
+
+مشكلة في النشر:
+- كان skills/ مضاف لـ git ويحتوي على ملفات كبيرة (HTML > 10MB)
+- استخدمت git filter-branch لإزالته من history بالكامل
+- force push ناجح لـ HF Space
+
+Stage Summary:
+- النشر: HF Space (RUNNING, HTTP 200 على /api/health)
+- commit: e5ebd77 (history نظيف بدون skills/)
+- bundle: index-CyIQsdNm.js (يحتوي على savings_debit, savings_refund,
+  withdrawFromSavingsGoal ✓)
+- API endpoint /api/wallet/savings-goals/:id/withdraw يستجيب ✓
