@@ -1172,6 +1172,190 @@ router.post('/friends/unfriend/:friendshipId', authMiddleware, (req: Request, re
   }
 });
 
+// POST /api/friends/unfriend-by-user/:userId - Remove friendship by friend's user ID (not friendship ID)
+router.post('/friends/unfriend-by-user/:userId', authMiddleware, (req: Request, res: Response) => {
+  try {
+    const payload = (req as any).user as JwtPayload;
+    const { userId } = req.params;
+    if (!userId) { res.status(400).json({ error: 'معرف المستخدم مطلوب' }); return; }
+
+    const result = db.prepare(
+      "DELETE FROM friendships WHERE status = 'accepted' AND ((requester_id = ? AND addressee_id = ?) OR (requester_id = ? AND addressee_id = ?))"
+    ).run(payload.userId, userId, userId, payload.userId);
+    if (result.changes === 0) {
+      res.status(404).json({ error: 'الصداقة غير موجودة' });
+      return;
+    }
+    res.json({ message: 'تم إلغاء الصداقة' });
+  } catch (err: any) {
+    res.status(500).json({ error: 'فشل إلغاء الصداقة', details: err.message });
+  }
+});
+
+// POST /api/friends/label/:friendshipId - Set friend label/category
+router.post('/friends/label/:friendshipId', authMiddleware, (req: Request, res: Response) => {
+  try {
+    const payload = (req as any).user as JwtPayload;
+    const { label } = req.body;
+    const validLabels = ['general', 'close', 'family', 'work'];
+    if (!label || !validLabels.includes(label)) {
+      res.status(400).json({ error: 'التصنيف غير صالح. الاستخدام: general, close, family, work' });
+      return;
+    }
+    const result = db.prepare(
+      "UPDATE friendships SET friend_label = ? WHERE id = ? AND status = 'accepted' AND (requester_id = ? OR addressee_id = ?)"
+    ).run(label, req.params.friendshipId, payload.userId, payload.userId);
+    if (result.changes === 0) {
+      res.status(404).json({ error: 'الصداقة غير موجودة' });
+      return;
+    }
+    res.json({ message: 'تم تحديث تصنيف الصديق' });
+  } catch (err: any) {
+    res.status(500).json({ error: 'فشل تحديث التصنيف', details: err.message });
+  }
+});
+
+// POST /api/friends/label-by-user/:userId - Set friend label by user ID
+router.post('/friends/label-by-user/:userId', authMiddleware, (req: Request, res: Response) => {
+  try {
+    const payload = (req as any).user as JwtPayload;
+    const { userId } = req.params;
+    const { label } = req.body;
+    const validLabels = ['general', 'close', 'family', 'work'];
+    if (!label || !validLabels.includes(label)) {
+      res.status(400).json({ error: 'التصنيف غير صالح' });
+      return;
+    }
+    const result = db.prepare(
+      "UPDATE friendships SET friend_label = ? WHERE status = 'accepted' AND ((requester_id = ? AND addressee_id = ?) OR (requester_id = ? AND addressee_id = ?))"
+    ).run(label, payload.userId, userId, userId, payload.userId);
+    if (result.changes === 0) {
+      res.status(404).json({ error: 'الصداقة غير موجودة' });
+      return;
+    }
+    res.json({ message: 'تم تحديث تصنيف الصديق' });
+  } catch (err: any) {
+    res.status(500).json({ error: 'فشل تحديث التصنيف', details: err.message });
+  }
+});
+
+// GET /api/friends/mutual/:userId - Get mutual friends with a specific user
+router.get('/friends/mutual/:userId', authMiddleware, (req: Request, res: Response) => {
+  try {
+    const payload = (req as any).user as JwtPayload;
+    const { userId } = req.params;
+    if (!userId) { res.status(400).json({ error: 'معرف المستخدم مطلوب' }); return; }
+
+    // Get my friends
+    const myFriends = db.prepare(`
+      SELECT CASE WHEN requester_id = ? THEN addressee_id ELSE requester_id END as friend_id
+      FROM friendships WHERE (requester_id = ? OR addressee_id = ?) AND status = 'accepted'
+    `).all(payload.userId, payload.userId, payload.userId).map((r: any) => r.friend_id);
+
+    // Get their friends
+    const theirFriends = db.prepare(`
+      SELECT CASE WHEN requester_id = ? THEN addressee_id ELSE requester_id END as friend_id
+      FROM friendships WHERE (requester_id = ? OR addressee_id = ?) AND status = 'accepted'
+    `).all(userId, userId, userId).map((r: any) => r.friend_id);
+
+    // Find intersection
+    const mutualIds = myFriends.filter((id: string) => theirFriends.includes(id) && id !== payload.userId);
+
+    // Get user details for mutual friends
+    const mutualFriends = mutualIds.map((fid: string) => {
+      const user = db.prepare('SELECT id, name, avatar, avatar_base64, is_verified, trust_score, location FROM users WHERE id = ?').get(fid) as any;
+      if (!user) return null;
+      return {
+        id: user.id,
+        name: user.name,
+        avatar: user.avatar_base64 || user.avatar || getDefaultAvatar(user.id, user.gender),
+        isVerified: !!user.is_verified,
+        trustScore: user.trust_score || 50,
+        location: user.location || '',
+      };
+    }).filter(Boolean);
+
+    res.json({ mutualFriends, count: mutualFriends.length });
+  } catch (err: any) {
+    res.status(500).json({ error: 'فشل جلب الأصدقاء المشتركين', details: err.message });
+  }
+});
+
+// ─── Block / Unblock Users ──────────────────────────────────────────
+// POST /api/block/:userId - Block a user
+router.post('/block/:userId', authMiddleware, (req: Request, res: Response) => {
+  try {
+    const payload = (req as any).user as JwtPayload;
+    const { userId } = req.params;
+    const { reason } = req.body || {};
+    if (!userId) { res.status(400).json({ error: 'معرف المستخدم مطلوب' }); return; }
+    if (userId === payload.userId) { res.status(400).json({ error: 'لا يمكنك حظر نفسك' }); return; }
+
+    // Check target user exists
+    const target = db.prepare('SELECT id FROM users WHERE id = ?').get(userId) as any;
+    if (!target) { res.status(404).json({ error: 'المستخدم غير موجود' }); return; }
+
+    // Insert block
+    db.prepare('INSERT OR IGNORE INTO blocked_users (blocker_id, blocked_id, reason) VALUES (?, ?, ?)')
+      .run(payload.userId, userId, reason || '');
+
+    // Also remove any existing friendship
+    db.prepare("DELETE FROM friendships WHERE (requester_id = ? AND addressee_id = ?) OR (requester_id = ? AND addressee_id = ?)")
+      .run(payload.userId, userId, userId, payload.userId);
+
+    res.json({ message: 'تم حظر المستخدم بنجاح' });
+  } catch (err: any) {
+    res.status(500).json({ error: 'فشل حظر المستخدم', details: err.message });
+  }
+});
+
+// POST /api/unblock/:userId - Unblock a user
+router.post('/unblock/:userId', authMiddleware, (req: Request, res: Response) => {
+  try {
+    const payload = (req as any).user as JwtPayload;
+    const { userId } = req.params;
+    if (!userId) { res.status(400).json({ error: 'معرف المستخدم مطلوب' }); return; }
+
+    const result = db.prepare('DELETE FROM blocked_users WHERE blocker_id = ? AND blocked_id = ?')
+      .run(payload.userId, userId);
+    if (result.changes === 0) {
+      res.status(404).json({ error: 'الحظر غير موجود' });
+      return;
+    }
+    res.json({ message: 'تم إلغاء الحظر' });
+  } catch (err: any) {
+    res.status(500).json({ error: 'فشل إلغاء الحظر', details: err.message });
+  }
+});
+
+// GET /api/blocked - Get list of blocked users
+router.get('/blocked', authMiddleware, (req: Request, res: Response) => {
+  try {
+    const payload = (req as any).user as JwtPayload;
+    const blocked = db.prepare(`
+      SELECT b.id as block_id, b.reason, b.created_at as blocked_at,
+        u.id as user_id, u.name, u.avatar, u.avatar_base64
+      FROM blocked_users b
+      JOIN users u ON u.id = b.blocked_id
+      WHERE b.blocker_id = ?
+      ORDER BY b.created_at DESC
+    `).all(payload.userId);
+
+    res.json(blocked.map((b: any) => ({
+      blockId: b.block_id,
+      reason: b.reason,
+      blockedAt: b.blocked_at,
+      user: {
+        id: b.user_id,
+        name: b.name,
+        avatar: b.avatar_base64 || b.avatar || getDefaultAvatar(b.user_id, b.gender),
+      },
+    })));
+  } catch (err: any) {
+    res.status(500).json({ error: 'فشل جلب قائمة المحظورين', details: err.message });
+  }
+});
+
 // GET /api/friends/status/:userId - Check friendship status with a specific user
 router.get('/friends/status/:userId', authMiddleware, (req: Request, res: Response) => {
   try {

@@ -673,6 +673,27 @@ try {
   db.prepare("ALTER TABLE friendships ADD COLUMN created_at TEXT DEFAULT (datetime('now'))").run();
 } catch { /* column already exists */ }
 
+// Add friend_label column to friendships for categorizing friends
+try {
+  db.prepare("ALTER TABLE friendships ADD COLUMN friend_label TEXT DEFAULT 'general'").run();
+} catch { /* column already exists */ }
+
+// ─── Blocked Users Table ─────────────────────────────────────────────
+try {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS blocked_users (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      blocker_id TEXT NOT NULL REFERENCES users(id),
+      blocked_id TEXT NOT NULL REFERENCES users(id),
+      reason TEXT DEFAULT '',
+      created_at TEXT DEFAULT (datetime('now')),
+      UNIQUE(blocker_id, blocked_id)
+    )
+  `);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_blocked_blocker ON blocked_users(blocker_id)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_blocked_blocked ON blocked_users(blocked_id)`);
+} catch { /* table already exists */ }
+
 // Fix existing posts that have promotion_status='pending' but no promotion_tier
 // (i.e., they were created before the schema fix and never actually requested promotion)
 db.prepare("UPDATE posts SET promotion_status = NULL WHERE promotion_status = 'pending' AND promotion_tier IS NULL").run();

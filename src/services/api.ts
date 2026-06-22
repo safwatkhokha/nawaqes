@@ -350,10 +350,6 @@ class ApiClient {
     });
   }
 
-  async getBlockedUsers() {
-    return this.request<any[]>('/chat/blocks');
-  }
-
   // ─── Wallet ────────────────────────────────────────────────────────
   async getWalletBalance() {
     return this.request<{ balance: number }>('/wallet/balance');
@@ -445,7 +441,14 @@ class ApiClient {
   async rejectFriendRequest(id: string) { return this.request<{ message: string }>(`/friends/reject/${id}`, { method: 'POST' }); }
   async cancelSentFriendRequest(id: string) { return this.request<{ message: string }>(`/friends/cancel/${id}`, { method: 'POST' }); }
   async unfriend(friendshipId: string) { return this.request<{ message: string }>(`/friends/unfriend/${friendshipId}`, { method: 'POST' }); }
+  async unfriendByUserId(userId: string) { return this.request<{ message: string }>(`/friends/unfriend-by-user/${userId}`, { method: 'POST' }); }
+  async setFriendLabel(userId: string, label: string) { return this.request<{ message: string }>(`/friends/label-by-user/${userId}`, { method: 'POST', body: JSON.stringify({ label }) }); }
+  async getMutualFriends(userId: string) { return this.request<{ mutualFriends: any[]; count: number }>(`/friends/mutual/${userId}`); }
   async getFriendshipStatus(userId: string) { return this.request<{ friendshipStatus: string | null; lastSeenAt?: string | null }>(`/friends/status/${userId}`); }
+  // Block / Unblock
+  async blockUser(userId: string, reason?: string) { return this.request<{ message: string }>(`/block/${userId}`, { method: 'POST', body: JSON.stringify({ reason }) }); }
+  async unblockUser(userId: string) { return this.request<{ message: string }>(`/unblock/${userId}`, { method: 'POST' }); }
+  async getBlockedUsers() { return this.request<any[]>('/blocked'); }
   async notifyFriendsLivestream(streamTitle: string) { return this.request<{ success: boolean; notifiedFriends: number }>('/livestream/notify-friends', { method: 'POST', body: JSON.stringify({ streamTitle }) }); }
   async getActiveLivestreams() { return this.request<any[]>('/livestream/active'); }
   async searchUsers(query: string) { return this.request<any[]>(`/users/search?q=${encodeURIComponent(query)}`); }
