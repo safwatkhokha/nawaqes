@@ -21,6 +21,12 @@ ENV GENERATE_SOURCEMAP=false
 RUN sed -i 's/--sourcemap//g' package.json
 RUN npm run build
 
+# Build the standalone pre-startup restore script
+# This MUST run before the server starts, so the db module's
+# schema initialization (which runs on import) doesn't wipe the
+# restored DB with a fresh seed.
+RUN npx esbuild src/database/restore-standalone.ts --bundle --platform=node --format=esm --packages=external --outfile=dist/restore.mjs
+
 RUN npm prune --production --no-audit --no-fund
 
 RUN mkdir -p /data/uploads /data/uploads/videos /data/backups
@@ -41,4 +47,6 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
   CMD node -e "fetch('http://localhost:7860/api/health').then(r=>r.ok?process.exit(0):process.exit(1)).catch(()=>process.exit(1))"
 
 ENTRYPOINT ["/app/entrypoint.sh"]
-CMD ["node", "dist/server.mjs"]
+# Run restore BEFORE the server starts (see restore-standalone.ts for why).
+# If restore fails, continue starting the server (it'll use whatever DB exists).
+CMD ["sh", "-c", "node dist/restore.mjs; node dist/server.mjs"]

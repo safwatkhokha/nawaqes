@@ -99,7 +99,11 @@ import smartReachRoutes from './routes/smartReach.js';
 import aiRoutes from './routes/ai.js';
 
 async function startServer() {
-  // 🔧 CRITICAL: Auto-restore database BEFORE anything else
+  // 🔧 Safety net: also try to restore from HF backup if needed.
+  // The PRIMARY restore happens via `dist/restore.mjs` BEFORE this
+  // server starts (see Dockerfile CMD). This call here is a fallback
+  // for dev mode / non-Docker environments. In production it will
+  // typically skip because the DB will already exist and be fresh.
   try {
     const { autoRestoreDB } = await import('./database/auto-restore.js');
     await autoRestoreDB();
