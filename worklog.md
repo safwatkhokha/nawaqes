@@ -274,3 +274,67 @@ Stage Summary:
 - commit: e516565
 - التطبيق الآن: شحن فقط، لا يوجد سحب للأموال
 - المستخدمون يرون شارة واضحة تشرح السياسة الجديدة
+
+---
+Task ID: 14
+Agent: Super Z (main)
+Task: حل جذري لمشكلة حذف المستخدمين بعد كل تحديث
+
+Work Log:
+- فحصت runtime logs بدقة واكتشفت السبب الجذري الحقيقي:
+  تسلسل الإقلاع القديم:
+  1. `import db from './database/index.js'` → ينشئ /data/nawaqes.db fresh
+  2. Schema init: CREATE TABLE IF NOT EXISTS
+  3. **Seeding**: SELECT COUNT(*) FROM users = 0 → يُنشئ admin/owner/أخبار
+  4. **بعد ذلك**: startServer() → autoRestoreDB() → يرى DB fresh → يتخطى!
+
+- النتيجة: في كل rebuild، الـ DB كان يبدأ fresh (admin + owner فقط)
+  وrestore لم يكن يعمل إطلاقاً رغم وجود الـ backups.
+
+الحل الجذري:
+
+1. أنشأت src/database/restore-standalone.ts:
+   - سكربت standalone بدون أي imports من db module
+   - يحمّل آخر backup من HF Datasets
+   - يفك الضغط ويعيد لـ /data/nawaqes.db
+   - يخرج بـ exit code 0 دائماً (لا يحجب server startup)
+
+2. Dockerfile:
+   - بناء restore.mjs كـ bundle منفصل
+   - CMD الآن: `node dist/restore.mjs; node dist/server.mjs`
+   - الـ restore يعمل FIRST فيعيد البيانات
+   - عندما يبدأ server.ts ويستورد db module:
+     • CREATE TABLE IF NOT EXISTS (آمن — لا يحذف)
+     • SELECT COUNT(*) FROM users = > 0 → يتخطى seeding!
+   - النتيجة: server يبدأ بالـ DB المُسترجع (كل المستخدمين والمنشورات)
+
+3. src/server.ts:
+   - autoRestoreDB() القديم أصبح safety net للـ dev mode فقط
+   - في production، الـ restore الأساسي يحدث في dist/restore.mjs
+
+4. رفعت 'fresh DB' threshold من 1 ساعة إلى 6 ساعات
+   (HF containers قد تنام وتستيقظ، 6 ساعات تتجنب restore غير ضروري)
+
+النتائج بعد النشر (من runtime logs الجديد):
+```
+[RESTORE] Checking for database backup...
+[RESTORE] DB file does not exist or is empty — must restore from backup
+[RESTORE] Found 10 backups. Latest: startup_2026-06-22T21-36-02.db.gz
+[RESTORE] Downloading...
+[RESTORE] ✅ Database restored! Size: 815104 bytes
+[RESTORE] Done.
+[DB] Database path: /data/nawaqes.db
+[DB] Updated market trends from real data: 0 trends   ← لم يُعد seeding!
+[DB] ✅ Admin password reset to default (Admin@2024)   ← مجرد إعادة كلمة مرور
+```
+
+- ❌ لم يعد يظهر: [DB] Admin account created / Database seeded with admin user
+- ✅ المستخدمون والمنشورات محفوظة عبر الـ rebuilds
+- ✅ admin@nawaqes.com / Admin@2024 يعمل (تأكدت بـ login API)
+- ✅ HF Space: RUNNING, HTTP 200 على /api/health
+
+Stage Summary:
+- النشر: HF Space (RUNNING)
+- commit: bca3f7d
+- الحل جذري: الـ restore يعمل BEFORE db module import
+- الآن عند أي rebuild مستقبلي: البيانات تُسترجع تلقائياً من HF Datasets
