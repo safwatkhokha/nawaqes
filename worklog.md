@@ -164,3 +164,62 @@ Stage Summary:
 - bundle: index-CyIQsdNm.js (يحتوي على savings_debit, savings_refund,
   withdrawFromSavingsGoal ✓)
 - API endpoint /api/wallet/savings-goals/:id/withdraw يستجيب ✓
+
+---
+Task ID: 12
+Agent: Super Z (main)
+Task: إصلاح مشكلة حذف المستخدمين عند كل تحديث للسيرفر
+
+Work Log:
+- فحصت runtime logs على HF Space واكتشفت السبب الجذري:
+  [BACKUP] Failed: Command failed: sqlite3 "/data/nawaqes.db" ".backup '/data/backups/temp_*.db'"
+- نظام النسخ الاحتياطي كان يستدعي `sqlite3` CLI command، لكن صورة
+  Hugging Face Docker (node:20-slim) لا تحتوي على sqlite3.
+- النتيجة: النسخ الاحتياطية فشلت بصمت لأكثر من 3 أيام!
+- آخر نسخة احتياطية ناجحة كانت 2026-06-19 — أي مستخدم سُجِّل بعد
+  هذا التاريخ ضاع عند إعادة بناء الحاوية.
+- إضافة: HF free tier لا يدعم persistent storage، فـ /data يُمحى
+  بالكامل عند كل rebuild.
+
+الإصلاحات المطبقة:
+
+1. src/database/backup-system.ts (إعادة كتابة كاملة):
+   • استبدلت sqlite3 CLI بـ better-sqlite3 native API (.backup())
+   • better-sqlite3 مثبت كـ Node module — لا حاجة لأي system dependency
+   • أضفت fallback: نسخ ملف بسيط في حال فشل API
+   • قللت الفترة من 10 دقائق إلى 5 دقائق
+   • إضافة startup backup بعد 30 ثانية (بدلاً من 15)
+
+2. src/database/auto-restore.ts (إعادة كتابة كاملة):
+   • يتخطى restore فقط إذا كان DB موجود وfresh (أقل من ساعة)
+   • يحمّل آخر backup إذا كان DB المحلي أقدم
+   • يحتفظ بنسخة .old قبل الاستبدال
+   • رسائل خطأ أوضح مع تحذيرات صريحة عن فقدان البيانات
+   • timeout أطول (180 ثانية بدلاً من 120)
+
+3. src/routes/auth.ts:
+   • أضفت async للـ /register handler
+   • أضفت createEventBackup('user_registered') بعد كل تسجيل مستخدم
+   • هذا يضمن أن المستخدم الجديد يُحفظ في HF backup خلال 60 ثانية
+
+4. Dockerfile:
+   • أضفت sqlite3 CLI (احتياطياً)
+   • أضفت python3-pip
+   • أضفت pip install huggingface_hub (احتياطياً)
+   • أضفت gzip بشكل صريح
+
+النتائج بعد النشر:
+- HF Space: RUNNING ✓
+- /api/health: HTTP 200 ✓
+- runtime logs تُظهر:
+  [BACKUP] ✅ Local backup created: startup_2026-06-22T20-03-52.db.gz
+  [BACKUP] ✅ Uploaded to HF: backups/2026-06-22/startup_2026-06-22T20-03-52.db.gz
+- HF Dataset يحتوي على backup جديد (19,805 bytes — أكبر من القديم 17,479)
+- النسخ الاحتياطية تعمل الآن كل 5 دقائق + يومياً + عند كل تسجيل مستخدم
+
+Stage Summary:
+- النشر: HF Space (RUNNING)
+- commit: ced7a38
+- آخر backup ناجح: 2026-06-22T20:03:52Z
+- الآن عند أي rebuild: الـ auto-restore سيحمّل آخر backup ويعيد كل البيانات
+- المستخدمون الجدد يُحفظون في الـ backup خلال 60 ثانية من التسجيل
