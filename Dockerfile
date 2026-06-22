@@ -1,8 +1,11 @@
 FROM node:20-slim
 WORKDIR /app
 
+# Install: openssl (for bcrypt), python3 + pip (for huggingface_hub backup uploads),
+# make + g++ (for native modules like better-sqlite3), sqlite3 (for DB maintenance if needed)
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends openssl python3 make g++ \
+    && apt-get install -y --no-install-recommends openssl python3 python3-pip make g++ sqlite3 gzip \
+    && pip3 install --no-cache-dir --break-system-packages huggingface_hub \
     && rm -rf /var/lib/apt/lists/*
 
 # Higher memory limit (HF free tier has 16GB)

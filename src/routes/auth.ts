@@ -35,7 +35,7 @@ function parseUser(row: any) {
 }
 
 // POST /api/auth/register
-router.post('/register', (req: Request, res: Response) => {
+router.post('/register', async (req: Request, res: Response) => {
   try {
     const { name, email, password, phone, interests, gender, dateOfBirth } = req.body;
     if (!name || !email || !password) {
@@ -124,6 +124,13 @@ router.post('/register', (req: Request, res: Response) => {
 
     const user = db.prepare('SELECT * FROM users WHERE email = ?').get(normalizedEmail) as any;
     const token = generateToken({ userId: user.id, email: user.email, isAdmin: !!user.is_admin });
+
+    // ─── Trigger an event backup so new users are saved to HF Datasets ───
+    // This prevents user loss if the container is rebuilt before the next periodic backup
+    try {
+      const { createEventBackup } = await import('../database/backup-system.js');
+      createEventBackup('user_registered');
+    } catch {}
 
     res.status(201).json({ user: parseUser(user), token });
   } catch (err: any) {
