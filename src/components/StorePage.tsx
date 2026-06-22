@@ -8,7 +8,6 @@ import { Store as StoreIcon, MapPin, Phone, MessageCircle, Star, Megaphone, Zap,
 import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'sonner';
 import { Store, StorePromotionRequest } from '../types';
-import { formatRelativeTimeAr } from '../utils/time';
 
 const STORE_CATEGORIES = [
   { id: 'phones', nameKey: 'categories.phones' },
@@ -657,19 +656,32 @@ export const StorePage: React.FC = () => {
                           </span>
                         )}
                         <span className={`text-[11px] ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
-                          {formatRelativeTimeAr(post.timestamp)}
+                          {post.timestamp}
                         </span>
                       </div>
                       <p className={`text-sm mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
                         {post.content}
                       </p>
-                      {post.image && (
-                        <img
-                          src={post.image}
-                          alt=""
-                          className="w-full h-48 object-cover rounded-xl mb-2"
-                        />
-                      )}
+                      {post.image && (() => {
+                        let imgs: string[] = [];
+                        try { const p = JSON.parse(post.image); imgs = Array.isArray(p) ? p : [post.image]; } catch { imgs = [post.image]; }
+                        if (imgs.length === 0) return null;
+                        return (
+                          <div className="relative mb-2">
+                            <img
+                              src={imgs[0]}
+                              alt=""
+                              className="w-full h-48 object-cover rounded-xl"
+                              loading="lazy"
+                            />
+                            {imgs.length > 1 && (
+                              <span className="absolute top-2 right-2 bg-black/60 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
+                                +{imgs.length - 1}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })()}
                       {post.price && (
                         <div className="flex items-center gap-2">
                           <span className={`text-lg font-black ${darkMode ? 'text-orange-400' : 'text-orange-600'}`}>

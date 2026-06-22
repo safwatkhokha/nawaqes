@@ -260,11 +260,11 @@ export const PromotionPackagesPage: React.FC = () => {
                       <h3 className={`font-black text-base ${darkMode ? 'text-white' : 'text-gray-900'}`}>
                         {pkg.name}
                       </h3>
-                      {getTargetingIcon(pkg.targeting)}
+                      {getTargetingIcon(pkg.targeting || 'all')}
                       <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-md ${
                         darkMode ? 'bg-gray-700 text-gray-300' : 'bg-gray-100 text-gray-600'
                       }`}>
-                        {getTargetingLabel(pkg.targeting)}
+                        {getTargetingLabel(pkg.targeting || 'all')}
                       </span>
                     </div>
 
@@ -399,7 +399,7 @@ export const PromotionPackagesPage: React.FC = () => {
                                     </span>
                                     <div className="flex items-center gap-2">
                                       <span className={`text-[9px] ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                                        ~{tier.estimatedReach.toLocaleString()} {t('promotionPackagesPage.reach', 'وصول')}
+                                        ~{(tier.estimatedReach || 0).toLocaleString()} {t('promotionPackagesPage.reach', 'وصول')}
                                       </span>
                                       <span className={`text-[10px] font-black ${darkMode ? 'text-orange-400' : 'text-orange-600'}`}>
                                         {tier.price} {t('common.egp', 'ج.م')}

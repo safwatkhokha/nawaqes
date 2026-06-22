@@ -12,11 +12,12 @@ import { useWebSocket, disconnectWebSocket, connectWebSocket } from '../hooks/us
 
 export interface Transaction {
   id: string;
-  type: 'deposit' | 'charge_request' | 'promotion_debit' | 'promotion_refund';
+  type: 'deposit' | 'charge_request' | 'promotion_debit' | 'promotion_refund' | 'admin_deposit' | 'admin_withdrawal' | 'withdrawal' | 'gift_sent' | 'gift_received';
   amount: number;
   method: string;
   timestamp: string;
-  status: 'completed' | 'pending' | 'approved' | 'rejected';
+  status: 'completed' | 'pending' | 'approved' | 'rejected' | 'failed';
+  referenceId?: string;
 }
 
 // ─── API Data Mapper (snake_case → camelCase) ──────────────────────────
@@ -297,12 +298,40 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     window.dispatchEvent(new CustomEvent('ws:call-signal', { detail: data }));
   }, []);
 
+  const handleWSChatMessageEdited = useCallback((data: any) => {
+    // Dispatch a custom event for message edited
+    window.dispatchEvent(new CustomEvent('ws:chat:message-edited', { detail: data }));
+  }, []);
+
+  const handleWSChatMessageDeleted = useCallback((data: any) => {
+    // Dispatch a custom event for message deleted for everyone
+    window.dispatchEvent(new CustomEvent('ws:chat:message-deleted', { detail: data }));
+  }, []);
+
+  const handleWSChatGroupCreated = useCallback((data: any) => {
+    // Dispatch a custom event for group created
+    window.dispatchEvent(new CustomEvent('ws:chat:group-created', { detail: data }));
+  }, []);
+
+  const handleWSChatGroupDeleted = useCallback((data: any) => {
+    // Dispatch a custom event for group deleted
+    window.dispatchEvent(new CustomEvent('ws:chat:group-deleted', { detail: data }));
+  }, []);
+
   // ─── New WebSocket handlers for post/story real-time updates ─────
   const handleWSPostCreated = useCallback((data: any) => {
     const newPost = mapApiPost(data);
     setPosts(prev => {
-      // Avoid duplicates
+      // Avoid duplicates by ID
       if (prev.some(p => p.id === newPost.id)) return prev;
+      // Also avoid content duplicates within 5 seconds (local optimistic + WS)
+      const isContentDup = prev.some(p =>
+        p.id !== newPost.id &&
+        p.author?.id === newPost.author?.id &&
+        p.content === newPost.content &&
+        Math.abs(new Date(p.timestamp).getTime() - new Date(newPost.timestamp).getTime()) < 5000
+      );
+      if (isContentDup) return prev;
       return [newPost, ...prev];
     });
   }, []);
@@ -362,6 +391,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     onChatTyping: handleWSChatTyping,
     onChatRead: handleWSChatRead,
     onCallSignal: handleWSCallSignal,
+    onChatMessageEdited: handleWSChatMessageEdited,
+    onChatMessageDeleted: handleWSChatMessageDeleted,
+    onChatGroupCreated: handleWSChatGroupCreated,
+    onChatGroupDeleted: handleWSChatGroupDeleted,
     onPostCreated: handleWSPostCreated,
     onPostDeleted: handleWSPostDeleted,
     onPostCommented: handleWSPostCommented,
@@ -506,14 +539,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       })) : [];
       setNotifications(mappedNotifs);
       // Map transactions from snake_case API format
-      const mappedTxns = Array.isArray(txns) ? (txns as any[]).map((t: any) => ({
+      // Handle both old format (array) and new format ({ transactions, total })
+      const txnsArray: any[] = Array.isArray(txns) ? txns : ((txns as any)?.transactions || []);
+      const mappedTxns = txnsArray.map((t: any) => ({
         id: t.id,
         type: t.type,
         amount: t.amount,
         method: t.method,
         timestamp: t.created_at || t.timestamp || '',
         status: t.status,
-      })) : [];
+        referenceId: t.reference_id || t.referenceId || undefined,
+      }));
       setTransactions(mappedTxns);
       // Map friend requests
       const mappedFriendReqs = Array.isArray(friends) ? (friends as any[]).map((r: any) => ({
@@ -626,7 +662,27 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     else document.documentElement.classList.remove('dark');
   }, [darkMode]);
 
-  const addPost = (post: Post) => setPosts(prev => [post, ...prev]);
+  const addPost = (post: Post) => setPosts(prev => {
+    // Avoid duplicates: check by id first, then by content+author+timestamp for optimistic posts
+    if (prev.some(p => p.id === post.id)) return prev;
+    // Also check for content duplicates (optimistic local post vs server post)
+    const isDuplicate = prev.some(p =>
+      p.id !== post.id &&
+      p.author?.id === post.author?.id &&
+      p.content === post.content &&
+      Math.abs(new Date(p.timestamp).getTime() - new Date(post.timestamp).getTime()) < 5000
+    );
+    if (isDuplicate) {
+      // Replace the optimistic local post with the server post (which has the real ID)
+      return prev.map(p =>
+        p.author?.id === post.author?.id &&
+        p.content === post.content &&
+        Math.abs(new Date(p.timestamp).getTime() - new Date(post.timestamp).getTime()) < 5000
+          ? post : p
+      );
+    }
+    return [post, ...prev];
+  });
   const toggleSavePost = (postId: string) => {
     setSavedPosts(prev => prev.includes(postId) ? prev.filter(id => id !== postId) : [...prev, postId]);
   };

@@ -15,62 +15,6 @@ import { isUserOnline, initializeMockPresence } from '../utils/presence';
 
 const REACTION_EMOJIS = ['❤️', '👍', '😂', '😮', '😢', '🎉'];
 
-// ─── Time & Date formatters (manual, locale-independent) ───────────
-// Avoids toLocaleTimeString('ar-EG') which can produce invalid values like 27:50
-// on some Android WebView builds.
-function formatTime(timestamp: string | number | Date): string {
-  try {
-    const d = new Date(timestamp);
-    if (isNaN(d.getTime())) return '';
-    let h = d.getHours();
-    const m = d.getMinutes();
-    const period = h < 12 ? 'ص' : 'م';
-    h = h % 12;
-    if (h === 0) h = 12;
-    const hh = String(h).padStart(2, '0');
-    const mm = String(m).padStart(2, '0');
-    return `${hh}:${mm} ${period}`;
-  } catch {
-    return '';
-  }
-}
-
-function getDateLabel(timestamp: string | number | Date): string {
-  try {
-    const d = new Date(timestamp);
-    if (isNaN(d.getTime())) return '';
-    const now = new Date();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
-    const msgDay = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-
-    if (msgDay.getTime() === today.getTime()) return 'اليوم';
-    if (msgDay.getTime() === yesterday.getTime()) return 'أمس';
-
-    const days = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
-    const months = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
-    const diffDays = Math.floor((today.getTime() - msgDay.getTime()) / (24 * 60 * 60 * 1000));
-    if (diffDays < 7) return days[d.getDay()];
-    return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`;
-  } catch {
-    return '';
-  }
-}
-
-function isSameDay(a: string | number | Date, b: string | number | Date): boolean {
-  const da = new Date(a), db = new Date(b);
-  return da.getFullYear() === db.getFullYear() &&
-         da.getMonth() === db.getMonth() &&
-         da.getDate() === db.getDate();
-}
-
-// ─── Emoji picker shortcuts ────────────────────────────────────────
-const EMOJI_SHORTCUTS = [
-  '😀', '😂', '😍', '🥰', '😎', '🤔', '😴', '😢', '😡', '👍',
-  '👎', '👏', '🙏', '💪', '🔥', '✨', '🎉', '❤️', '💔', '💯',
-  '🌹', '🎁', '💰', '📞', '📱', '🏠', '🚗', '⭐', '✅', '❌',
-];
-
 export const MessagesPage: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -106,38 +50,6 @@ export const MessagesPage: React.FC = () => {
   const [uploadingImage, setUploadingImage] = useState(false);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
-  const messageTextareaRef = useRef<HTMLTextAreaElement>(null);
-
-  // Auto-resize the message textarea as the user types
-  const autoResizeTextarea = useCallback(() => {
-    const ta = messageTextareaRef.current;
-    if (!ta) return;
-    ta.style.height = 'auto';
-    // Cap at 5 lines (~120px)
-    const newHeight = Math.min(ta.scrollHeight, 120);
-    ta.style.height = `${newHeight}px`;
-  }, []);
-
-  // Insert an emoji at the current cursor position
-  const insertEmoji = useCallback((emoji: string) => {
-    const ta = messageTextareaRef.current;
-    if (!ta) {
-      setMessageText(prev => prev + emoji);
-      return;
-    }
-    const start = ta.selectionStart ?? messageText.length;
-    const end = ta.selectionEnd ?? messageText.length;
-    const newText = messageText.slice(0, start) + emoji + messageText.slice(end);
-    setMessageText(newText);
-    // Move cursor after the emoji
-    requestAnimationFrame(() => {
-      ta.focus();
-      const pos = start + emoji.length;
-      ta.setSelectionRange(pos, pos);
-      autoResizeTextarea();
-    });
-  }, [messageText, autoResizeTextarea]);
 
   // Call states — WebRTC
   type CallState = 'idle' | 'outgoing' | 'incoming' | 'connected';
@@ -436,13 +348,7 @@ export const MessagesPage: React.FC = () => {
     const textToSend = isImageMsg ? '' : messageText.trim();
     if (!isImageMsg && !textToSend) return;
 
-    if (!isImageMsg) {
-      setMessageText('');
-      // Reset textarea height after sending
-      if (messageTextareaRef.current) {
-        messageTextareaRef.current.style.height = 'auto';
-      }
-    }
+    if (!isImageMsg) setMessageText('');
     setSendingMessage(true);
 
     // Optimistically add message to UI immediately
@@ -1204,19 +1110,22 @@ export const MessagesPage: React.FC = () => {
 
   return (
     <div className="max-w-4xl mx-auto" dir={dir}>
-      {/* Compact Header — single row, no redundant subtitle */}
-      <div className="flex items-center gap-2 mb-3">
-        <button onClick={() => navigate('/')} className={`w-9 h-9 rounded-xl flex items-center justify-center transition-colors flex-shrink-0 ${darkMode ? 'bg-gray-800 hover:bg-gray-700 text-gray-300' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`} aria-label="رجوع">
+      {/* Header */}
+      <div className="flex items-center gap-3 mb-6">
+        <button onClick={() => navigate('/')} className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors ${darkMode ? 'bg-gray-800 hover:bg-gray-700 text-gray-300' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}>
           <ArrowRight className="w-5 h-5" />
         </button>
-        <h1 className={`flex-1 text-xl font-black ${textPrimary}`}>{t('messages.title')}</h1>
-        <button onClick={loadContacts} className={`w-9 h-9 rounded-xl flex items-center justify-center transition-colors flex-shrink-0 ${darkMode ? 'bg-gray-800 hover:bg-gray-700 text-gray-300' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`} title="تحديث" aria-label="تحديث">
+        <div className="flex-1">
+          <h1 className={`text-2xl font-black ${textPrimary}`}>{t('messages.title')}</h1>
+          <p className={`text-sm ${textMuted}`}>{t('messages.titleDesc')}</p>
+        </div>
+        <button onClick={loadContacts} className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors ${darkMode ? 'bg-gray-800 hover:bg-gray-700 text-gray-300' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}>
           <RefreshCw className={`w-4 h-4 ${loadingContacts ? 'animate-spin' : ''}`} />
         </button>
         <button onClick={() => setShowNewChat(!showNewChat)}
-          className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all flex-shrink-0 ${darkMode ? 'bg-gray-800 text-gray-300 hover:bg-gray-700' : 'bg-orange-50 text-orange-600 hover:bg-orange-100'}`}>
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${darkMode ? 'bg-gray-800 text-gray-300 hover:bg-gray-700' : 'bg-orange-50 text-orange-600 hover:bg-orange-100'}`}>
           <UserPlus className="w-4 h-4" />
-          <span className="hidden sm:inline">{t('messages.newConversation')}</span>
+          {t('messages.newConversation')}
         </button>
       </div>
 
@@ -1313,8 +1222,8 @@ export const MessagesPage: React.FC = () => {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between">
                     <span className={`text-sm font-bold truncate ${textPrimary}`}>{contact.name}</span>
-                    <span className={`text-[10px] flex-shrink-0 tabular-nums ${textMuted}`}>
-                      {contact.lastTime ? formatTime(contact.lastTime) : ''}
+                    <span className={`text-[10px] flex-shrink-0 ${textMuted}`}>
+                      {contact.lastTime ? new Date(contact.lastTime).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }) : ''}
                     </span>
                   </div>
                   <div className="flex items-center justify-between">
@@ -1537,22 +1446,8 @@ export const MessagesPage: React.FC = () => {
                 )}
               </AnimatePresence>
 
-              {/* Messages — with subtle wallpaper pattern + date separators */}
-              <div
-                ref={messagesContainerRef}
-                onScroll={handleScroll}
-                className={`flex-1 overflow-y-auto p-4 space-y-2 relative ${
-                  darkMode ? 'bg-gray-900' : 'bg-gray-50'
-                }`}
-                style={{
-                  // Subtle dotted wallpaper — gives the chat area a real "chat" feel
-                  // without being distracting.
-                  backgroundImage: darkMode
-                    ? 'radial-gradient(circle, rgba(255,255,255,0.04) 1px, transparent 1px)'
-                    : 'radial-gradient(circle, rgba(0,0,0,0.04) 1px, transparent 1px)',
-                  backgroundSize: '20px 20px',
-                }}
-              >
+              {/* Messages */}
+              <div ref={messagesContainerRef} onScroll={handleScroll} className={`flex-1 overflow-y-auto p-4 space-y-3 ${darkMode ? 'bg-gray-900' : 'bg-gray-50'}`}>
                 {loadingMessages ? (
                   <div className="text-center py-8">
                     <RefreshCw className="w-6 h-6 animate-spin mx-auto text-gray-400 mb-2" />
@@ -1566,80 +1461,58 @@ export const MessagesPage: React.FC = () => {
                     <p className={`font-bold ${textPrimary}`}>{t('messages.startConversation')}</p>
                     <p className={`text-xs mt-1 ${textMuted}`}>{t('messages.sendMessageToStart', { name: selectedContact.name })}</p>
                   </div>
-                ) : currentMessages.map((msg, idx) => {
+                ) : currentMessages.map(msg => {
                   const isMine = msg.senderId === myId;
                   const isFailed = msg._failed;
-                  const prevMsg = idx > 0 ? currentMessages[idx - 1] : null;
-                  // Insert a date separator if this is the first message of a new day
-                  const showDateSeparator = !prevMsg || !isSameDay(prevMsg.timestamp, msg.timestamp);
                   return (
-                    <React.Fragment key={msg.id}>
-                      {showDateSeparator && (
-                        <div className="flex items-center justify-center my-3">
-                          <span className={`text-[10px] font-bold px-3 py-1 rounded-full backdrop-blur-sm ${
-                            darkMode
-                              ? 'bg-gray-800/80 text-gray-300 border border-gray-700'
-                              : 'bg-white/80 text-gray-600 border border-gray-200 shadow-sm'
-                          }`}>
-                            {getDateLabel(msg.timestamp)}
-                          </span>
-                        </div>
-                      )}
-                      <motion.div
-                        initial={{ opacity: 0, y: 5 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}
-                        onContextMenu={(e) => handleContextMenu(e, msg.id)}
-                        onTouchStart={() => handleTouchStart(msg.id)}
-                        onTouchEnd={handleTouchEnd}
-                        onDoubleClick={() => handleDoubleClick(msg.id)}
-                      >
-                        <div className={`max-w-[75%] rounded-2xl px-3.5 py-2 relative ${
-                          isFailed
-                            ? 'bg-red-100 text-red-700 border border-red-200 rounded-bl-md'
-                            : isMine
-                              ? (darkMode
-                                  ? 'bg-gradient-to-br from-orange-600 to-orange-700 text-white rounded-bl-md shadow-md shadow-orange-900/20'
-                                  : 'bg-gradient-to-br from-orange-500 to-orange-600 text-white rounded-bl-md shadow-md shadow-orange-200/50')
-                              : (darkMode
-                                  ? 'bg-gray-700 text-gray-100 rounded-br-md shadow-md shadow-black/20'
-                                  : 'bg-white text-gray-900 rounded-br-md shadow-md shadow-gray-200/60 border border-gray-100')
-                        }`}>
-                          {/* Reply preview */}
-                          {renderReplyPreview(msg)}
+                    <motion.div key={msg.id} initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }}
+                      className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}
+                      onContextMenu={(e) => handleContextMenu(e, msg.id)}
+                      onTouchStart={() => handleTouchStart(msg.id)}
+                      onTouchEnd={handleTouchEnd}
+                      onDoubleClick={() => handleDoubleClick(msg.id)}
+                    >
+                      <div className={`max-w-[75%] rounded-2xl px-4 py-2.5 relative ${
+                        isFailed
+                          ? 'bg-red-100 text-red-700 border border-red-200 rounded-bl-md'
+                          : isMine
+                            ? (darkMode ? 'bg-orange-600 text-white rounded-bl-md' : 'bg-orange-500 text-white rounded-bl-md')
+                            : (darkMode ? 'bg-gray-700 text-gray-100 rounded-br-md' : 'bg-white text-gray-900 rounded-br-md shadow-sm border border-gray-100')
+                      }`}>
+                        {/* Reply preview */}
+                        {renderReplyPreview(msg)}
 
-                          {/* Image message */}
-                          {msg.messageType === 'image' && msg.imageUrl && (
-                            <div className="mb-1.5">
-                              <img
-                                src={msg.imageUrl}
-                                alt="Chat image"
-                                className="max-w-full max-h-64 rounded-xl cursor-pointer hover:opacity-90 transition-opacity object-cover"
-                                onClick={() => setShowImagePreview(msg.imageUrl!)}
-                                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                              />
-                            </div>
-                          )}
-
-                          {/* Text content */}
-                          {msg.text && msg.messageType !== 'image' && (
-                            <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">{msg.text}</p>
-                          )}
-
-                          {/* Timestamp & status */}
-                          <div className={`flex items-center justify-end gap-1 mt-0.5 ${isMine ? (darkMode ? 'text-orange-100' : 'text-orange-50') : textMuted}`}>
-                            <span className="text-[10px] tabular-nums">
-                              {formatTime(msg.timestamp)}
-                            </span>
-                            {isFailed && <span className="text-[9px] text-red-500 font-bold">فشل الإرسال</span>}
-                            {isMine && !isFailed && <Check className={`w-3 h-3 ${msg.read ? 'text-blue-300' : ''}`} />}
+                        {/* Image message */}
+                        {msg.messageType === 'image' && msg.imageUrl && (
+                          <div className="mb-2">
+                            <img
+                              src={msg.imageUrl}
+                              alt="Chat image"
+                              className="max-w-full max-h-64 rounded-xl cursor-pointer hover:opacity-90 transition-opacity object-cover"
+                              onClick={() => setShowImagePreview(msg.imageUrl!)}
+                              onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                            />
                           </div>
+                        )}
 
-                          {/* Reactions */}
-                          {renderReactions(msg)}
+                        {/* Text content */}
+                        {msg.text && msg.messageType !== 'image' && (
+                          <p className="text-sm leading-relaxed">{msg.text}</p>
+                        )}
+
+                        {/* Timestamp & status */}
+                        <div className={`flex items-center justify-end gap-1 mt-1 ${isMine ? 'text-orange-200' : textMuted}`}>
+                          <span className="text-[10px]">
+                            {new Date(msg.timestamp).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                          {isFailed && <span className="text-[9px] text-red-500 font-bold">فشل الإرسال</span>}
+                          {isMine && !isFailed && <Check className={`w-3 h-3 ${msg.read ? 'text-blue-300' : ''}`} />}
                         </div>
-                      </motion.div>
-                    </React.Fragment>
+
+                        {/* Reactions */}
+                        {renderReactions(msg)}
+                      </div>
+                    </motion.div>
                   );
                 })}
 
@@ -1701,40 +1574,8 @@ export const MessagesPage: React.FC = () => {
                 )}
               </AnimatePresence>
 
-              {/* Emoji Picker — quick insert popup */}
-              <AnimatePresence>
-                {showEmojiPicker && (
-                  <motion.div
-                    initial={{ height: 0, opacity: 0 }}
-                    animate={{ height: 'auto', opacity: 1 }}
-                    exit={{ height: 0, opacity: 0 }}
-                    className={`overflow-hidden border-t ${darkMode ? 'border-gray-700 bg-gray-800' : 'border-gray-100 bg-white'}`}
-                  >
-                    <div className="p-3">
-                      <div className="grid grid-cols-10 gap-1 max-h-32 overflow-y-auto" style={{ scrollbarWidth: 'thin' }}>
-                        {EMOJI_SHORTCUTS.map((emoji, i) => (
-                          <button
-                            key={i}
-                            type="button"
-                            onClick={() => insertEmoji(emoji)}
-                            className={`w-8 h-8 flex items-center justify-center rounded-lg text-xl transition-colors ${
-                              darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-100'
-                            }`}
-                          >
-                            {emoji}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-
-              {/* Message Input — emoji button + auto-resize textarea + send */}
-              <form
-                onSubmit={(e) => handleSendMessage(e)}
-                className={`flex items-end gap-2 px-3 py-2.5 pb-3 border-t ${darkMode ? 'border-gray-700' : 'border-gray-100'}`}
-              >
+              {/* Message Input */}
+              <form onSubmit={(e) => handleSendMessage(e)} className={`flex items-center gap-2 px-3 py-2.5 pb-3 border-t ${darkMode ? 'border-gray-700' : 'border-gray-100'}`}>
                 {/* Hidden file input for image upload */}
                 <input
                   id="imageInputRef-input" ref={imageInputRef}
@@ -1745,7 +1586,7 @@ export const MessagesPage: React.FC = () => {
                 />
                 {/* Image upload button */}
                 <label htmlFor="imageInputRef-input" disabled={uploadingImage}
-                  className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all flex-shrink-0 ${
+                  className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${
                     uploadingImage
                       ? (darkMode ? 'bg-gray-700 text-gray-500' : 'bg-gray-100 text-gray-400')
                       : (darkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-600 hover:bg-gray-200')
@@ -1753,55 +1594,13 @@ export const MessagesPage: React.FC = () => {
                   title={t('messages.sendImage')} style={{cursor:"pointer"}}>
                   {uploadingImage ? <RefreshCw className="w-4 h-4 animate-spin" /> : <ImageIcon className="w-4 h-4" />}
                 </label>
-                {/* Emoji picker toggle */}
-                <button
-                  type="button"
-                  onClick={() => setShowEmojiPicker(v => !v)}
-                  className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all flex-shrink-0 ${
-                    showEmojiPicker
-                      ? 'bg-orange-600 text-white'
-                      : (darkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-600 hover:bg-gray-200')
-                  }`}
-                  title="إيموجي"
-                  aria-label="إيموجي"
-                >
-                  <Smile className="w-4 h-4" />
-                </button>
-                {/* Auto-resizing textarea (replaces single-line input) */}
-                <textarea
-                  ref={messageTextareaRef}
-                  placeholder={t('messages.typeMessage')}
-                  value={messageText}
-                  onChange={(e) => {
-                    setMessageText(e.target.value);
-                    autoResizeTextarea();
-                  }}
-                  onKeyDown={(e) => {
-                    // Enter to send, Shift+Enter for newline
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      if (messageText.trim() && !sendingMessage && myId) {
-                        handleSendMessage();
-                      }
-                    }
-                  }}
+                <input type="text" placeholder={t('messages.typeMessage')} value={messageText} onChange={e => setMessageText(e.target.value)}
                   disabled={sendingMessage}
-                  rows={1}
-                  className={`flex-1 px-4 py-2.5 rounded-xl border outline-none text-sm transition-colors resize-none leading-relaxed ${bgInput} ${
-                    darkMode ? 'placeholder:text-gray-500 focus:border-orange-500' : 'placeholder:text-gray-400 focus:border-orange-400'
-                  } disabled:opacity-50`}
-                  style={{ minHeight: '40px', maxHeight: '120px' }}
-                />
-                <button
-                  type="submit"
-                  disabled={(!messageText.trim() && !uploadingImage) || sendingMessage || !myId}
-                  className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all flex-shrink-0 ${
-                    messageText.trim() && !sendingMessage && myId
-                      ? 'bg-orange-600 text-white hover:bg-orange-700 active:scale-95'
-                      : (darkMode ? 'bg-gray-700 text-gray-500' : 'bg-gray-100 text-gray-400')
-                  }`}
-                  aria-label="إرسال"
-                >
+                  className={`flex-1 px-4 py-2.5 rounded-xl border outline-none text-sm transition-colors ${bgInput} ${darkMode ? 'placeholder:text-gray-500 focus:border-orange-500' : 'placeholder:text-gray-400 focus:border-orange-400'} disabled:opacity-50`} />
+                <button type="submit" disabled={(!messageText.trim() && !uploadingImage) || sendingMessage || !myId}
+                  className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${
+                    messageText.trim() && !sendingMessage && myId ? 'bg-orange-600 text-white hover:bg-orange-700 active:scale-95' : (darkMode ? 'bg-gray-700 text-gray-500' : 'bg-gray-100 text-gray-400')
+                  }`}>
                   {sendingMessage ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                 </button>
               </form>

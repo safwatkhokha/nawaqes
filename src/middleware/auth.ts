@@ -28,6 +28,7 @@ export interface JwtPayload {
   userId: string;
   email: string;
   isAdmin: boolean;
+  sub?: string; // alias for userId (standard JWT claim)
 }
 
 export function generateToken(payload: JwtPayload): string {

@@ -52,6 +52,8 @@ import { setupAutoInit as setupFirebase } from './lib/firebase';
 import { LiveStreamPage } from './components/LiveStreamPage';
 import { MarketListingPage } from './components/MarketListingPage';
 import { CreateMarketListing } from './components/CreateMarketListing';
+import { EmailVerification, EmailBadge } from './components/EmailVerification';
+import { ScheduledStreams } from './components/ScheduledStreams';
 import { MyMarketListings } from './components/MyMarketListings';
 import { SmartReachPage } from './components/SmartReachPage';
 import { PromotionPackagesPage } from './components/PromotionPackagesPage';
@@ -1377,6 +1379,8 @@ function AppInner() {
             <Route path="/market-pulse" element={<RequireAuth><PageLayout><MarketPulsePage /></PageLayout></RequireAuth>} />
             <Route path="/market-live" element={<RequireAuth><PageLayout><MarketLivePage /></PageLayout></RequireAuth>} />
             <Route path="/live-stream/:hostId?" element={<RequireAuth><LiveStreamPage /></RequireAuth>} />
+            <Route path="/verify-email" element={<RequireAuth><EmailVerification /></RequireAuth>} />
+            <Route path="/scheduled-streams" element={<RequireAuth><PageLayout><ScheduledStreams /></PageLayout></RequireAuth>} />
             <Route path="/user/:userId" element={<RequireAuth><PageLayout><UserProfilePage /></PageLayout></RequireAuth>} />
             <Route path="/admin" element={<RequireAdmin><AdminDashboard /></RequireAdmin>} />
             <Route path="*" element={<div className="min-h-screen flex items-center justify-center bg-gray-50" dir={dir}><div className="text-center space-y-6"><div className="w-20 h-20 bg-orange-100 rounded-full flex items-center justify-center mx-auto"><span className="text-4xl">🔍</span></div><h1 className="text-3xl font-black text-gray-900">{t('app.pageNotFound')}</h1><Link to="/" className="inline-flex items-center gap-2 bg-orange-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-orange-700"><ArrowLeft className="w-5 h-5" />{t('app.backToHome')}</Link></div></div>} />

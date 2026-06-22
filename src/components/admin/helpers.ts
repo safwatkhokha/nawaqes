@@ -33,6 +33,9 @@ export const TX_TYPE_KEYS: Record<string, string> = {
   promotion_refund: 'admin.txRefund',
   admin_deposit: 'admin.txAdminDeposit',
   admin_withdrawal: 'admin.txAdminWithdrawal',
+  withdrawal: 'wallet.withdrawal',
+  gift_sent: 'wallet.giftSent',
+  gift_received: 'wallet.giftReceived',
 };
 
 // ─── Tooltip Style Helper ────────────────────────────────────────────

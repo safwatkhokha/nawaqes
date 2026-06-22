@@ -38,11 +38,11 @@ export const ActivityTab: React.FC<ActivityTabProps> = ({ activityLog, darkMode 
     <div className="space-y-4">
       <div className="max-h-[calc(100vh-220px)] overflow-y-auto custom-scrollbar space-y-2">
         {activityLog.map((item, i) => {
-          const t = item.activity_type || item.type || 'post';
+          const activityType = item.activity_type || item.type || 'post';
           return (
             <div key={item.id || i} className={`${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'} rounded-xl border p-3 flex items-center gap-3`}>
-              <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${bgColors[t] || (darkMode ? 'bg-gray-700 text-gray-400' : 'bg-gray-50 text-gray-500')}`}>
-                {icons[t] || <Activity className="w-3.5 h-3.5" />}
+              <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${bgColors[activityType] || (darkMode ? 'bg-gray-700 text-gray-400' : 'bg-gray-50 text-gray-500')}`}>
+                {icons[activityType] || <Activity className="w-3.5 h-3.5" />}
               </div>
               <div className="flex-1 min-w-0">
                 <p className={`text-xs ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
@@ -52,7 +52,7 @@ export const ActivityTab: React.FC<ActivityTabProps> = ({ activityLog, darkMode 
                 </p>
                 <p className={`text-[10px] ${darkMode ? 'text-gray-600' : 'text-gray-300'}`}>{item.created_at ? formatTimeAgo(item.created_at) : ''}</p>
               </div>
-              <Badge darkMode={darkMode} color={colors[t] || 'gray'}>{t}</Badge>
+              <Badge darkMode={darkMode} color={colors[activityType] || 'gray'}>{activityType}</Badge>
             </div>
           );
         })}

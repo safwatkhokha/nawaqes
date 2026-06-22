@@ -135,12 +135,22 @@ export interface ChatMessage {
   timestamp: string;
   read: boolean;
   postId?: string;
-  messageType?: 'text' | 'image' | 'post' | 'system';
+  messageType?: 'text' | 'image' | 'post' | 'system' | 'voice';
   imageUrl?: string;
   replyToId?: string;
   reactions?: Record<string, string>;
   deletedFor?: string;
   _failed?: boolean;
+  isEdited?: boolean;
+  isPinned?: boolean;
+  delivered?: boolean;
+  voiceUrl?: string;
+  voiceDuration?: number;
+  // Phase 3
+  groupId?: string;
+  isForwarded?: boolean;
+  forwardedFrom?: string;
+  _queued?: boolean; // offline queue pending indicator
 }
 
 export interface ChatContact {
@@ -152,6 +162,12 @@ export interface ChatContact {
   unread: number;
   online: boolean;
   postId?: string;
+  // Phase 3
+  isGroup?: boolean;
+  groupId?: string;
+  isMuted?: boolean;
+  isBlocked?: boolean;
+  memberCount?: number;
 }
 
 export interface PromotionRequest {
@@ -320,6 +336,30 @@ export interface CityTargetingTier {
   price: number;
   estimatedReach: number;
   maxNotifications: number;
+}
+
+// Phase 3: Group chat types
+export interface ChatGroup {
+  id: string;
+  name: string;
+  avatar: string;
+  description: string;
+  creatorId: string;
+  createdAt: string;
+  members: ChatGroupMember[];
+  lastMessage?: string;
+  lastTime?: string;
+  unread?: number;
+  isMuted?: boolean;
+}
+
+export interface ChatGroupMember {
+  id: string;
+  userId: string;
+  name: string;
+  avatar: string;
+  role: 'admin' | 'member';
+  joinedAt: string;
 }
 
 // Egyptian city data

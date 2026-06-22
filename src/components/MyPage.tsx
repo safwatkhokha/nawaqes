@@ -10,13 +10,12 @@ import {
   Hexagon, Zap, Clock, Crown, TrendingUp, CheckCircle2,
   Image, Plus, ChevronLeft, Globe, Wallet, Eye, Megaphone, BarChart3,
   XCircle, AlertCircle, Camera, Store, Edit3, Star, Package, RefreshCw,
-  Users, UserPlus, UserCheck, Search, UserX,
+  Users, UserPlus, UserCheck, Search, UserX, Loader2,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'sonner';
 import { api } from '../services/api';
 import { isUserOnline } from '../utils/presence';
-import { formatRelativeTimeAr } from '../utils/time';
 import { PromotionWizard } from './PromotionWizard';
 import { promotionPackages } from '../data/promotionPackages';
 import { Post } from '../types';
@@ -61,6 +60,7 @@ export const MyPage: React.FC = () => {
   const { currentUser, updateProfile } = useAuth();
 
   const [postText, setPostText] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [activeTab, setActiveTab] = useState<MyPageTab>('posts');
   const [promotingPost, setPromotingPost] = useState<Post | null>(null);
   const [myPromotionRequests, setMyPromotionRequests] = useState<any[]>([]);
@@ -271,38 +271,71 @@ export const MyPage: React.FC = () => {
   };
 
   const handleCreatePost = async () => {
-    if (!postText.trim()) return;
-    const newPost = {
-      id: `mypost_${Date.now()}`,
-      author: {
-        id: currentUser?.id || 'me',
-        name: currentUser?.name || t('myPage.editProfile'),
-        avatar: currentUser?.avatarBase64 || currentUser?.avatar || '',
-        isVerified: currentUser?.isVerified,
-        trustScore: currentUser?.trustScore,
-        interests: currentUser?.interests,
-      },
-      content: postText.trim(),
-      image: selectedImage || undefined,
-      location: postLocation || undefined,
-      likes: 0,
-      comments: 0,
-      shares: 0,
-      timestamp: new Date().toISOString(),
-      type: postType as 'ad' | 'status',
-    };
-    addPost(newPost);
-    // Also create the post on the server
+    if (!postText.trim() || isSubmitting) return;
+
+    setIsSubmitting(true);
+
+    // Create the post on the server FIRST, then add the server-returned post
     try {
-      await api.createPost({
+      const savedPost = await api.createPost({
         content: postText.trim(),
         image: selectedImage || undefined,
         location: postLocation || undefined,
         type: postType,
       });
+
+      // Add the server-returned post to local state (with real DB ID)
+      const newPost: Post = {
+        id: savedPost.id,
+        author: {
+          id: savedPost.author?.id || currentUser?.id || 'me',
+          name: savedPost.author?.name || currentUser?.name || t('myPage.editProfile'),
+          avatar: savedPost.author?.avatar || currentUser?.avatarBase64 || currentUser?.avatar || '',
+          isVerified: savedPost.author?.is_verified || savedPost.author?.isVerified,
+          trustScore: savedPost.author?.trust_score || savedPost.author?.trustScore,
+          interests: savedPost.author?.interests,
+        },
+        content: savedPost.content || postText.trim(),
+        image: savedPost.image || selectedImage || undefined,
+        location: savedPost.location || postLocation || undefined,
+        likes: savedPost.likes || 0,
+        comments: savedPost.comments || 0,
+        shares: savedPost.shares || 0,
+        timestamp: new Date().toISOString(),
+        type: savedPost.type || postType as 'ad' | 'status',
+        price: savedPost.price || undefined,
+        currency: savedPost.currency || undefined,
+        feeling: savedPost.feeling || undefined,
+        activity: savedPost.activity || undefined,
+        category: savedPost.category || undefined,
+      };
+      addPost(newPost);
     } catch {
-      // Post was added locally even if API call fails
+      // Fallback: add post with local ID if API fails, so user doesn't lose content
+      const fallbackPost: Post = {
+        id: `mypost_${Date.now()}`,
+        author: {
+          id: currentUser?.id || 'me',
+          name: currentUser?.name || t('myPage.editProfile'),
+          avatar: currentUser?.avatarBase64 || currentUser?.avatar || '',
+          isVerified: currentUser?.isVerified,
+          trustScore: currentUser?.trustScore,
+          interests: currentUser?.interests,
+        },
+        content: postText.trim(),
+        image: selectedImage || undefined,
+        location: postLocation || undefined,
+        likes: 0,
+        comments: 0,
+        shares: 0,
+        timestamp: new Date().toISOString(),
+        type: postType as 'ad' | 'status',
+      };
+      addPost(fallbackPost);
+    } finally {
+      setIsSubmitting(false);
     }
+
     setPostText('');
     setSelectedImage(null);
     setPostLocation('');
@@ -569,15 +602,15 @@ export const MyPage: React.FC = () => {
               </div>
               <button
                 onClick={handleCreatePost}
-                disabled={!postText.trim()}
+                disabled={!postText.trim() || isSubmitting}
                 className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all active:scale-95 flex items-center gap-2 ${
-                  postText.trim()
+                  postText.trim() && !isSubmitting
                     ? 'bg-gradient-to-l from-orange-500 to-orange-600 text-white shadow-lg shadow-orange-200/30 hover:from-orange-600 hover:to-orange-700'
                     : darkMode ? 'bg-gray-700 text-gray-500 cursor-not-allowed' : 'bg-gray-100 text-gray-400 cursor-not-allowed'
                 }`}
               >
-                <Send className="w-4 h-4" />
-                {t('myPage.publish')}
+                {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                {isSubmitting ? t('createPost.publishing') || 'جارٍ النشر...' : t('myPage.publish')}
               </button>
             </div>
           </div>
@@ -646,7 +679,7 @@ export const MyPage: React.FC = () => {
                         {currentUser?.isVerified && <CheckCircle2 className="w-3.5 h-3.5 text-orange-600 fill-orange-600/10" />}
                       </div>
                       <div className={`flex items-center gap-1.5 text-[10px] ${textMuted}`}>
-                        <span>{formatRelativeTimeAr(post.timestamp)}</span>
+                        <span>{post.timestamp}</span>
                         <span>·</span>
                         <Globe className="w-3 h-3" />
                       </div>
@@ -795,7 +828,7 @@ export const MyPage: React.FC = () => {
                         {post.image && <img src={post.image} alt="" className="w-16 h-16 rounded-lg object-cover flex-shrink-0" />}
                         <div className="flex-1 min-w-0">
                           <p className={`text-sm leading-relaxed mb-1 line-clamp-2 ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>{post.content}</p>
-                          <span className={`text-[10px] ${textMuted}`}>{post.author.name} · {formatRelativeTimeAr(post.timestamp)}</span>
+                          <span className={`text-[10px] ${textMuted}`}>{post.author.name} · {post.timestamp}</span>
                         </div>
                       </div>
                     </div>
@@ -908,7 +941,7 @@ export const MyPage: React.FC = () => {
                     <div className={`flex items-center gap-3 text-[10px] ${textMuted}`}>
                       <span className="flex items-center gap-1"><Eye className="w-3 h-3" />{post.likes + (likedPosts.has(post.id) ? 1 : 0)} {t('myPage.like')}</span>
                       <span className="flex items-center gap-1"><MessageCircle className="w-3 h-3" />{post.comments} {t('myPage.comment')}</span>
-                      <span>{formatRelativeTimeAr(post.timestamp)}</span>
+                      <span>{post.timestamp}</span>
                     </div>
                   </div>
                 </motion.div>
