@@ -809,6 +809,94 @@ router.get('/promotions/my-requests', authMiddleware, (req: Request, res: Respon
 });
 
 // ─── Friends ────────────────────────────────────────────────────────
+// GET /api/friends/stats - Get friends statistics
+router.get('/friends/stats', authMiddleware, (req: Request, res: Response) => {
+  try {
+    const payload = (req as any).user as JwtPayload;
+    const uid = payload.userId;
+
+    // Total accepted friends
+    const totalFriends = (db.prepare(`
+      SELECT COUNT(*) as cnt FROM friendships
+      WHERE (requester_id = ? OR addressee_id = ?) AND status = 'accepted'
+    `).get(uid, uid) as any)?.cnt || 0;
+
+    // Pending incoming requests
+    const pendingIncoming = (db.prepare(`
+      SELECT COUNT(*) as cnt FROM friendships
+      WHERE addressee_id = ? AND status = 'pending'
+    `).get(uid) as any)?.cnt || 0;
+
+    // Pending sent requests
+    const pendingSent = (db.prepare(`
+      SELECT COUNT(*) as cnt FROM friendships
+      WHERE requester_id = ? AND status = 'pending'
+    `).get(uid) as any)?.cnt || 0;
+
+    // Online friends count (from WebSocket manager)
+    let onlineFriends = 0;
+    try {
+      const wsManager = (req.app.locals as any)?.wsManager;
+      if (wsManager) {
+        const friendRows = db.prepare(`
+          SELECT CASE WHEN requester_id = ? THEN addressee_id ELSE requester_id END as fid
+          FROM friendships WHERE (requester_id = ? OR addressee_id = ?) AND status = 'accepted'
+        `).all(uid, uid, uid) as any[];
+        onlineFriends = friendRows.filter((f: any) => wsManager.isUserOnline(f.fid)).length;
+      }
+    } catch {}
+
+    // Friends by label
+    const friendsByLabel: Record<string, number> = { general: 0, close: 0, family: 0, work: 0 };
+    try {
+      const labelRows = db.prepare(`
+        SELECT COALESCE(friend_label, 'general') as label, COUNT(*) as cnt
+        FROM friendships
+        WHERE (requester_id = ? OR addressee_id = ?) AND status = 'accepted'
+        GROUP BY friend_label
+      `).all(uid, uid) as any[];
+      for (const row of labelRows) {
+        friendsByLabel[row.label || 'general'] = row.cnt;
+      }
+    } catch {}
+
+    // Friends gained this week
+    const friendsThisWeek = (db.prepare(`
+      SELECT COUNT(*) as cnt FROM friendships
+      WHERE (requester_id = ? OR addressee_id = ?) AND status = 'accepted'
+        AND created_at >= datetime('now', '-7 days')
+    `).get(uid, uid) as any)?.cnt || 0;
+
+    // Nearby friends (same location)
+    let nearbyFriends = 0;
+    try {
+      const myLocation = (db.prepare('SELECT location FROM users WHERE id = ?').get(uid) as any)?.location;
+      if (myLocation) {
+        nearbyFriends = (db.prepare(`
+          SELECT COUNT(*) as cnt FROM friendships f
+          JOIN users u ON (
+            CASE WHEN f.requester_id = ? THEN f.addressee_id = u.id ELSE f.requester_id = u.id END
+          )
+          WHERE (f.requester_id = ? OR f.addressee_id = ?) AND f.status = 'accepted'
+            AND u.location = ? AND u.location != ''
+        `).get(uid, uid, uid, myLocation) as any)?.cnt || 0;
+      }
+    } catch {}
+
+    res.json({
+      totalFriends,
+      pendingIncoming,
+      pendingSent,
+      onlineFriends,
+      friendsByLabel,
+      friendsThisWeek,
+      nearbyFriends,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: 'فشل جلب إحصائيات الأصدقاء', details: err.message });
+  }
+});
+
 // GET /api/friends/list
 router.get('/friends/list', authMiddleware, (req: Request, res: Response) => {
   try {

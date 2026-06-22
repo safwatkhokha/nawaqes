@@ -2264,7 +2264,17 @@
     "searchByLocation": "Search by location",
     "nearbyDesc": "Friends in your city",
     "friendshipId": "Friendship ID",
-    "moreActions": "More"
+    "moreActions": "More",
+    "thisWeek": "this week",
+    "statsTitle": "Friends Statistics",
+    "statsTotalFriends": "Total Friends",
+    "statsOnlineNow": "Online Now",
+    "statsNearby": "Nearby",
+    "statsThisWeek": "New friends this week",
+    "statsByLabel": "By Label",
+    "statsIncoming": "Incoming Requests",
+    "statsSent": "Sent Requests",
+    "friendRequestResend": "You can resend a friend request after rejection"
   },
   "chat": {
     "unreadMessages": "unread messages",

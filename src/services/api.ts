@@ -445,6 +445,7 @@ class ApiClient {
   async setFriendLabel(userId: string, label: string) { return this.request<{ message: string }>(`/friends/label-by-user/${userId}`, { method: 'POST', body: JSON.stringify({ label }) }); }
   async getMutualFriends(userId: string) { return this.request<{ mutualFriends: any[]; count: number }>(`/friends/mutual/${userId}`); }
   async getFriendshipStatus(userId: string) { return this.request<{ friendshipStatus: string | null; lastSeenAt?: string | null }>(`/friends/status/${userId}`); }
+  async getFriendStats() { return this.request<{ totalFriends: number; pendingIncoming: number; pendingSent: number; onlineFriends: number; friendsByLabel: Record<string, number>; friendsThisWeek: number; nearbyFriends: number }>('/friends/stats'); }
   // Block / Unblock
   async blockUser(userId: string, reason?: string) { return this.request<{ message: string }>(`/block/${userId}`, { method: 'POST', body: JSON.stringify({ reason }) }); }
   async unblockUser(userId: string) { return this.request<{ message: string }>(`/unblock/${userId}`, { method: 'POST' }); }

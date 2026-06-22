@@ -2378,7 +2378,17 @@
     "searchByLocation": "بحث بالموقع",
     "nearbyDesc": "أصدقاء في نفس مدينتك",
     "friendshipId": "معرف الصداقة",
-    "moreActions": "المزيد"
+    "moreActions": "المزيد",
+    "thisWeek": "هذا الأسبوع",
+    "statsTitle": "إحصائيات الأصدقاء",
+    "statsTotalFriends": "إجمالي الأصدقاء",
+    "statsOnlineNow": "متصل الآن",
+    "statsNearby": "قريبون منك",
+    "statsThisWeek": "أصدقاء جدد هذا الأسبوع",
+    "statsByLabel": "حسب التصنيف",
+    "statsIncoming": "طلبات واردة",
+    "statsSent": "طلبات مرسلة",
+    "friendRequestResend": "يمكنك إعادة إرسال طلب الصداقة بعد الرفض"
   },
   "chat": {
     "unreadMessages": "رسائل غير مقروءة",

@@ -352,6 +352,13 @@ export const FriendsPage: React.FC = () => {
   const [searching, setSearching] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
 
+  // Friends stats from API
+  const [friendStats, setFriendStats] = useState<{
+    totalFriends: number; pendingIncoming: number; pendingSent: number;
+    onlineFriends: number; friendsByLabel: Record<string, number>;
+    friendsThisWeek: number; nearbyFriends: number;
+  } | null>(null);
+
   // Track which suggestions are being added (for confirmation animation)
   const [addingFriendIds, setAddingFriendIds] = useState<Set<string>>(new Set());
   // Track which sent requests are being cancelled
@@ -553,6 +560,8 @@ export const FriendsPage: React.FC = () => {
     loadFriends();
     loadSuggestions();
     loadBlockedUsers();
+    // Load friend stats
+    api.getFriendStats().then(setFriendStats).catch(() => {});
   }, [loadFriends, loadSuggestions, loadBlockedUsers, currentUser?.id]);
 
   // Re-render every 10 seconds so presence badges reflect the latest WebSocket state
@@ -942,34 +951,40 @@ export const FriendsPage: React.FC = () => {
           <div className="flex items-center gap-6 flex-wrap">
             <div className="flex items-center gap-2">
               <div className="w-2.5 h-2.5 bg-green-500 rounded-full animate-pulse" />
-              <span className={`text-xs font-bold ${textMuted}`}>{t('friends.onlineNow', { count: onlineCount })}</span>
+              <span className={`text-xs font-bold ${textMuted}`}>{t('friends.onlineNow', { count: friendStats?.onlineFriends ?? onlineCount })}</span>
             </div>
             <div className="flex items-center gap-2">
               <Users className={`w-4 h-4 ${textMuted}`} />
-              <span className={`text-xs font-bold ${textMuted}`}>{t('friends.friendCount', { count: friends.length })}</span>
+              <span className={`text-xs font-bold ${textMuted}`}>{t('friends.friendCount', { count: friendStats?.totalFriends ?? friends.length })}</span>
             </div>
-            {myLocation && nearbyCount > 0 && (
+            {(friendStats?.nearbyFriends ?? nearbyCount) > 0 && (
               <div className="flex items-center gap-2">
                 <MapPin className="w-4 h-4 text-orange-500" />
-                <span className={`text-xs font-bold ${textMuted}`}>{t('friends.nearbyFriends')}: {nearbyCount}</span>
+                <span className={`text-xs font-bold ${textMuted}`}>{t('friends.nearbyFriends')}: {friendStats?.nearbyFriends ?? nearbyCount}</span>
               </div>
             )}
-            {friendRequests.length > 0 && (
+            {(friendStats?.pendingIncoming ?? friendRequests.length) > 0 && (
               <div className="flex items-center gap-2 cursor-pointer" onClick={() => setActiveSection('requests')}>
                 <UserPlus className="w-4 h-4 text-orange-500" />
-                <span className="text-xs font-bold text-orange-600">{t('friends.newRequests', { count: friendRequests.length })}</span>
+                <span className="text-xs font-bold text-orange-600">{t('friends.newRequests', { count: friendStats?.pendingIncoming ?? friendRequests.length })}</span>
               </div>
             )}
-            {sentRequests.length > 0 && (
+            {(friendStats?.pendingSent ?? sentRequests.length) > 0 && (
               <div className="flex items-center gap-2 cursor-pointer" onClick={() => setActiveSection('sent')}>
                 <SendHorizonal className="w-4 h-4 text-blue-500" />
-                <span className="text-xs font-bold text-blue-600">{t('friends.sentCount', { count: sentRequests.length })}</span>
+                <span className="text-xs font-bold text-blue-600">{t('friends.sentCount', { count: friendStats?.pendingSent ?? sentRequests.length })}</span>
+              </div>
+            )}
+            {(friendStats?.friendsThisWeek ?? 0) > 0 && (
+              <div className="flex items-center gap-2">
+                <TrendingUp className="w-4 h-4 text-green-500" />
+                <span className={`text-xs font-bold text-green-600`}>+{friendStats!.friendsThisWeek} {t('friends.thisWeek')}</span>
               </div>
             )}
           </div>
           <div className="flex items-center gap-2">
             <button
-              onClick={() => { loadFriends(); loadSuggestions(); loadFriendRequests(); loadSentRequests(); loadBlockedUsers(); }}
+              onClick={() => { loadFriends(); loadSuggestions(); loadFriendRequests(); loadSentRequests(); loadBlockedUsers(); api.getFriendStats().then(setFriendStats).catch(() => {}); }}
               className={`w-9 h-9 rounded-xl flex items-center justify-center transition-colors ${darkMode ? 'bg-gray-700 hover:bg-gray-600 text-gray-300' : 'bg-gray-100 hover:bg-gray-200 text-gray-600'}`}
             >
               <RefreshCw className={`w-4 h-4 ${loadingFriends ? 'animate-spin' : ''}`} />
