@@ -836,7 +836,8 @@ router.get('/friends/list', authMiddleware, (req: Request, res: Response) => {
           COALESCE(CASE WHEN f.requester_id = ? THEN u2.location ELSE u1.location END, '') as friend_location,
           COALESCE(CASE WHEN f.requester_id = ? THEN u2.interests ELSE u1.interests END, '[]') as friend_interests,
           COALESCE(CASE WHEN f.requester_id = ? THEN u2.last_seen_at ELSE u1.last_seen_at END, NULL) as friend_last_seen,
-          COALESCE(CASE WHEN f.requester_id = ? THEN u2.gender ELSE u1.gender END, NULL) as friend_gender
+          COALESCE(CASE WHEN f.requester_id = ? THEN u2.gender ELSE u1.gender END, NULL) as friend_gender,
+          COALESCE(f.friend_label, 'general') as friend_label
         FROM friendships f
         JOIN users u1 ON u1.id = f.requester_id
         JOIN users u2 ON u2.id = f.addressee_id
@@ -880,6 +881,7 @@ router.get('/friends/list', authMiddleware, (req: Request, res: Response) => {
       location: f.friend_location || '',
       interests: (() => { try { return JSON.parse(f.friend_interests || '[]'); } catch { return []; } })(),
       friendSince: f.created_at,
+      friendLabel: f.friend_label || 'general',
       lastSeen: f.friend_last_seen || null,
       isOnline: (req.app.locals as any)?.wsManager?.isUserOnline(f.friend_id) || false,
     }));
