@@ -338,3 +338,52 @@ Stage Summary:
 - commit: bca3f7d
 - الحل جذري: الـ restore يعمل BEFORE db module import
 - الآن عند أي rebuild مستقبلي: البيانات تُسترجع تلقائياً من HF Datasets
+
+---
+Task ID: 15
+Agent: Super Z (main)
+Task: حذف شريط التنبيهات الدائم واستبداله بـ Toast يختفي تلقائياً
+
+Work Log:
+- المستخدم لم يعد يريد شريط التنبيهات الثابت في الأعلى
+- يريد: إظهار التنبيهات كـ Toast فقط عند الإرسال
+- يريد: إخفاء تلقائي بعد مدة معينة
+
+الإصلاحات المطبقة:
+
+1. src/App.tsx:
+   - حذف `<AdminAlertBar />` من الـ main feed layout
+   - حذف `<AdminAlertBar />` من الـ PageLayout
+   - استبدال الـ import بـ `void AdminAlertBar` لتجنب أخطاء الـ build
+
+2. src/contexts/AppContext.tsx handleWSAdminAlert:
+   - كان: يضيف التنبيه لـ adminAlerts state (يغذي الشريط)
+   - أصبح: يعرض toast أحمر متدرّج (gradient) مع:
+     • أيقونة ⚠️
+     • عنوان التنبيه
+     • محتوى التنبيه (مقتطف حتى 120 حرف)
+     • إخفاء تلقائي بعد 10 ثوانٍ
+
+3. src/contexts/AppContext.tsx handleWSNotification:
+   - كان: يضيف notification لـ state + smartNotify فقط
+   - أصبح: يضيف لـ state + smartNotify + يعرض toast أزرق متدرّج مع:
+     • أيقونة حسب النوع (👥 صديق، 💰 محفظة، 🚀 ترويج، ⚠️ alert، 📢 system، 🔔 default)
+     • تسمية النوع بالعربي (إشعار صديق، إشعار محفظة، إلخ)
+     • معاينة الرسالة (مقتطف حتى 140 حرف)
+     • قابل للنقر للانتقال للصفحة ذات الصلة
+     • إخفاء تلقائي بعد 10 ثوانٍ
+
+النتائج بعد النشر:
+- HF Space: RUNNING ✓
+- /api/health: HTTP 200 ✓
+- bundle: index-DmRMZyxG.js
+- ✅ يحتوي على 'تنبيه من الإدارة' و 'إشعار صديق'
+- ✅ AdminAlertBar غير موجود في الـ bundle (تم استبعاده)
+
+Stage Summary:
+- النشر: HF Space (RUNNING)
+- commit: e9d1f49
+- ❌ لا يوجد شريط تنبيهات دائم في الأعلى
+- ✅ التنبيهات تظهر كـ Toast (10 ثوانٍ) ثم تختفي
+- ✅ كل الأنواع (admin/friend/payment/promotion/system) لها toast مخصص
+- ✅ Toast قابل للنقر للانتقال للصفحة ذات الصلة
