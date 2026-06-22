@@ -23,6 +23,10 @@ import { PostCard } from './components/PostCard';
 import { FilterBar } from './components/FilterBar';
 import { CategoryNav } from './components/CategoryNav';
 import { AdminAlertBar } from './components/AdminAlertBar';
+// NOTE: AdminAlertBar is no longer rendered (replaced by toast notifications
+// that auto-hide after 10 seconds). The import is kept so any other component
+// that may reference it doesn't break the build; it can be removed later.
+void AdminAlertBar;
 import { Stories } from './components/Stories';
 import { AdminDashboard } from './components/admin';
 import { ProfilePage } from './components/ProfilePage';
@@ -932,7 +936,6 @@ const MainLayout = () => {
   return (
     <div className={`min-h-screen flex flex-col ${darkMode ? 'bg-gray-900' : 'bg-[#f8f9fa]'}`} dir={dir}>
       <Navbar user={currentUser} />
-      <AdminAlertBar />
       <DepositConfirmationBanner />
       <div className="flex justify-center w-full">
         <div className="flex w-full max-w-[1600px]">
@@ -1313,7 +1316,6 @@ const PageLayout = ({ children }: { children: React.ReactNode }) => {
   return (
     <div className={`min-h-screen flex flex-col ${darkMode ? 'bg-gray-900' : 'bg-[#f8f9fa]'}`} dir={dir}>
       <Navbar user={currentUser} />
-      <AdminAlertBar />
       <DepositConfirmationBanner />
       <PageHeader />
       <div className="flex justify-center w-full flex-1">

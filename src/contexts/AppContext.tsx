@@ -225,7 +225,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const handleWSNotification = useCallback((data: any) => {
-    // Incoming real-time notification
+    // Incoming real-time notification (admin message, friend activity, etc.)
     const newNotif: AppNotification = {
       id: data.id || `ws_${Date.now()}_${Math.random().toString(36).slice(2)}`,
       type: data.type || 'system',
@@ -240,6 +240,52 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (prev.some(n => n.id === newNotif.id)) return prev;
       return [newNotif, ...prev];
     });
+    // Display a toast notification that auto-hides after 10 seconds.
+    // smartNotify() handles native Notification API (when permitted); the
+    // toast is the in-app visual cue for users who don't have OS notifications.
+    const icon = data.type === 'friend' ? '👥' :
+                 data.type === 'payment' ? '💰' :
+                 data.type === 'promotion' ? '🚀' :
+                 data.type === 'alert' ? '⚠️' :
+                 data.type === 'system' ? '📢' : '🔔';
+    toast.custom(
+      () => (
+        <div
+          style={{
+            background: 'linear-gradient(90deg, #1e40af, #2563eb)',
+            color: 'white',
+            padding: '12px 16px',
+            borderRadius: '12px',
+            boxShadow: '0 10px 25px -5px rgba(0,0,0,0.25)',
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: '10px',
+            maxWidth: '380px',
+            border: '1px solid rgba(255,255,255,0.15)',
+            cursor: 'pointer',
+          }}
+          onClick={() => {
+            if (newNotif.link) {
+              window.location.hash = '#' + newNotif.link;
+            }
+          }}
+        >
+          <span style={{ fontSize: '18px', flexShrink: 0 }}>{icon}</span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: '12px', opacity: 0.9, marginBottom: '2px' }}>
+              {data.type === 'friend' ? 'إشعار صديق' :
+               data.type === 'payment' ? 'إشعار محفظة' :
+               data.type === 'promotion' ? 'إشعار ترويج' :
+               data.type === 'alert' ? 'تنبيه هام' : 'إشعار'}
+            </div>
+            <div style={{ fontWeight: 700, fontSize: '13px', wordBreak: 'break-word' }}>
+              {newNotif.message.length > 140 ? newNotif.message.substring(0, 140) + '…' : newNotif.message}
+            </div>
+          </div>
+        </div>
+      ),
+      { duration: 10000 }
+    );
     smartNotify('Nawaqes', newNotif.message);
   }, []);
 
@@ -360,23 +406,47 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }).catch(() => {});
   }, []);
 
-  // Handle admin alert pushed via WebSocket (real-time alert bar)
+  // Handle admin alert pushed via WebSocket.
+  // The old behavior added the alert to `adminAlerts` state which fed the
+  // always-visible AdminAlertBar. Per product decision (2026-06-22), the
+  // persistent bar is removed — admin alerts now show as a toast that
+  // auto-hides after 10 seconds.
   const handleWSAdminAlert = useCallback((data: any) => {
-    // Add the alert to adminAlerts state immediately for real-time display
-    const newAlert: NewsItem = {
-      id: data.id || `ws_alert_${Date.now()}`,
-      title: data.title || '',
-      content: data.content || '',
-      source: data.source || '',
-      isAlert: true,
-      category: data.category || 'urgent',
-      createdAt: data.createdAt || new Date().toISOString(),
-    };
-    setAdminAlerts(prev => {
-      // Avoid duplicates
-      if (prev.some(a => a.id === newAlert.id)) return prev;
-      return [newAlert, ...prev];
-    });
+    const title = data.title || 'تنبيه من الإدارة';
+    const content = data.content || '';
+    // Display a custom toast with red styling for admin alerts.
+    // Duration is 10 seconds — long enough to read, short enough not to annoy.
+    toast.custom(
+      () => (
+        <div
+          style={{
+            background: 'linear-gradient(90deg, #991b1b, #b91c1c)',
+            color: 'white',
+            padding: '12px 16px',
+            borderRadius: '12px',
+            boxShadow: '0 10px 25px -5px rgba(0,0,0,0.3)',
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: '10px',
+            maxWidth: '380px',
+            border: '1px solid rgba(255,255,255,0.15)',
+          }}
+        >
+          <span style={{ fontSize: '18px', flexShrink: 0 }}>⚠️</span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontWeight: 800, fontSize: '13px', marginBottom: '2px' }}>
+              {title}
+            </div>
+            {content && (
+              <div style={{ fontSize: '12px', opacity: 0.9, wordBreak: 'break-word' }}>
+                {content.length > 120 ? content.substring(0, 120) + '…' : content}
+              </div>
+            )}
+          </div>
+        </div>
+      ),
+      { duration: 10000 }
+    );
   }, []);
 
   // Connect WebSocket and register all handlers
