@@ -528,6 +528,8 @@
     "accountDetailsRequired": "Account details are required",
     "savingsDebit": "Deposit to savings goal",
     "savingsRefund": "Withdrawal from savings goal",
+    "chargeOnlyTitle": "Internal-use wallet",
+    "chargeOnlyDesc": "You can charge your wallet and use the balance for promotions, savings goals, and gifts. Withdrawals are not available at this time.",
     "overview": "Overview",
     "history": "History",
     "promote": "Promote",

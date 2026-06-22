@@ -581,7 +581,9 @@
     "goalAmountAdded": "تم إضافة {{amount}} ج.م للهدف من محفظتك",
     "goalAmountWithdrawn": "تم سحب {{amount}} ج.م من الهدف إلى محفظتك",
     "withdrawFromGoal": "سحب من الهدف",
-    "addToGoal": "إضافة للهدف"
+    "addToGoal": "إضافة للهدف",
+    "chargeOnlyTitle": "محفظة للاستخدام الداخلي",
+    "chargeOnlyDesc": "يمكنك شحن المحفظة واستخدام الرصيد للترويج، أهداف التوفير، والهدايا. السحب غير متاح حالياً."
   },
   "settings": {
     "title": "الإعدادات",

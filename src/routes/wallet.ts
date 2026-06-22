@@ -176,68 +176,18 @@ router.post('/admin/charging-requests/:id/reject', authMiddleware, adminMiddlewa
   }
 });
 
-// ─── Withdrawal Routes (moved from server.ts) ──────────────────────
+// ─── Withdrawal Routes (DISABLED — charge-only wallet policy) ──────
+// Per product decision (2026-06-22): the wallet is for internal use only
+// (charging for promotions, savings goals, gifts). Users cannot withdraw
+// funds back to their bank/wallet. Any existing pending withdrawal
+// requests can still be processed by admins via the admin endpoints below.
 
-// POST /api/wallet/withdraw
+// POST /api/wallet/withdraw — DISABLED (returns 403)
 router.post('/withdraw', authMiddleware, (req: Request, res: Response) => {
-  try {
-    const payload = (req as any).user as JwtPayload;
-    const userId = payload.userId;
-    const { amount, method, accountDetails } = req.body;
-    if (!amount || !method || amount <= 0) {
-      res.status(400).json({ error: 'المبلغ وطريقة السحب مطلوبان' }); return;
-    }
-    if (amount < MIN_WITHDRAW_AMOUNT) {
-      res.status(400).json({ error: `الحد الأدنى للسحب ${MIN_WITHDRAW_AMOUNT} ج.م` }); return;
-    }
-    if (amount > MAX_WITHDRAW_AMOUNT) {
-      res.status(400).json({ error: `الحد الأقصى للسحب ${MAX_WITHDRAW_AMOUNT.toLocaleString()} ج.م` }); return;
-    }
-    if (!accountDetails || String(accountDetails).trim() === '') {
-      res.status(400).json({ error: 'تفاصيل الحسب مطلوبة (رقم المحفظة/الحساب البنكي)' }); return;
-    }
-    // Check balance
-    const user = db.prepare('SELECT wallet_balance, name FROM users WHERE id = ?').get(userId) as any;
-    if (!user || user.wallet_balance < amount) {
-      res.status(400).json({ error: 'رصيد غير كافي' }); return;
-    }
-    // ✅ FIX: Deduct from balance immediately (refund if rejected).
-    // This prevents double-spending — if the user requests multiple withdrawals
-    // totalling more than their balance, only the first will succeed.
-    db.prepare('UPDATE users SET wallet_balance = wallet_balance - ?, updated_at = datetime(\'now\') WHERE id = ?').run(amount, userId);
-    // Create withdrawal request
-    const id = crypto.randomBytes(16).toString('hex');
-    db.prepare('INSERT INTO withdrawal_requests (id, user_id, amount, method, account_details, status) VALUES (?, ?, ?, ?, ?, ?)').run(
-      id, userId, amount, method, accountDetails || '', 'pending'
-    );
-    // Create transaction record linked to this withdrawal
-    const txId = crypto.randomBytes(16).toString('hex');
-    db.prepare('INSERT INTO transactions (id, user_id, type, amount, method, status, reference_id) VALUES (?, ?, ?, ?, ?, ?, ?)').run(
-      txId, userId, 'withdrawal', amount, method, 'pending', id
-    );
-    // Notify admin
-    const admins = db.prepare('SELECT id FROM users WHERE is_admin = 1').all() as any[];
-    const insertNotif = db.prepare('INSERT INTO notifications (user_id, type, message, link) VALUES (?, ?, ?, ?)');
-    for (const admin of admins) {
-      insertNotif.run(admin.id, 'payment', `طلب سحب جديد: ${amount} ج.م من ${user.name}`, '/admin/transactions');
-    }
-    // Notify user
-    db.prepare('INSERT INTO notifications (user_id, type, message, link) VALUES (?, ?, ?, ?)').run(
-      userId, 'payment', `تم تقديم طلب سحب ${amount.toLocaleString()} ج.م وسيتم مراجعته من الإدارة`, '/wallet'
-    );
-
-    // Broadcast wallet update to user
-    try {
-      const wsManager = (req.app as any).locals?.wsManager;
-      if (wsManager) {
-        wsManager.sendToUser(userId, { type: "wallet:updated", data: { userId, amount: -amount } });
-      }
-    } catch {}
-
-    res.json({ success: true, id, message: 'تم تقديم طلب السحب بنجاح' });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
+  res.status(403).json({
+    error: 'ميزة السحب غير متاحة حالياً. المحفظة مخصصة للاستخدام الداخلي فقط (الترويج، أهداف التوفير، الهدايا).',
+    code: 'WITHDRAWAL_DISABLED'
+  });
 });
 
 // GET /api/wallet/withdrawals
