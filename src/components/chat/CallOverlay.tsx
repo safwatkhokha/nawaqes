@@ -30,7 +30,7 @@ export const CallOverlay: React.FC = () => {
       if (!isScreenSharing) {
         // Start screen sharing
         const screenStream = await navigator.mediaDevices.getDisplayMedia({
-          video: { cursor: 'always' },
+          video: { cursor: 'always' } as MediaTrackConstraints,
           audio: false,
         });
         screenStreamRef.current = screenStream;

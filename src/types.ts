@@ -13,6 +13,9 @@ export interface User {
   gender?: 'male' | 'female';
   location?: string;
   phone?: string;
+  email?: string;
+  email_verified?: boolean;
+  is_verified?: boolean;
   dateOfBirth?: string;
   age?: number;
   showPhone?: boolean;

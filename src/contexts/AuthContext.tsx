@@ -10,6 +10,7 @@ import { connectWebSocket, disconnectWebSocket } from '../hooks/useWebSocket';
 
 interface AuthContextType {
   currentUser: User | null;
+  user: User | null; // alias for currentUser (used by some components)
   isLoggedIn: boolean;
   initializing: boolean;
   login: (email: string, password: string) => Promise<boolean>;
@@ -18,12 +19,14 @@ interface AuthContextType {
   updateProfile: (updates: Partial<User>) => Promise<void>;
   refreshCurrentUser: () => Promise<void>;
   allUsers: User[];
+  setCurrentUser: (user: User | null) => void;
 }
 
 export const AuthContext = createContext<AuthContextType>({
-  currentUser: null, isLoggedIn: false, initializing: true,
+  currentUser: null, user: null, isLoggedIn: false, initializing: true,
   login: async () => false, register: async () => false,
   logout: () => {}, updateProfile: async () => {}, refreshCurrentUser: async () => {}, allUsers: [],
+  setCurrentUser: () => {},
 });
 
 export const useAuth = () => useContext(AuthContext);
@@ -202,7 +205,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ currentUser, isLoggedIn, initializing, login, register, logout, updateProfile, refreshCurrentUser, allUsers }}>
+    <AuthContext.Provider value={{ currentUser, user: currentUser, isLoggedIn, initializing, login, register, logout, updateProfile, refreshCurrentUser, allUsers, setCurrentUser }}>
       {children}
     </AuthContext.Provider>
   );
