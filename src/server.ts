@@ -1116,8 +1116,51 @@ async function startServer() {
 
     // 🔧 Initialize auto-backup system
     try {
-      const { initAutoBackup } = await import('./database/backup-system.js');
+      const { initAutoBackup, createManualBackup, getBackupStats, createEventBackup } = await import('./database/backup-system.js');
       initAutoBackup();
+
+      // Manual backup endpoint (admin only)
+      app.post('/api/admin/backup', authMiddleware, async (req: express.Request, res: express.Response) => {
+        try {
+          const payload = (req as any).user as JwtPayload;
+          if (!payload.isAdmin) { res.status(403).json({ error: 'ممنوع' }); return; }
+          createManualBackup();
+          res.json({ success: true, message: 'تم إنشاء نسخة احتياطية' });
+        } catch (err: any) {
+          res.status(500).json({ error: 'فشل النسخ الاحتياطي', details: err.message });
+        }
+      });
+
+      // Backup stats endpoint (admin only)
+      app.get('/api/admin/backup-stats', authMiddleware, async (req: express.Request, res: express.Response) => {
+        try {
+          const payload = (req as any).user as JwtPayload;
+          if (!payload.isAdmin) { res.status(403).json({ error: 'ممنوع' }); return; }
+          res.json(getBackupStats());
+        } catch (err: any) {
+          res.status(500).json({ error: 'فشل جلب الإحصائيات', details: err.message });
+        }
+      });
+
+      // Save .env to persistent storage so it survives rebuilds
+      app.post('/api/admin/persist-env', authMiddleware, async (req: express.Request, res: express.Response) => {
+        try {
+          const payload = (req as any).user as JwtPayload;
+          if (!payload.isAdmin) { res.status(403).json({ error: 'ممنوع' }); return; }
+          const fs2 = await import('fs');
+          const envPath = path.resolve(process.cwd(), '.env');
+          const persistentEnvPath = '/data/.env';
+          if (fs2.existsSync(envPath)) {
+            fs2.copyFileSync(envPath, persistentEnvPath);
+            res.json({ success: true, message: 'تم حفظ الإعدادات بشكل دائم' });
+          } else {
+            res.status(404).json({ error: 'ملف .env غير موجود' });
+          }
+        } catch (err: any) {
+          res.status(500).json({ error: 'فشل حفظ الإعدادات', details: err.message });
+        }
+      });
+
     } catch (err: any) {
       console.warn('[BACKUP] Init failed:', err.message);
     }
