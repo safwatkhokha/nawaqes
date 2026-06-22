@@ -26,6 +26,7 @@ interface FriendUser extends User {
   friendSince?: string;
   friendLabel?: string;
   recentActivity?: string;
+  friendshipId?: string;
 }
 
 // ─── Friend Post Type ────────────────────────────────
@@ -440,6 +441,7 @@ export const FriendsPage: React.FC = () => {
           const isOnline = f.isOnline === true || isUserOnlineWs(f.id) || isUserOnline(f.id);
           return {
             id: f.id,
+            friendshipId: f.friendshipId || '',
             name: f.name || t('common.user'),
             avatar: f.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${f.id}`,
             isVerified: f.isVerified || f.is_verified,
@@ -699,7 +701,7 @@ export const FriendsPage: React.FC = () => {
   };
 
   // FIXED: Use proper unfriend API instead of rejectFriendRequest
-  const handleRemoveFriend = async (friendId: string, friendName: string) => {
+  const handleRemoveFriend = async (friendId: string, friendName: string, friendshipId?: string) => {
     setConfirmDialog({
       title: t('friends.removeFriend'),
       message: t('friends.removeFriendConfirm', { name: friendName }),
@@ -708,7 +710,12 @@ export const FriendsPage: React.FC = () => {
       onConfirm: async () => {
         setConfirmDialog(null);
         try {
-          await api.unfriendByUserId(friendId);
+          // Use friendshipId if available, otherwise fall back to userId
+          if (friendshipId) {
+            await api.unfriend(friendshipId);
+          } else {
+            await api.unfriendByUserId(friendId);
+          }
           setFriends(prev => prev.filter(f => f.id !== friendId));
           toast.info(t('friends.friendshipRemoved'));
         } catch {
@@ -864,7 +871,7 @@ export const FriendsPage: React.FC = () => {
       )}
       <div className={`my-1 border-t ${darkMode ? 'border-gray-700' : 'border-gray-100'}`} />
       <button
-        onClick={() => { onClose(); handleRemoveFriend(friend.id, friend.name); }}
+        onClick={() => { onClose(); handleRemoveFriend(friend.id, friend.name, friend.friendshipId); }}
         className={`w-full flex items-center gap-2 px-3 py-2 text-xs font-bold ${darkMode ? 'hover:bg-gray-700 text-red-400' : 'hover:bg-red-50 text-red-600'}`}
       >
         <UserMinus className="w-3.5 h-3.5" /> {t('friends.removeFriend')}

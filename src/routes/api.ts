@@ -7,6 +7,7 @@ import fs from 'fs';
 import db from '../database/index.js';
 import { authMiddleware, optionalAuth, JwtPayload } from '../middleware/auth.js';
 import { getDefaultAvatar } from '../utils/serverAvatar.js';
+import { notifyFriendRequest, sendPushToUser } from '../services/pushNotifications.js';
 
 const router = Router();
 
@@ -872,6 +873,7 @@ router.get('/friends/list', authMiddleware, (req: Request, res: Response) => {
     }
 
     const friends = friendships.map((f: any) => ({
+      friendshipId: f.id,
       id: f.friend_id,
       name: f.friend_name,
       avatar: f.friend_avatar_base64 || f.friend_avatar || getDefaultAvatar(f.friend_id, f.friend_gender),
@@ -907,7 +909,13 @@ router.get('/friends/suggestions', authMiddleware, (req: Request, res: Response)
       FROM friendships WHERE (requester_id = ? OR addressee_id = ?)
     `).all(payload.userId, payload.userId, payload.userId).map((r: any) => r.friend_id);
 
-    const excludeIds = [...existingFriends, payload.userId];
+    // Get IDs of blocked users (both directions)
+    const blockedIds = db.prepare(`
+      SELECT CASE WHEN blocker_id = ? THEN blocked_id ELSE blocker_id END as blocked_id
+      FROM blocked_users WHERE blocker_id = ? OR blocked_id = ?
+    `).all(payload.userId, payload.userId, payload.userId).map((r: any) => r.blocked_id);
+
+    const excludeIds = [...existingFriends, payload.userId, ...blockedIds];
 
     // Find users with matching interests who are not already friends
     let suggestions: any[] = [];
@@ -998,7 +1006,7 @@ router.get('/friends/requests', authMiddleware, (req: Request, res: Response) =>
   }
 });
 
-router.post('/friends/request', authMiddleware, (req: Request, res: Response) => {
+router.post('/friends/request', authMiddleware, async (req: Request, res: Response) => {
   try {
     const payload = (req as any).user as JwtPayload;
     const { userId } = req.body;
@@ -1009,6 +1017,11 @@ router.post('/friends/request', authMiddleware, (req: Request, res: Response) =>
     const targetUser = db.prepare('SELECT id FROM users WHERE id = ?').get(userId) as any;
     if (!targetUser) { res.status(404).json({ error: 'المستخدم غير موجود' }); return; }
 
+    // Check if either user has blocked the other
+    const blockCheck = db.prepare('SELECT id FROM blocked_users WHERE (blocker_id = ? AND blocked_id = ?) OR (blocker_id = ? AND blocked_id = ?)')
+      .get(payload.userId, userId, userId, payload.userId) as any;
+    if (blockCheck) { res.status(403).json({ error: 'لا يمكنك إرسال طلب صداقة لهذا المستخدم' }); return; }
+
     // Check if already friends or request already sent
     const existing = db.prepare('SELECT * FROM friendships WHERE (requester_id = ? AND addressee_id = ?) OR (requester_id = ? AND addressee_id = ?)')
       .get(payload.userId, userId, userId, payload.userId) as any;
@@ -1016,6 +1029,10 @@ router.post('/friends/request', authMiddleware, (req: Request, res: Response) =>
       if (existing.status === 'accepted') { res.status(400).json({ error: 'أنتما أصدقاء بالفعل' }); return; }
       if (existing.status === 'pending' && existing.requester_id === payload.userId) { res.status(400).json({ error: 'لقد أرسلت طلباً بالفعل' }); return; }
       if (existing.status === 'pending' && existing.addressee_id === payload.userId) { res.status(400).json({ error: 'لديك طلب صداقة من هذا المستخدم' }); return; }
+      if (existing.status === 'rejected') {
+        // If previously rejected, allow resending by deleting the old record
+        db.prepare('DELETE FROM friendships WHERE id = ?').run(existing.id);
+      }
     }
 
     db.prepare('INSERT OR IGNORE INTO friendships (requester_id, addressee_id, status) VALUES (?, ?, ?)')
@@ -1058,13 +1075,22 @@ router.post('/friends/request', authMiddleware, (req: Request, res: Response) =>
       console.error('[WS] Failed to emit friend request:', wsErr.message);
     }
 
+    // Send FCM push notification for friend request
+    try {
+      if (sender) {
+        await notifyFriendRequest(userId, sender.name);
+      }
+    } catch (pushErr: any) {
+      console.error('[FCM] Failed to send friend request push:', pushErr.message);
+    }
+
     res.json({ message: 'تم إرسال طلب الصداقة' });
   } catch (err: any) {
     res.status(500).json({ error: 'فشل إرسال طلب الصداقة', details: err.message });
   }
 });
 
-router.post('/friends/accept/:id', authMiddleware, (req: Request, res: Response) => {
+router.post('/friends/accept/:id', authMiddleware, async (req: Request, res: Response) => {
   try {
     const payload = (req as any).user as JwtPayload;
     const friendship = db.prepare('SELECT * FROM friendships WHERE id = ? AND addressee_id = ?').get(req.params.id, payload.userId) as any;
@@ -1102,6 +1128,15 @@ router.post('/friends/accept/:id', authMiddleware, (req: Request, res: Response)
       }
     } catch (wsErr: any) {
       console.error('[WS] Failed to emit friend accepted:', wsErr.message);
+    }
+
+    // Send FCM push notification for friend request acceptance
+    try {
+      if (accepter) {
+        await sendPushToUser(friendship.requester_id, 'طلب صداقة مقبول', `قبل ${accepter.name} طلب الصداقة`, { type: 'friend_accepted', link: '/friends' });
+      }
+    } catch (pushErr: any) {
+      console.error('[FCM] Failed to send friend accepted push:', pushErr.message);
     }
 
     res.json({ message: 'تم قبول طلب الصداقة' });
