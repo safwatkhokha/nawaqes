@@ -1,4 +1,4 @@
-import React, { useState, useRef, useMemo } from 'react';
+import React, { useState, useRef, useMemo, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAppContext } from '../contexts/AppContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -63,7 +63,7 @@ export const WalletPage: React.FC = () => {
   const [receiptImage, setReceiptImage] = useState<string>('');
   const [receiptPreview, setReceiptPreview] = useState<string>('');
   const [additionalPhone, setAdditionalPhone] = useState('');
-  const [txFilter, setTxFilter] = useState<'all' | 'charge_request' | 'deposit' | 'promotion_debit' | 'promotion_refund'>('all');
+  const [txFilter, setTxFilter] = useState<'all' | 'charge_request' | 'deposit' | 'promotion_debit' | 'promotion_refund' | 'withdrawal' | 'admin_deposit' | 'admin_withdrawal' | 'gift_sent' | 'gift_received'>('all');
   const [showAnalytics, setShowAnalytics] = useState(true);
   const [showHistory, setShowHistory] = useState(true);
   const [activeWalletTab, setActiveWalletTab] = useState<'overview' | 'charge' | 'withdraw' | 'history' | 'savings'>('overview');
@@ -78,12 +78,35 @@ export const WalletPage: React.FC = () => {
     target: number;
     current: number;
     deadline: string;
-  }[]>([
-    { id: 'goal_1', name: t('wallet.defaultGoalName'), target: 500, current: 150, deadline: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0] },
-  ]);
+  }[]>([]);
+  const [isLoadingGoals, setIsLoadingGoals] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   if (!currentUser) return null;
+
+  // Load savings goals from API
+  useEffect(() => {
+    const loadGoals = async () => {
+      setIsLoadingGoals(true);
+      try {
+        const goals = await api.getSavingsGoals();
+        if (Array.isArray(goals) && goals.length > 0) {
+          setSavingsGoals(goals.map((g: any) => ({
+            id: g.id,
+            name: g.name,
+            target: g.target_amount || g.target,
+            current: g.current_amount || g.current,
+            deadline: g.deadline || '',
+          })));
+        }
+      } catch {
+        // Goals not available yet, use empty array
+      } finally {
+        setIsLoadingGoals(false);
+      }
+    };
+    loadGoals();
+  }, []);
 
   const paymentAccounts = [
     { id: 'vfcash', name: t('wallet.vodafoneCash'), icon: Smartphone, color: 'bg-red-500', number: '01010023494', subtitle: 'Vodafone Cash' },
@@ -125,11 +148,23 @@ export const WalletPage: React.FC = () => {
 
   // Balance history for mini-chart (last 7 entries based on running balance)
   const balanceHistory = useMemo(() => {
+    // Credit types increase balance, debit types decrease balance
+    const creditTypes = ['deposit', 'promotion_refund', 'admin_deposit', 'gift_received'];
+    const debitTypes = ['promotion_debit', 'admin_withdrawal', 'withdrawal', 'gift_sent'];
+    // charge_request is pending — doesn't affect balance yet
+    
     let runningBalance = currentUser.walletBalance || 0;
     const entries: { label: string; value: number }[] = [];
+    // Start from current balance and work backwards
     const recent = transactions.slice(0, 7).reverse();
     for (const tx of recent) {
-      runningBalance += tx.type === 'promotion_debit' ? tx.amount : -tx.amount;
+      // Reverse the effect: if it was a credit, subtract; if debit, add back
+      if (creditTypes.includes(tx.type) && tx.status === 'completed') {
+        runningBalance -= tx.amount;
+      } else if (debitTypes.includes(tx.type) && (tx.status === 'completed' || tx.status === 'pending')) {
+        runningBalance += tx.amount;
+      }
+      // charge_request with pending/approved status doesn't affect balance
       entries.push({
         label: tx.timestamp ? new Date(tx.timestamp).toLocaleDateString(language === 'ar' ? 'ar-EG' : 'en-US', { day: 'numeric', month: 'short' }) : '',
         value: Math.max(0, runningBalance),
@@ -170,30 +205,59 @@ export const WalletPage: React.FC = () => {
     return { points, tier, tierColor, tierBg, cashbackPercent, nextTierAmount, totalSpent };
   }, [walletStats.totalSpent, darkMode]);
 
-  // Add savings goal handler
-  const handleAddGoal = () => {
+  // Add savings goal handler (persisted to DB)
+  const handleAddGoal = async () => {
     if (!newGoalName.trim() || !newGoalTarget || parseFloat(newGoalTarget) <= 0) {
       toast.error(t('wallet.invalidGoalInfo'));
       return;
     }
-    setSavingsGoals(prev => [...prev, {
-      id: `goal_${Date.now()}`,
-      name: newGoalName.trim(),
-      target: parseFloat(newGoalTarget),
-      current: 0,
-      deadline: newGoalDeadline || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-    }]);
-    setNewGoalName('');
-    setNewGoalTarget('');
-    setNewGoalDeadline('');
-    setShowNewGoalForm(false);
-    toast.success(t('wallet.goalAdded'));
+    try {
+      const goal = await api.createSavingsGoal(
+        newGoalName.trim(),
+        parseFloat(newGoalTarget),
+        newGoalDeadline || undefined
+      );
+      setSavingsGoals(prev => [...prev, {
+        id: goal.id,
+        name: goal.name,
+        target: goal.target_amount || goal.target,
+        current: goal.current_amount || goal.current || 0,
+        deadline: goal.deadline || '',
+      }]);
+      setNewGoalName('');
+      setNewGoalTarget('');
+      setNewGoalDeadline('');
+      setShowNewGoalForm(false);
+      toast.success(t('wallet.goalAdded'));
+    } catch {
+      toast.error(t('wallet.goalAddFailed'));
+    }
   };
 
-  // Delete savings goal handler
-  const handleDeleteGoal = (id: string) => {
-    setSavingsGoals(prev => prev.filter(g => g.id !== id));
-    toast.success(t('wallet.goalDeleted'));
+  // Delete savings goal handler (persisted to DB)
+  const handleDeleteGoal = async (id: string) => {
+    try {
+      await api.deleteSavingsGoal(id);
+      setSavingsGoals(prev => prev.filter(g => g.id !== id));
+      toast.success(t('wallet.goalDeleted'));
+    } catch {
+      toast.error(t('wallet.goalDeleteFailed'));
+    }
+  };
+
+  // Add amount to savings goal (persisted to DB)
+  const handleAddToGoal = async (id: string, amount: number) => {
+    try {
+      const updated = await api.addToSavingsGoal(id, amount);
+      setSavingsGoals(prev => prev.map(g =>
+        g.id === id ? {
+          ...g,
+          current: updated.current_amount || updated.current || g.current,
+        } : g
+      ));
+    } catch {
+      toast.error(t('wallet.goalUpdateFailed'));
+    }
   };
 
   // Spending percentage for visual bar
@@ -294,6 +358,50 @@ export const WalletPage: React.FC = () => {
   const handleCancelTransaction = () => {
     setConfirmStep('input');
     setPendingAmount(0);
+  };
+
+  // Transaction type helpers
+  const isCreditTx = (type: string) => ['deposit', 'promotion_refund', 'admin_deposit', 'gift_received'].includes(type);
+  const isPendingTx = (type: string) => type === 'charge_request'; // Pending requests — not yet credited
+  const isDebitTx = (type: string) => ['promotion_debit', 'admin_withdrawal', 'withdrawal', 'gift_sent'].includes(type);
+
+  const getTxLabel = (type: string) => {
+    switch (type) {
+      case 'charge_request': return t('wallet.chargeRequest');
+      case 'deposit': return t('wallet.deposit');
+      case 'promotion_debit': return t('wallet.promotionDebit');
+      case 'promotion_refund': return t('wallet.promotionRefund');
+      case 'admin_deposit': return t('wallet.adminDeposit', 'إيداع أدمن');
+      case 'admin_withdrawal': return t('wallet.adminWithdrawal', 'سحب أدمن');
+      case 'withdrawal': return t('wallet.withdrawal', 'سحب');
+      case 'gift_sent': return t('wallet.giftSent', 'هدية مرسلة');
+      case 'gift_received': return t('wallet.giftReceived', 'هدية مستلمة');
+      default: return type;
+    }
+  };
+
+  const getTxIcon = (type: string) => {
+    if (isCreditTx(type)) return <ArrowDownRight className="w-5 h-5" />;
+    if (isPendingTx(type)) return <Clock className="w-5 h-5" />;
+    return <CreditCard className="w-5 h-5" />;
+  };
+
+  const getTxColor = (type: string) => {
+    if (isCreditTx(type)) return 'text-green-600';
+    if (isPendingTx(type)) return 'text-yellow-600';
+    return 'text-red-600';
+  };
+
+  const getTxBgColor = (type: string, darkMode: boolean) => {
+    if (isCreditTx(type)) return darkMode ? 'bg-green-900/30 text-green-400' : 'bg-green-50 text-green-600';
+    if (isPendingTx(type)) return darkMode ? 'bg-yellow-900/30 text-yellow-400' : 'bg-yellow-50 text-yellow-600';
+    return darkMode ? 'bg-red-900/30 text-red-400' : 'bg-red-50 text-red-600';
+  };
+
+  const getTxSign = (type: string) => {
+    if (isCreditTx(type)) return '+';
+    if (isPendingTx(type)) return ''; // No sign for pending
+    return '-';
   };
 
   const copyToClipboard = (text: string) => {
@@ -707,24 +815,19 @@ export const WalletPage: React.FC = () => {
                   {recentTransactions.map(tx => (
                     <div key={tx.id} className="px-5 py-3 flex items-center justify-between">
                       <div className="flex items-center gap-3">
-                        <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${
-                          tx.type === 'deposit' || tx.type === 'promotion_refund' || tx.type === 'charge_request'
-                            ? darkMode ? 'bg-green-900/30 text-green-400' : 'bg-green-50 text-green-600'
-                            : darkMode ? 'bg-red-900/30 text-red-400' : 'bg-red-50 text-red-600'
-                        }`}>
-                          {tx.type === 'deposit' || tx.type === 'promotion_refund' ? <ArrowDownRight className="w-4 h-4" /> :
-                           tx.type === 'charge_request' ? <Clock className="w-4 h-4" /> : <CreditCard className="w-4 h-4" />}
+                        <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${getTxBgColor(tx.type, darkMode)}`}>
+                          {getTxIcon(tx.type)}
                         </div>
                         <div>
                           <p className={`text-xs font-bold ${textPrimary}`}>
-                            {tx.type === 'charge_request' ? t('wallet.chargeRequest') : tx.type === 'deposit' ? t('wallet.deposit') : tx.type === 'promotion_debit' ? t('wallet.promotionDebit') : tx.type === 'promotion_refund' ? t('wallet.promotionRefund') : tx.type}
+                            {getTxLabel(tx.type)}
                           </p>
                           <p className={`text-[10px] ${textMuted}`}>{tx.method}</p>
                         </div>
                       </div>
                       <div className="text-end">
-                        <span className={`text-sm font-black ${tx.type === 'deposit' || tx.type === 'promotion_refund' || tx.type === 'charge_request' ? 'text-green-600' : 'text-red-600'}`}>
-                          {tx.type === 'deposit' || tx.type === 'promotion_refund' || tx.type === 'charge_request' ? '+' : '-'}{tx.amount.toLocaleString()}
+                        <span className={`text-sm font-black ${getTxColor(tx.type)}`}>
+                          {getTxSign(tx.type)}{tx.amount.toLocaleString()}
                         </span>
                         <div className="flex items-center gap-1 justify-end">
                           <span className={`text-[8px] px-1.5 py-0.5 rounded font-bold ${
@@ -732,9 +835,13 @@ export const WalletPage: React.FC = () => {
                               ? darkMode ? 'bg-green-900/30 text-green-400' : 'bg-green-50 text-green-600'
                               : tx.status === 'pending'
                                 ? darkMode ? 'bg-yellow-900/30 text-yellow-400' : 'bg-yellow-50 text-yellow-600'
-                                : darkMode ? 'bg-red-900/30 text-red-400' : 'bg-red-50 text-red-600'
+                                : tx.status === 'approved'
+                                  ? darkMode ? 'bg-blue-900/30 text-blue-400' : 'bg-blue-50 text-blue-600'
+                                  : tx.status === 'failed'
+                                    ? darkMode ? 'bg-gray-700 text-gray-400' : 'bg-gray-100 text-gray-500'
+                                    : darkMode ? 'bg-red-900/30 text-red-400' : 'bg-red-50 text-red-600'
                           }`}>
-                            {tx.status === 'completed' ? t('wallet.completed') : tx.status === 'pending' ? t('wallet.inProgress') : t('common.cancel')}
+                            {tx.status === 'completed' ? t('wallet.completed') : tx.status === 'pending' ? t('wallet.inProgress') : tx.status === 'approved' ? t('wallet.approved', 'معتمد') : tx.status === 'failed' ? t('wallet.failed', 'فشل') : t('common.cancel')}
                           </span>
                         </div>
                       </div>
@@ -1043,6 +1150,9 @@ export const WalletPage: React.FC = () => {
                     { id: 'deposit' as const, label: t('wallet.deposit') },
                     { id: 'promotion_debit' as const, label: t('wallet.promotionDebit') },
                     { id: 'promotion_refund' as const, label: t('wallet.promotionRefund') },
+                    { id: 'withdrawal' as const, label: t('wallet.withdrawal', 'سحب') },
+                    { id: 'admin_deposit' as const, label: t('wallet.adminDeposit', 'إيداع أدمن') },
+                    { id: 'admin_withdrawal' as const, label: t('wallet.adminWithdrawal', 'سحب أدمن') },
                   ].map(f => (
                     <button
                       key={f.id}
@@ -1070,27 +1180,26 @@ export const WalletPage: React.FC = () => {
                       className="px-5 py-4 flex items-center justify-between"
                     >
                       <div className="flex items-center gap-3">
-                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
-                          tx.type === 'deposit' || tx.type === 'promotion_refund' || tx.type === 'charge_request'
-                            ? darkMode ? 'bg-green-900/30 text-green-400' : 'bg-green-50 text-green-600'
-                            : darkMode ? 'bg-red-900/30 text-red-400' : 'bg-red-50 text-red-600'
-                        }`}>
-                          {tx.type === 'deposit' || tx.type === 'promotion_refund' ? <ArrowDownRight className="w-5 h-5" /> :
-                           tx.type === 'charge_request' ? <Clock className="w-5 h-5" /> : <CreditCard className="w-5 h-5" />}
+                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${getTxBgColor(tx.type, darkMode)}`}>
+                          {getTxIcon(tx.type)}
                         </div>
                         <div>
                           <div className="flex items-center gap-2">
                             <span className={`text-sm font-bold ${textPrimary}`}>
-                              {tx.type === 'charge_request' ? t('wallet.chargeRequest') : tx.type === 'deposit' ? t('wallet.deposit') : tx.type === 'promotion_debit' ? t('wallet.promotionDebit') : tx.type === 'promotion_refund' ? t('wallet.promotionRefund') : tx.type}
+                              {getTxLabel(tx.type)}
                             </span>
                             <span className={`text-[9px] px-1.5 py-0.5 rounded-md font-bold ${
                               tx.status === 'completed'
                                 ? darkMode ? 'bg-green-900/30 text-green-400' : 'bg-green-50 text-green-600'
                                 : tx.status === 'pending'
                                   ? darkMode ? 'bg-yellow-900/30 text-yellow-400' : 'bg-yellow-50 text-yellow-600'
-                                  : darkMode ? 'bg-red-900/30 text-red-400' : 'bg-red-50 text-red-600'
+                                  : tx.status === 'approved'
+                                    ? darkMode ? 'bg-blue-900/30 text-blue-400' : 'bg-blue-50 text-blue-600'
+                                    : tx.status === 'failed'
+                                      ? darkMode ? 'bg-gray-700 text-gray-400' : 'bg-gray-100 text-gray-500'
+                                      : darkMode ? 'bg-red-900/30 text-red-400' : 'bg-red-50 text-red-600'
                             }`}>
-                              {tx.status === 'completed' ? t('wallet.completed') : tx.status === 'pending' ? t('wallet.inProgress') : t('common.cancel')}
+                              {tx.status === 'completed' ? t('wallet.completed') : tx.status === 'pending' ? t('wallet.inProgress') : tx.status === 'approved' ? t('wallet.approved', 'معتمد') : tx.status === 'failed' ? t('wallet.failed', 'فشل') : t('common.cancel')}
                             </span>
                           </div>
                           <span className={`text-[11px] ${textMuted}`}>
@@ -1098,8 +1207,8 @@ export const WalletPage: React.FC = () => {
                           </span>
                         </div>
                       </div>
-                      <span className={`text-sm font-black ${tx.type === 'deposit' || tx.type === 'promotion_refund' || tx.type === 'charge_request' ? 'text-green-600' : 'text-red-600'}`}>
-                        {tx.type === 'deposit' || tx.type === 'promotion_refund' || tx.type === 'charge_request' ? '+' : '-'}{tx.amount.toLocaleString()} {t('common.egp')}
+                      <span className={`text-sm font-black ${getTxColor(tx.type)}`}>
+                        {getTxSign(tx.type)}{tx.amount.toLocaleString()} {t('common.egp')}
                       </span>
                     </motion.div>
                   ))}
@@ -1324,9 +1433,7 @@ export const WalletPage: React.FC = () => {
                               <button
                                 key={amt}
                                 onClick={() => {
-                                  setSavingsGoals(prev => prev.map(g =>
-                                    g.id === goal.id ? { ...g, current: Math.min(g.current + amt, g.target) } : g
-                                  ));
+                                  handleAddToGoal(goal.id, amt);
                                   toast.success(t('wallet.amountAddedToGoal', { amount: amt.toLocaleString() }));
                                 }}
                                 className={`flex-1 py-1.5 rounded-lg text-[9px] font-bold transition-colors ${
@@ -1400,13 +1507,11 @@ export const WalletPage: React.FC = () => {
 
 // ─── Withdraw Tab Component ──────────────────────────────────────
 const WITHDRAWAL_METHODS = [
-  { id: 'vfcash', name: 'Vodafone Cash', icon: '📱', color: 'from-red-500 to-red-600' },
-  { id: 'instapay', name: 'InstaPay', icon: '💸', color: 'from-blue-500 to-blue-600' },
-  { id: 'etisalat', name: 'Etisalat Cash', icon: '📶', color: 'from-green-500 to-green-600' },
-  { id: 'bank', name: t2('تحويل بنكي', 'Bank Transfer'), icon: '🏦', color: 'from-purple-500 to-purple-600' },
+  { id: 'vfcash', nameKey: 'wallet.vodafoneCash', icon: '📱', color: 'from-red-500 to-red-600' },
+  { id: 'instapay', nameKey: 'wallet.instaPay', icon: '💸', color: 'from-blue-500 to-blue-600' },
+  { id: 'etisalat', nameKey: 'wallet.etisalatCash', icon: '📶', color: 'from-green-500 to-green-600' },
+  { id: 'bank', nameKey: 'wallet.bankTransfer', icon: '🏦', color: 'from-purple-500 to-purple-600' },
 ];
-
-function t2(ar: string, en: string) { return en; } // fallback
 
 interface WithdrawTabProps {
   darkMode: boolean;
@@ -1492,7 +1597,7 @@ const WithdrawTab: React.FC<WithdrawTabProps> = ({ darkMode, currentUser, refres
           <div className="flex items-center gap-1">
             <Wallet className={`w-4 h-4 ${darkMode ? 'text-orange-400' : 'text-orange-600'}`} />
             <span className={`font-black text-lg ${textPrimary}`}>{(currentUser?.walletBalance || 0).toLocaleString()}</span>
-            <span className={`text-xs ${textMuted}`}>ج.م</span>
+            <span className={`text-xs ${textMuted}`}>{t('common.egp')}</span>
           </div>
         </div>
 
@@ -1500,7 +1605,7 @@ const WithdrawTab: React.FC<WithdrawTabProps> = ({ darkMode, currentUser, refres
         <div className="mb-4">
           <label className={`text-xs font-bold mb-1.5 block ${textMuted}`}>{t('wallet.amount', 'المبلغ')}</label>
           <div className={`flex items-center gap-2 rounded-xl border-2 p-3 ${darkMode ? 'bg-gray-700 border-gray-600 focus-within:border-orange-500' : 'bg-gray-50 border-gray-200 focus-within:border-orange-400'} transition-colors`}>
-            <span className={`font-black text-lg ${textMuted}`}>ج.م</span>
+            <span className={`font-black text-lg ${textMuted}`}>{t('common.egp')}</span>
             <input
               type="number"
               value={withdrawAmount}
@@ -1525,7 +1630,7 @@ const WithdrawTab: React.FC<WithdrawTabProps> = ({ darkMode, currentUser, refres
                   : darkMode ? 'bg-gray-700 text-gray-300 border-gray-600 hover:border-orange-400' : 'bg-gray-50 text-gray-600 border-gray-200 hover:border-orange-300'
               }`}
             >
-              {amt} ج.م
+              {amt} {t('common.egp')}
             </button>
           ))}
         </div>
@@ -1545,7 +1650,7 @@ const WithdrawTab: React.FC<WithdrawTabProps> = ({ darkMode, currentUser, refres
                 }`}
               >
                 <span className="text-lg">{m.icon}</span>
-                <span className={`text-xs font-bold ${textPrimary}`}>{m.name}</span>
+                <span className={`text-xs font-bold ${textPrimary}`}>{t(m.nameKey)}</span>
               </button>
             ))}
           </div>
@@ -1568,7 +1673,7 @@ const WithdrawTab: React.FC<WithdrawTabProps> = ({ darkMode, currentUser, refres
         {/* Submit */}
         <button
           onClick={handleSubmitWithdraw}
-          disabled={withdrawLoading || !withdrawAmount || parseFloat(withdrawAmount) < 50}
+          disabled={withdrawLoading || !withdrawAmount || parseFloat(withdrawAmount) < 50 || parseFloat(withdrawAmount) > 50000}
           className="w-full py-3 rounded-xl bg-gradient-to-l from-orange-500 to-orange-600 text-white font-bold text-sm shadow-lg shadow-orange-200/30 hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed transition-all"
         >
           {withdrawLoading ? t('wallet.processing', 'جارٍ المعالجة...') : t('wallet.submitWithdraw', 'تقديم طلب السحب')}
@@ -1587,7 +1692,7 @@ const WithdrawTab: React.FC<WithdrawTabProps> = ({ darkMode, currentUser, refres
                     <ArrowDownRight className="w-5 h-5 text-red-600" />
                   </div>
                   <div>
-                    <p className={`text-sm font-bold ${textPrimary}`}>{w.amount} ج.م</p>
+                    <p className={`text-sm font-bold ${textPrimary}`}>{w.amount} {t('common.egp')}</p>
                     <p className={`text-[10px] ${textMuted}`}>{w.method} • {new Date(w.created_at).toLocaleDateString('ar-EG')}</p>
                   </div>
                 </div>
@@ -1617,7 +1722,7 @@ const WithdrawTab: React.FC<WithdrawTabProps> = ({ darkMode, currentUser, refres
             >
               <h3 className={`font-black text-lg mb-2 ${textPrimary}`}>{t('wallet.confirmWithdraw', 'تأكيد السحب')}</h3>
               <p className={`text-sm mb-4 ${textMuted}`}>
-                {t('wallet.confirmWithdrawMsg', 'هل أنت متأكد من سحب')} {withdrawAmount} ج.م {t('wallet.via', 'عبر')} {WITHDRAWAL_METHODS.find(m => m.id === withdrawMethod)?.name}؟
+                {t('wallet.confirmWithdrawMsg', 'هل أنت متأكد من سحب')} {withdrawAmount} {t('common.egp')} {t('wallet.via', 'عبر')} {t(WITHDRAWAL_METHODS.find(m => m.id === withdrawMethod)?.nameKey || 'wallet.vodafoneCash')}؟
               </p>
               <div className="flex gap-3">
                 <button onClick={() => setShowConfirm(false)} className={`flex-1 py-3 rounded-xl font-bold text-sm ${darkMode ? 'bg-gray-700 text-gray-300' : 'bg-gray-100 text-gray-600'}`}>

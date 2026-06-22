@@ -1174,6 +1174,24 @@ try { db.exec(`
   CREATE INDEX IF NOT EXISTS idx_withdrawals_status ON withdrawal_requests(status);
 `); } catch {}
 
+// ─── Wallet: Add reference_id to transactions for linking to charging/withdrawal requests ───
+try { db.prepare("ALTER TABLE transactions ADD COLUMN reference_id TEXT DEFAULT ''").run(); } catch {}
+try { db.prepare("CREATE INDEX IF NOT EXISTS idx_transactions_reference ON transactions(reference_id)").run(); } catch {}
+
+// ─── Wallet: Savings goals table ───
+try { db.exec(`
+  CREATE TABLE IF NOT EXISTS savings_goals (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id),
+    name TEXT NOT NULL,
+    target_amount REAL NOT NULL,
+    current_amount REAL DEFAULT 0,
+    deadline TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_savings_goals_user ON savings_goals(user_id);
+`); } catch {}
+
 // ─── Phase 3: Stories migrations for video_url and expires_at ───
 try { db.prepare("ALTER TABLE stories ADD COLUMN video_url TEXT DEFAULT ''").run(); } catch {}
 try { db.prepare("ALTER TABLE stories ADD COLUMN expires_at TEXT").run(); } catch {}

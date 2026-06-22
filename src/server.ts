@@ -654,117 +654,7 @@ async function startServer() {
     }
   });
 
-  // ─── Withdrawal API ───
-  app.post('/api/wallet/withdraw', async (req, res) => {
-    try {
-      const db = (await import('./database/index.js')).default;
-      const authHeader = req.headers.authorization;
-      if (!authHeader?.startsWith('Bearer ')) { res.status(401).json({ error: 'Unauthorized' }); return; }
-      const { verifyToken } = await import('./middleware/auth.js');
-      const payload = verifyToken(authHeader.split(' ')[1]);
-      if (!payload) { res.status(401).json({ error: 'Invalid token' }); return; }
-      const userId = payload.userId || payload.sub;
-      const { amount, method, accountDetails } = req.body;
-      if (!amount || !method || amount <= 0) {
-        res.status(400).json({ error: 'amount and method required' }); return;
-      }
-      // Check balance
-      const user = db.prepare('SELECT wallet_balance, name FROM users WHERE id = ?').get(userId) as any;
-      if (!user || user.wallet_balance < amount) {
-        res.status(400).json({ error: 'رصيد غير كافي' }); return;
-      }
-      // Minimum withdrawal
-      if (amount < 50) {
-        res.status(400).json({ error: 'الحد الأدنى للسحب 50 ج.م' }); return;
-      }
-      // Deduct from balance immediately (refund if rejected)
-      db.prepare('UPDATE users SET wallet_balance = wallet_balance - ? WHERE id = ?').run(amount, userId);
-      // Create withdrawal request
-      const id = crypto.randomBytes(16).toString('hex');
-      db.prepare('INSERT INTO withdrawal_requests (id, user_id, amount, method, account_details, status) VALUES (?, ?, ?, ?, ?, ?)').run(
-        id, userId, amount, method, accountDetails || '', 'pending'
-      );
-      // Create transaction record
-      const txId = crypto.randomBytes(16).toString('hex');
-      db.prepare('INSERT INTO transactions (id, user_id, type, amount, method, status) VALUES (?, ?, ?, ?, ?, ?)').run(
-        txId, userId, 'withdrawal', amount, method, 'pending'
-      );
-      // Notify admin
-      const notifId = crypto.randomBytes(16).toString('hex');
-      db.prepare('INSERT INTO notifications (id, user_id, type, message) VALUES (?, ?, ?, ?)').run(
-        notifId, 'admin', 'payment', `طلب سحب جديد: ${amount} ج.م من ${user.name}`, null
-      );
-      res.json({ success: true, id, message: 'تم تقديم طلب السحب بنجاح' });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  app.get('/api/wallet/withdrawals', async (req, res) => {
-    try {
-      const db = (await import('./database/index.js')).default;
-      const authHeader = req.headers.authorization;
-      if (!authHeader?.startsWith('Bearer ')) { res.status(401).json({ error: 'Unauthorized' }); return; }
-      const { verifyToken } = await import('./middleware/auth.js');
-      const payload = verifyToken(authHeader.split(' ')[1]);
-      if (!payload) { res.status(401).json({ error: 'Invalid token' }); return; }
-      const userId = payload.userId || payload.sub;
-      const withdrawals = db.prepare(`
-        SELECT w.*, u.name as user_name, u.avatar as user_avatar, u.phone as user_phone
-        FROM withdrawal_requests w
-        JOIN users u ON u.id = w.user_id
-        WHERE w.user_id = ? OR ? = 1
-        ORDER BY w.created_at DESC
-      `).all(userId, payload.isAdmin ? 1 : 0) as any[];
-      res.json(withdrawals);
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  app.post('/api/wallet/withdrawals/:id/:action', async (req, res) => {
-    try {
-      const db = (await import('./database/index.js')).default;
-      const authHeader = req.headers.authorization;
-      if (!authHeader?.startsWith('Bearer ')) { res.status(401).json({ error: 'Unauthorized' }); return; }
-      const { verifyToken } = await import('./middleware/auth.js');
-      const payload = verifyToken(authHeader.split(' ')[1]);
-      if (!payload?.isAdmin) { res.status(403).json({ error: 'Admin only' }); return; }
-      const { id } = req.params;
-      const action = req.params.action; // 'approve' or 'reject'
-      const { adminNote } = req.body;
-      const withdrawal = db.prepare('SELECT * FROM withdrawal_requests WHERE id = ?').get(id) as any;
-      if (!withdrawal) { res.status(404).json({ error: 'Not found' }); return; }
-      if (withdrawal.status !== 'pending') { res.status(400).json({ error: 'Already processed' }); return; }
-      if (action === 'approve') {
-        db.prepare('UPDATE withdrawal_requests SET status = ?, admin_note = ?, processed_at = datetime(\'now\') WHERE id = ?').run('approved', adminNote || '', id);
-        db.prepare('UPDATE transactions SET status = ? WHERE user_id = ? AND type = ? AND method = ? AND status = ?').run('completed', withdrawal.user_id, 'withdrawal', withdrawal.method, 'pending');
-      } else if (action === 'reject') {
-        db.prepare('UPDATE withdrawal_requests SET status = ?, admin_note = ?, processed_at = datetime(\'now\') WHERE id = ?').run('rejected', adminNote || '', id);
-        // Refund the balance
-        db.prepare('UPDATE users SET wallet_balance = wallet_balance + ? WHERE id = ?').run(withdrawal.amount, withdrawal.user_id);
-        db.prepare('UPDATE transactions SET status = ? WHERE user_id = ? AND type = ? AND method = ? AND status = ?').run('failed', withdrawal.user_id, 'withdrawal', withdrawal.method, 'pending');
-      } else {
-        res.status(400).json({ error: 'Invalid action' }); return;
-      }
-      // Notify user
-      const notifId = crypto.randomBytes(16).toString('hex');
-      const msg = action === 'approve' ? `تم الموافقة على طلب السحب بقيمة ${withdrawal.amount} ج.م` : `تم رفض طلب السحب بقيمة ${withdrawal.amount} ج.م${adminNote ? ': ' + adminNote : ''}`;
-      db.prepare('INSERT INTO notifications (id, user_id, type, message) VALUES (?, ?, ?, ?)').run(notifId, withdrawal.user_id, 'payment', msg);
-      try {
-        const { wsManager } = await import('./websocket/index.js');
-        wsManager.sendToUser(withdrawal.user_id, JSON.stringify({
-          type: 'notification:new',
-          notification: { id: notifId, type: 'payment', message: msg, time: new Date().toISOString() }
-        }));
-        // Also send wallet update
-        wsManager.sendToUser(withdrawal.user_id, JSON.stringify({ type: 'wallet:updated' }));
-      } catch {}
-      res.json({ success: true, action });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
+  // ─── Withdrawal API now handled in routes/wallet.ts ───
 
   // ─── Story Highlights API ───
   app.get('/api/users/:userId/highlights', async (req, res) => {
@@ -1117,12 +1007,13 @@ async function startServer() {
     // 🔧 Initialize auto-backup system
     try {
       const { initAutoBackup, createManualBackup, getBackupStats, createEventBackup } = await import('./database/backup-system.js');
+      const { authMiddleware: authMid } = await import('./middleware/auth.js');
       initAutoBackup();
 
       // Manual backup endpoint (admin only)
-      app.post('/api/admin/backup', authMiddleware, async (req: express.Request, res: express.Response) => {
+      app.post('/api/admin/backup', authMid, async (req: express.Request, res: express.Response) => {
         try {
-          const payload = (req as any).user as JwtPayload;
+          const payload = (req as any).user as any;
           if (!payload.isAdmin) { res.status(403).json({ error: 'ممنوع' }); return; }
           createManualBackup();
           res.json({ success: true, message: 'تم إنشاء نسخة احتياطية' });
@@ -1132,9 +1023,9 @@ async function startServer() {
       });
 
       // Backup stats endpoint (admin only)
-      app.get('/api/admin/backup-stats', authMiddleware, async (req: express.Request, res: express.Response) => {
+      app.get('/api/admin/backup-stats', authMid, async (req: express.Request, res: express.Response) => {
         try {
-          const payload = (req as any).user as JwtPayload;
+          const payload = (req as any).user as any;
           if (!payload.isAdmin) { res.status(403).json({ error: 'ممنوع' }); return; }
           res.json(getBackupStats());
         } catch (err: any) {
@@ -1143,9 +1034,9 @@ async function startServer() {
       });
 
       // Save .env to persistent storage so it survives rebuilds
-      app.post('/api/admin/persist-env', authMiddleware, async (req: express.Request, res: express.Response) => {
+      app.post('/api/admin/persist-env', authMid, async (req: express.Request, res: express.Response) => {
         try {
-          const payload = (req as any).user as JwtPayload;
+          const payload = (req as any).user as any;
           if (!payload.isAdmin) { res.status(403).json({ error: 'ممنوع' }); return; }
           const fs2 = await import('fs');
           const envPath = path.resolve(process.cwd(), '.env');

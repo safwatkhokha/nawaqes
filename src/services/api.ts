@@ -932,6 +932,31 @@ class ApiClient {
     });
   }
 
+  // ─── Savings Goals ────────────────────────────────────────────────
+  async getSavingsGoals() {
+    return this.request<any[]>('/wallet/savings-goals');
+  }
+  async createSavingsGoal(name: string, target: number, deadline?: string) {
+    return this.request<any>('/wallet/savings-goals', {
+      method: 'POST', body: JSON.stringify({ name, target, deadline }),
+    });
+  }
+  async updateSavingsGoal(id: string, data: { name?: string; target?: number; current?: number; deadline?: string }) {
+    return this.request<any>(`/wallet/savings-goals/${id}`, {
+      method: 'PUT', body: JSON.stringify(data),
+    });
+  }
+  async deleteSavingsGoal(id: string) {
+    return this.request<{ success: boolean }>(`/wallet/savings-goals/${id}`, {
+      method: 'DELETE',
+    });
+  }
+  async addToSavingsGoal(id: string, amount: number) {
+    return this.request<any>(`/wallet/savings-goals/${id}/add`, {
+      method: 'POST', body: JSON.stringify({ amount }),
+    });
+  }
+
   // ─── Phase 3: Push Notifications ─────────────────────────────────
   async registerDevice(token: string, platform: string) {
     return this.request<{ success: boolean; registered: boolean }>('/notifications/register-device', {

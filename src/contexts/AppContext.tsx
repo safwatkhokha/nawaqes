@@ -12,11 +12,12 @@ import { useWebSocket, disconnectWebSocket, connectWebSocket } from '../hooks/us
 
 export interface Transaction {
   id: string;
-  type: 'deposit' | 'charge_request' | 'promotion_debit' | 'promotion_refund';
+  type: 'deposit' | 'charge_request' | 'promotion_debit' | 'promotion_refund' | 'admin_deposit' | 'admin_withdrawal' | 'withdrawal' | 'gift_sent' | 'gift_received';
   amount: number;
   method: string;
   timestamp: string;
-  status: 'completed' | 'pending' | 'approved' | 'rejected';
+  status: 'completed' | 'pending' | 'approved' | 'rejected' | 'failed';
+  referenceId?: string;
 }
 
 // ─── API Data Mapper (snake_case → camelCase) ──────────────────────────
@@ -538,14 +539,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       })) : [];
       setNotifications(mappedNotifs);
       // Map transactions from snake_case API format
-      const mappedTxns = Array.isArray(txns) ? (txns as any[]).map((t: any) => ({
+      // Handle both old format (array) and new format ({ transactions, total })
+      const txnsArray: any[] = Array.isArray(txns) ? txns : ((txns as any)?.transactions || []);
+      const mappedTxns = txnsArray.map((t: any) => ({
         id: t.id,
         type: t.type,
         amount: t.amount,
         method: t.method,
         timestamp: t.created_at || t.timestamp || '',
         status: t.status,
-      })) : [];
+        referenceId: t.reference_id || t.referenceId || undefined,
+      }));
       setTransactions(mappedTxns);
       // Map friend requests
       const mappedFriendReqs = Array.isArray(friends) ? (friends as any[]).map((r: any) => ({

@@ -1,9 +1,17 @@
 // ─── Wallet & Transactions Routes ────────────────────────────────────
 import { Router, Request, Response } from 'express';
+import crypto from 'crypto';
 import db from '../database/index.js';
 import { authMiddleware, adminMiddleware, JwtPayload } from '../middleware/auth.js';
 
 const router = Router();
+
+// Maximum charge request amount (EGP)
+const MAX_CHARGE_AMOUNT = 50000;
+// Maximum withdrawal amount (EGP)
+const MAX_WITHDRAW_AMOUNT = 50000;
+// Minimum withdrawal amount (EGP)
+const MIN_WITHDRAW_AMOUNT = 50;
 
 // GET /api/wallet/balance
 router.get('/balance', authMiddleware, (req: Request, res: Response) => {
@@ -16,12 +24,15 @@ router.get('/balance', authMiddleware, (req: Request, res: Response) => {
   }
 });
 
-// GET /api/wallet/transactions
+// GET /api/wallet/transactions (with pagination)
 router.get('/transactions', authMiddleware, (req: Request, res: Response) => {
   try {
     const payload = (req as any).user as JwtPayload;
-    const transactions = db.prepare('SELECT * FROM transactions WHERE user_id = ? ORDER BY created_at DESC').all(payload.userId);
-    res.json(transactions);
+    const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
+    const offset = parseInt(req.query.offset as string) || 0;
+    const transactions = db.prepare('SELECT * FROM transactions WHERE user_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?').all(payload.userId, limit, offset);
+    const total = db.prepare('SELECT COUNT(*) as count FROM transactions WHERE user_id = ?').get(payload.userId) as any;
+    res.json({ transactions, total: total.count, limit, offset });
   } catch (err: any) {
     res.status(500).json({ error: 'فشل جلب المعاملات', details: err.message });
   }
@@ -34,6 +45,7 @@ router.post('/charge-request', authMiddleware, (req: Request, res: Response) => 
     const { amount, method, receiptImage, additionalPhone } = req.body;
     if (!amount || !method) { res.status(400).json({ error: 'المبلغ وطريقة الدفع مطلوبان' }); return; }
     if (amount <= 0) { res.status(400).json({ error: 'المبلغ يجب أن يكون أكبر من صفر' }); return; }
+    if (amount > MAX_CHARGE_AMOUNT) { res.status(400).json({ error: `الحد الأقصى للشحن ${MAX_CHARGE_AMOUNT.toLocaleString()} ج.م` }); return; }
     if (!receiptImage || receiptImage.trim() === '') { res.status(400).json({ error: 'صورة الإيصال مطلوبة - يرجى رفع صورة إيصال التحويل' }); return; }
 
     const user = db.prepare('SELECT name, avatar, phone FROM users WHERE id = ?').get(payload.userId) as any;
@@ -44,11 +56,14 @@ router.post('/charge-request', authMiddleware, (req: Request, res: Response) => 
       return;
     }
 
-    db.prepare('INSERT INTO transactions (user_id, type, amount, method, status) VALUES (?, ?, ?, ?, ?)')
-      .run(payload.userId, 'charge_request', amount, method, 'pending');
+    // Create charging request first to get the ID
+    const crId = crypto.randomBytes(16).toString('hex');
+    const crResult = db.prepare('INSERT INTO charging_requests (id, user_id, user_name, user_avatar, user_phone, additional_phone, amount, method, receipt_image) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(crId, payload.userId, user.name, user.avatar, user.phone, additionalPhone || '', amount, method, receiptImage || '');
 
-    const result = db.prepare('INSERT INTO charging_requests (user_id, user_name, user_avatar, user_phone, additional_phone, amount, method, receipt_image) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-      .run(payload.userId, user.name, user.avatar, user.phone, additionalPhone || '', amount, method, receiptImage || '');
+    // Create transaction linked to this specific charging request
+    db.prepare('INSERT INTO transactions (user_id, type, amount, method, status, reference_id) VALUES (?, ?, ?, ?, ?, ?)')
+      .run(payload.userId, 'charge_request', amount, method, 'pending', crId);
 
     // ─── Notify the user that their charge request was submitted ───
     db.prepare('INSERT INTO notifications (user_id, type, message, link) VALUES (?, ?, ?, ?)')
@@ -69,7 +84,7 @@ router.post('/charge-request', authMiddleware, (req: Request, res: Response) => 
       insertNotif.run(admin.id, 'payment', adminMessage, '/admin/charging');
     }
 
-    res.status(201).json({ message: 'تم إرسال طلب الشحن بنجاح', requestId: result.lastInsertRowid });
+    res.status(201).json({ message: 'تم إرسال طلب الشحن بنجاح', requestId: crId });
   } catch (err: any) {
     res.status(500).json({ error: 'فشل إرسال طلب الشحن', details: err.message });
   }
@@ -97,9 +112,13 @@ router.post('/admin/charging-requests/:id/approve', authMiddleware, adminMiddlew
     // Update charging request status
     db.prepare("UPDATE charging_requests SET status = 'approved' WHERE id = ?").run(req.params.id);
 
-    // Update the most recent pending charge_request transaction
-    // SQLite doesn't support ORDER BY + LIMIT in UPDATE, so we find the ID first
-    const pendingTx = db.prepare("SELECT id FROM transactions WHERE user_id = ? AND type = 'charge_request' AND status = 'pending' ORDER BY created_at DESC LIMIT 1").get(cr.user_id) as any;
+    // ✅ FIX: Find the transaction linked to THIS specific charging request via reference_id
+    // Falls back to most recent pending if reference_id not set (backward compatibility)
+    let pendingTx = db.prepare("SELECT id FROM transactions WHERE user_id = ? AND type = 'charge_request' AND status = 'pending' AND reference_id = ?").get(cr.user_id, req.params.id) as any;
+    if (!pendingTx) {
+      // Backward compatibility: if no reference_id match, find most recent pending
+      pendingTx = db.prepare("SELECT id FROM transactions WHERE user_id = ? AND type = 'charge_request' AND status = 'pending' ORDER BY created_at DESC LIMIT 1").get(cr.user_id) as any;
+    }
     if (pendingTx) {
       db.prepare("UPDATE transactions SET status = 'approved' WHERE id = ?").run(pendingTx.id);
     }
@@ -108,9 +127,9 @@ router.post('/admin/charging-requests/:id/approve', authMiddleware, adminMiddlew
     db.prepare("UPDATE users SET wallet_balance = wallet_balance + ?, updated_at = datetime('now') WHERE id = ?")
       .run(cr.amount, cr.user_id);
 
-    // Create deposit transaction
-    db.prepare('INSERT INTO transactions (user_id, type, amount, method, status) VALUES (?, ?, ?, ?, ?)')
-      .run(cr.user_id, 'deposit', cr.amount, cr.method, 'completed');
+    // Create deposit transaction linked to this charging request
+    db.prepare('INSERT INTO transactions (user_id, type, amount, method, status, reference_id) VALUES (?, ?, ?, ?, ?, ?)')
+      .run(cr.user_id, 'deposit', cr.amount, cr.method, 'completed', req.params.id);
 
     // Create notification
     db.prepare('INSERT INTO notifications (user_id, type, message, link) VALUES (?, ?, ?, ?)')
@@ -137,9 +156,13 @@ router.post('/admin/charging-requests/:id/reject', authMiddleware, adminMiddlewa
     if (!cr) { res.status(404).json({ error: 'الطلب غير موجود' }); return; }
 
     db.prepare("UPDATE charging_requests SET status = 'rejected' WHERE id = ?").run(req.params.id);
-    // Update the most recent pending charge_request transaction
-    // SQLite doesn't support ORDER BY + LIMIT in UPDATE, so we find the ID first
-    const pendingTx = db.prepare("SELECT id FROM transactions WHERE user_id = ? AND type = 'charge_request' AND status = 'pending' ORDER BY created_at DESC LIMIT 1").get(cr.user_id) as any;
+
+    // ✅ FIX: Find the transaction linked to THIS specific charging request via reference_id
+    let pendingTx = db.prepare("SELECT id FROM transactions WHERE user_id = ? AND type = 'charge_request' AND status = 'pending' AND reference_id = ?").get(cr.user_id, req.params.id) as any;
+    if (!pendingTx) {
+      // Backward compatibility: if no reference_id match, find most recent pending
+      pendingTx = db.prepare("SELECT id FROM transactions WHERE user_id = ? AND type = 'charge_request' AND status = 'pending' ORDER BY created_at DESC LIMIT 1").get(cr.user_id) as any;
+    }
     if (pendingTx) {
       db.prepare("UPDATE transactions SET status = 'rejected' WHERE id = ?").run(pendingTx.id);
     }
@@ -150,6 +173,226 @@ router.post('/admin/charging-requests/:id/reject', authMiddleware, adminMiddlewa
     res.json({ message: 'تم رفض طلب الشحن' });
   } catch (err: any) {
     res.status(500).json({ error: 'فشل رفض الطلب', details: err.message });
+  }
+});
+
+// ─── Withdrawal Routes (moved from server.ts) ──────────────────────
+
+// POST /api/wallet/withdraw
+router.post('/withdraw', authMiddleware, (req: Request, res: Response) => {
+  try {
+    const payload = (req as any).user as JwtPayload;
+    const userId = payload.userId;
+    const { amount, method, accountDetails } = req.body;
+    if (!amount || !method || amount <= 0) {
+      res.status(400).json({ error: 'المبلغ وطريقة السحب مطلوبان' }); return;
+    }
+    if (amount < MIN_WITHDRAW_AMOUNT) {
+      res.status(400).json({ error: `الحد الأدنى للسحب ${MIN_WITHDRAW_AMOUNT} ج.م` }); return;
+    }
+    if (amount > MAX_WITHDRAW_AMOUNT) {
+      res.status(400).json({ error: `الحد الأقصى للسحب ${MAX_WITHDRAW_AMOUNT.toLocaleString()} ج.م` }); return;
+    }
+    // Check balance
+    const user = db.prepare('SELECT wallet_balance, name FROM users WHERE id = ?').get(userId) as any;
+    if (!user || user.wallet_balance < amount) {
+      res.status(400).json({ error: 'رصيد غير كافي' }); return;
+    }
+    // Deduct from balance immediately (refund if rejected)
+    db.prepare('UPDATE users SET wallet_balance = wallet_balance - ?, updated_at = datetime(\'now\') WHERE id = ?').run(amount, userId);
+    // Create withdrawal request
+    const id = crypto.randomBytes(16).toString('hex');
+    db.prepare('INSERT INTO withdrawal_requests (id, user_id, amount, method, account_details, status) VALUES (?, ?, ?, ?, ?, ?)').run(
+      id, userId, amount, method, accountDetails || '', 'pending'
+    );
+    // Create transaction record linked to this withdrawal
+    const txId = crypto.randomBytes(16).toString('hex');
+    db.prepare('INSERT INTO transactions (id, user_id, type, amount, method, status, reference_id) VALUES (?, ?, ?, ?, ?, ?, ?)').run(
+      txId, userId, 'withdrawal', amount, method, 'pending', id
+    );
+    // Notify admin
+    const admins = db.prepare('SELECT id FROM users WHERE is_admin = 1').all() as any[];
+    const insertNotif = db.prepare('INSERT INTO notifications (user_id, type, message, link) VALUES (?, ?, ?, ?)');
+    for (const admin of admins) {
+      insertNotif.run(admin.id, 'payment', `طلب سحب جديد: ${amount} ج.م من ${user.name}`, '/admin/transactions');
+    }
+    // Notify user
+    db.prepare('INSERT INTO notifications (user_id, type, message, link) VALUES (?, ?, ?, ?)').run(
+      userId, 'payment', `تم تقديم طلب سحب ${amount.toLocaleString()} ج.م وسيتم مراجعته من الإدارة`, '/wallet'
+    );
+
+    // Broadcast wallet update to user
+    try {
+      const wsManager = (req.app as any).locals?.wsManager;
+      if (wsManager) {
+        wsManager.sendToUser(userId, { type: "wallet:updated", data: { userId, amount: -amount } });
+      }
+    } catch {}
+
+    res.json({ success: true, id, message: 'تم تقديم طلب السحب بنجاح' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/wallet/withdrawals
+router.get('/withdrawals', authMiddleware, (req: Request, res: Response) => {
+  try {
+    const payload = (req as any).user as JwtPayload;
+    const userId = payload.userId;
+    const withdrawals = db.prepare(`
+      SELECT w.*, u.name as user_name, u.avatar as user_avatar, u.phone as user_phone
+      FROM withdrawal_requests w
+      JOIN users u ON u.id = w.user_id
+      WHERE w.user_id = ? OR ? = 1
+      ORDER BY w.created_at DESC
+    `).all(userId, payload.isAdmin ? 1 : 0) as any[];
+    res.json(withdrawals);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/wallet/withdrawals/:id/:action (approve/reject)
+router.post('/withdrawals/:id/:action', authMiddleware, adminMiddleware, (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const action = req.params.action; // 'approve' or 'reject'
+    const { adminNote } = req.body;
+    const withdrawal = db.prepare('SELECT * FROM withdrawal_requests WHERE id = ?').get(id) as any;
+    if (!withdrawal) { res.status(404).json({ error: 'طلب السحب غير موجود' }); return; }
+    if (withdrawal.status !== 'pending') { res.status(400).json({ error: 'تم معالجة هذا الطلب بالفعل' }); return; }
+
+    if (action === 'approve') {
+      db.prepare('UPDATE withdrawal_requests SET status = ?, admin_note = ?, processed_at = datetime(\'now\') WHERE id = ?').run('approved', adminNote || '', id);
+      // Update the specific transaction linked to this withdrawal via reference_id
+      const tx = db.prepare("SELECT id FROM transactions WHERE user_id = ? AND type = 'withdrawal' AND status = 'pending' AND reference_id = ?").get(withdrawal.user_id, id) as any;
+      if (tx) {
+        db.prepare("UPDATE transactions SET status = 'completed' WHERE id = ?").run(tx.id);
+      } else {
+        // Backward compatibility
+        db.prepare("UPDATE transactions SET status = 'completed' WHERE user_id = ? AND type = 'withdrawal' AND method = ? AND status = 'pending'").run(withdrawal.user_id, withdrawal.method);
+      }
+    } else if (action === 'reject') {
+      db.prepare('UPDATE withdrawal_requests SET status = ?, admin_note = ?, processed_at = datetime(\'now\') WHERE id = ?').run('rejected', adminNote || '', id);
+      // Refund the balance
+      db.prepare('UPDATE users SET wallet_balance = wallet_balance + ?, updated_at = datetime(\'now\') WHERE id = ?').run(withdrawal.amount, withdrawal.user_id);
+      // Update the transaction status
+      const tx = db.prepare("SELECT id FROM transactions WHERE user_id = ? AND type = 'withdrawal' AND status = 'pending' AND reference_id = ?").get(withdrawal.user_id, id) as any;
+      if (tx) {
+        db.prepare("UPDATE transactions SET status = 'failed' WHERE id = ?").run(tx.id);
+      } else {
+        db.prepare("UPDATE transactions SET status = 'failed' WHERE user_id = ? AND type = 'withdrawal' AND method = ? AND status = 'pending'").run(withdrawal.user_id, withdrawal.method);
+      }
+    } else {
+      res.status(400).json({ error: 'إجراء غير صالح' }); return;
+    }
+
+    // Notify user
+    const msg = action === 'approve'
+      ? `تم الموافقة على طلب السحب بقيمة ${withdrawal.amount.toLocaleString()} ج.م`
+      : `تم رفض طلب السحب بقيمة ${withdrawal.amount.toLocaleString()} ج.م${adminNote ? ': ' + adminNote : ''}`;
+    db.prepare('INSERT INTO notifications (user_id, type, message, link) VALUES (?, ?, ?, ?)').run(
+      withdrawal.user_id, 'payment', msg, '/wallet'
+    );
+
+    // Broadcast wallet update to user
+    try {
+      const wsManager = (req.app as any).locals?.wsManager;
+      if (wsManager) {
+        wsManager.sendToUser(withdrawal.user_id, { type: "wallet:updated", data: { userId: withdrawal.user_id } });
+      }
+    } catch {}
+
+    res.json({ success: true, action });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Savings Goals API ──────────────────────────────────────────────
+
+// GET /api/wallet/savings-goals
+router.get('/savings-goals', authMiddleware, (req: Request, res: Response) => {
+  try {
+    const payload = (req as any).user as JwtPayload;
+    const goals = db.prepare('SELECT * FROM savings_goals WHERE user_id = ? ORDER BY created_at DESC').all(payload.userId);
+    res.json(goals);
+  } catch (err: any) {
+    res.status(500).json({ error: 'فشل جلب أهداف التوفير', details: err.message });
+  }
+});
+
+// POST /api/wallet/savings-goals
+router.post('/savings-goals', authMiddleware, (req: Request, res: Response) => {
+  try {
+    const payload = (req as any).user as JwtPayload;
+    const { name, target, deadline } = req.body;
+    if (!name || !target || target <= 0) {
+      res.status(400).json({ error: 'اسم الهدف والمبلغ المستهدف مطلوبان' }); return;
+    }
+    const id = crypto.randomBytes(16).toString('hex');
+    db.prepare('INSERT INTO savings_goals (id, user_id, name, target_amount, current_amount, deadline) VALUES (?, ?, ?, ?, ?, ?)').run(
+      id, payload.userId, name.trim(), target, 0, deadline || null
+    );
+    const goal = db.prepare('SELECT * FROM savings_goals WHERE id = ?').get(id);
+    res.status(201).json(goal);
+  } catch (err: any) {
+    res.status(500).json({ error: 'فشل إنشاء هدف التوفير', details: err.message });
+  }
+});
+
+// PUT /api/wallet/savings-goals/:id
+router.put('/savings-goals/:id', authMiddleware, (req: Request, res: Response) => {
+  try {
+    const payload = (req as any).user as JwtPayload;
+    const { name, target, current, deadline } = req.body;
+    const goal = db.prepare('SELECT * FROM savings_goals WHERE id = ? AND user_id = ?').get(req.params.id, payload.userId) as any;
+    if (!goal) { res.status(404).json({ error: 'الهدف غير موجود' }); return; }
+
+    const newName = name !== undefined ? name : goal.name;
+    const newTarget = target !== undefined ? target : goal.target_amount;
+    const newCurrent = current !== undefined ? current : goal.current_amount;
+    const newDeadline = deadline !== undefined ? deadline : goal.deadline;
+
+    db.prepare('UPDATE savings_goals SET name = ?, target_amount = ?, current_amount = ?, deadline = ? WHERE id = ?').run(
+      newName, newTarget, newCurrent, newDeadline, req.params.id
+    );
+    const updated = db.prepare('SELECT * FROM savings_goals WHERE id = ?').get(req.params.id);
+    res.json(updated);
+  } catch (err: any) {
+    res.status(500).json({ error: 'فشل تحديث هدف التوفير', details: err.message });
+  }
+});
+
+// DELETE /api/wallet/savings-goals/:id
+router.delete('/savings-goals/:id', authMiddleware, (req: Request, res: Response) => {
+  try {
+    const payload = (req as any).user as JwtPayload;
+    const result = db.prepare('DELETE FROM savings_goals WHERE id = ? AND user_id = ?').run(req.params.id, payload.userId);
+    if (result.changes === 0) { res.status(404).json({ error: 'الهدف غير موجود' }); return; }
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: 'فشل حذف هدف التوفير', details: err.message });
+  }
+});
+
+// POST /api/wallet/savings-goals/:id/add
+router.post('/savings-goals/:id/add', authMiddleware, (req: Request, res: Response) => {
+  try {
+    const payload = (req as any).user as JwtPayload;
+    const { amount } = req.body;
+    if (!amount || amount <= 0) { res.status(400).json({ error: 'المبلغ مطلوب ويجب أن يكون أكبر من صفر' }); return; }
+
+    const goal = db.prepare('SELECT * FROM savings_goals WHERE id = ? AND user_id = ?').get(req.params.id, payload.userId) as any;
+    if (!goal) { res.status(404).json({ error: 'الهدف غير موجود' }); return; }
+
+    const newCurrent = Math.min(goal.current_amount + amount, goal.target_amount);
+    db.prepare('UPDATE savings_goals SET current_amount = ? WHERE id = ?').run(newCurrent, req.params.id);
+    const updated = db.prepare('SELECT * FROM savings_goals WHERE id = ?').get(req.params.id);
+    res.json(updated);
+  } catch (err: any) {
+    res.status(500).json({ error: 'فشل إضافة المبلغ لهدف التوفير', details: err.message });
   }
 });
 
