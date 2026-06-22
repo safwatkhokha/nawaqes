@@ -223,3 +223,54 @@ Stage Summary:
 - آخر backup ناجح: 2026-06-22T20:03:52Z
 - الآن عند أي rebuild: الـ auto-restore سيحمّل آخر backup ويعيد كل البيانات
 - المستخدمون الجدد يُحفظون في الـ backup خلال 60 ثانية من التسجيل
+
+---
+Task ID: 13
+Agent: Super Z (main)
+Task: تعطيل ميزة السحب من المحفظة — سياسة شحن فقط
+
+Work Log:
+- بحسب طلب المستخدم: المحفظة مخصصة للاستخدام الداخلي فقط
+  (ترويج، أهداف توفير، هدايا) — لا يوجد سحب للأموال خارج التطبيق
+
+الإصلاحات المطبقة:
+
+1. src/components/WalletPage.tsx:
+   • حذف 'withdraw' من نوع activeWalletTab union
+   • حذف زر تبويب 'سحب' من شريط التبويبات
+   • حذف قسم WithdrawTab بالكامل (rendering block)
+   • حذف مكون WithdrawTab (~250 سطر) + WITHDRAWAL_METHODS array
+   • إضافة شارة 'محفظة للاستخدام الداخلي' على تبويب overview
+     مع شرح السياسة للمستخدم
+   • حجم الملف: 1795 → 1566 سطر (-229 سطر)
+
+2. src/routes/wallet.ts:
+   • POST /api/wallet/withdraw الآن يُرجع 403 مع code
+     'WITHDRAWAL_DISABLED' ورسالة عربية شارحة
+   • تم حذف منطق السحب الكامل (مجرد 403 response)
+   • الـ admin endpoints (GET /withdrawals, POST /withdrawals/:id/:action)
+     لا تزال تعمل لمسؤولين لمعالجة أي طلبات سحب قديمة معلقة
+
+3. src/i18n/ar.json + en.json:
+   • إضافة 'chargeOnlyTitle' و 'chargeOnlyDesc'
+   • بالعربي: "محفظة للاستخدام الداخلي" + شرح
+   • بالإنجليزي: "Internal-use wallet" + شرح
+
+ما تم الإبقاء عليه:
+- ✅ زر 'سحب من هدف التوفير' (ينقل المال داخلياً للمحفظة — لا يخرج من التطبيق)
+- ✅ تبويب الـ history يعرض أي معاملات سحب قديمة
+- ✅ إدارة المعاملات للأدمن لمعالجة السحبات القديمة
+- ✅ كل منطق الشحن (charge-request) و الترويج
+
+النتائج بعد النشر:
+- HF Space: RUNNING ✓
+- /api/health: HTTP 200 ✓
+- bundle: index-8-zOn9C_.js (يحتوي على chargeOnlyTitle + 'محفظة للاستخدام الداخلي' ✓)
+- POST /api/wallet/without auth: يُرجع 401 (صحيح)
+- مع auth: سيُرجع 403 WITHDRAWAL_DISABLED
+
+Stage Summary:
+- النشر: HF Space (RUNNING)
+- commit: e516565
+- التطبيق الآن: شحن فقط، لا يوجد سحب للأموال
+- المستخدمون يرون شارة واضحة تشرح السياسة الجديدة
