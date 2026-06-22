@@ -193,12 +193,17 @@ router.post('/withdraw', authMiddleware, (req: Request, res: Response) => {
     if (amount > MAX_WITHDRAW_AMOUNT) {
       res.status(400).json({ error: `الحد الأقصى للسحب ${MAX_WITHDRAW_AMOUNT.toLocaleString()} ج.م` }); return;
     }
+    if (!accountDetails || String(accountDetails).trim() === '') {
+      res.status(400).json({ error: 'تفاصيل الحسب مطلوبة (رقم المحفظة/الحساب البنكي)' }); return;
+    }
     // Check balance
     const user = db.prepare('SELECT wallet_balance, name FROM users WHERE id = ?').get(userId) as any;
     if (!user || user.wallet_balance < amount) {
       res.status(400).json({ error: 'رصيد غير كافي' }); return;
     }
-    // Deduct from balance immediately (refund if rejected)
+    // ✅ FIX: Deduct from balance immediately (refund if rejected).
+    // This prevents double-spending — if the user requests multiple withdrawals
+    // totalling more than their balance, only the first will succeed.
     db.prepare('UPDATE users SET wallet_balance = wallet_balance - ?, updated_at = datetime(\'now\') WHERE id = ?').run(amount, userId);
     // Create withdrawal request
     const id = crypto.randomBytes(16).toString('hex');
@@ -365,18 +370,6 @@ router.put('/savings-goals/:id', authMiddleware, (req: Request, res: Response) =
   }
 });
 
-// DELETE /api/wallet/savings-goals/:id
-router.delete('/savings-goals/:id', authMiddleware, (req: Request, res: Response) => {
-  try {
-    const payload = (req as any).user as JwtPayload;
-    const result = db.prepare('DELETE FROM savings_goals WHERE id = ? AND user_id = ?').run(req.params.id, payload.userId);
-    if (result.changes === 0) { res.status(404).json({ error: 'الهدف غير موجود' }); return; }
-    res.json({ success: true });
-  } catch (err: any) {
-    res.status(500).json({ error: 'فشل حذف هدف التوفير', details: err.message });
-  }
-});
-
 // POST /api/wallet/savings-goals/:id/add
 router.post('/savings-goals/:id/add', authMiddleware, (req: Request, res: Response) => {
   try {
@@ -387,12 +380,130 @@ router.post('/savings-goals/:id/add', authMiddleware, (req: Request, res: Respon
     const goal = db.prepare('SELECT * FROM savings_goals WHERE id = ? AND user_id = ?').get(req.params.id, payload.userId) as any;
     if (!goal) { res.status(404).json({ error: 'الهدف غير موجود' }); return; }
 
+    // ─── Check wallet balance ──────────────────────────────────────
+    const user = db.prepare('SELECT wallet_balance FROM users WHERE id = ?').get(payload.userId) as any;
+    if (!user || user.wallet_balance < amount) {
+      res.status(400).json({ error: 'رصيد المحفظة غير كافٍ لإضافة هذا المبلغ للهدف' });
+      return;
+    }
+
+    // ─── Deduct from wallet balance ────────────────────────────────
+    db.prepare("UPDATE users SET wallet_balance = wallet_balance - ?, updated_at = datetime('now') WHERE id = ?")
+      .run(amount, payload.userId);
+
+    // ─── Add to savings goal (capped at target) ────────────────────
     const newCurrent = Math.min(goal.current_amount + amount, goal.target_amount);
     db.prepare('UPDATE savings_goals SET current_amount = ? WHERE id = ?').run(newCurrent, req.params.id);
+
+    // ─── Create transaction record ─────────────────────────────────
+    const txId = crypto.randomBytes(16).toString('hex');
+    db.prepare('INSERT INTO transactions (id, user_id, type, amount, method, status, reference_id) VALUES (?, ?, ?, ?, ?, ?, ?)').run(
+      txId, payload.userId, 'savings_debit', amount, 'wallet', 'completed', req.params.id
+    );
+
+    // ─── Notify user ───────────────────────────────────────────────
+    db.prepare('INSERT INTO notifications (user_id, type, message, link) VALUES (?, ?, ?, ?)').run(
+      payload.userId, 'payment', `تم إضافة ${Number(amount).toLocaleString()} ج.م لهدف "${goal.name}"`, '/wallet'
+    );
+
+    // ─── Broadcast wallet update ───────────────────────────────────
+    try {
+      const wsManager = (req.app as any).locals?.wsManager;
+      if (wsManager) {
+        wsManager.sendToUser(payload.userId, { type: "wallet:updated", data: { userId: payload.userId, amount: -amount } });
+      }
+    } catch {}
+
     const updated = db.prepare('SELECT * FROM savings_goals WHERE id = ?').get(req.params.id);
     res.json(updated);
   } catch (err: any) {
     res.status(500).json({ error: 'فشل إضافة المبلغ لهدف التوفير', details: err.message });
+  }
+});
+
+// POST /api/wallet/savings-goals/:id/withdraw — Move money from goal back to wallet
+router.post('/savings-goals/:id/withdraw', authMiddleware, (req: Request, res: Response) => {
+  try {
+    const payload = (req as any).user as JwtPayload;
+    const { amount } = req.body;
+    if (!amount || amount <= 0) { res.status(400).json({ error: 'المبلغ مطلوب ويجب أن يكون أكبر من صفر' }); return; }
+
+    const goal = db.prepare('SELECT * FROM savings_goals WHERE id = ? AND user_id = ?').get(req.params.id, payload.userId) as any;
+    if (!goal) { res.status(404).json({ error: 'الهدف غير موجود' }); return; }
+
+    if (amount > goal.current_amount) {
+      res.status(400).json({ error: `لا يمكن سحب أكثر من المبلغ المُدَّخر (${goal.current_amount.toLocaleString()} ج.م)` });
+      return;
+    }
+
+    // ─── Deduct from goal ──────────────────────────────────────────
+    const newCurrent = goal.current_amount - amount;
+    db.prepare('UPDATE savings_goals SET current_amount = ? WHERE id = ?').run(newCurrent, req.params.id);
+
+    // ─── Add to wallet balance ─────────────────────────────────────
+    db.prepare("UPDATE users SET wallet_balance = wallet_balance + ?, updated_at = datetime('now') WHERE id = ?")
+      .run(amount, payload.userId);
+
+    // ─── Create transaction record ─────────────────────────────────
+    const txId = crypto.randomBytes(16).toString('hex');
+    db.prepare('INSERT INTO transactions (id, user_id, type, amount, method, status, reference_id) VALUES (?, ?, ?, ?, ?, ?, ?)').run(
+      txId, payload.userId, 'savings_refund', amount, 'wallet', 'completed', req.params.id
+    );
+
+    // ─── Notify user ───────────────────────────────────────────────
+    db.prepare('INSERT INTO notifications (user_id, type, message, link) VALUES (?, ?, ?, ?)').run(
+      payload.userId, 'payment', `تم سحب ${Number(amount).toLocaleString()} ج.م من هدف "${goal.name}" إلى محفظتك`, '/wallet'
+    );
+
+    // ─── Broadcast wallet update ───────────────────────────────────
+    try {
+      const wsManager = (req.app as any).locals?.wsManager;
+      if (wsManager) {
+        wsManager.sendToUser(payload.userId, { type: "wallet:updated", data: { userId: payload.userId, amount } });
+      }
+    } catch {}
+
+    const updated = db.prepare('SELECT * FROM savings_goals WHERE id = ?').get(req.params.id);
+    res.json(updated);
+  } catch (err: any) {
+    res.status(500).json({ error: 'فشل سحب المبلغ من هدف التوفير', details: err.message });
+  }
+});
+
+// DELETE /api/wallet/savings-goals/:id — Refund remaining balance to wallet
+router.delete('/savings-goals/:id', authMiddleware, (req: Request, res: Response) => {
+  try {
+    const payload = (req as any).user as JwtPayload;
+    const goal = db.prepare('SELECT * FROM savings_goals WHERE id = ? AND user_id = ?').get(req.params.id, payload.userId) as any;
+    if (!goal) { res.status(404).json({ error: 'الهدف غير موجود' }); return; }
+
+    // ─── Refund remaining balance to wallet ────────────────────────
+    if (goal.current_amount > 0) {
+      db.prepare("UPDATE users SET wallet_balance = wallet_balance + ?, updated_at = datetime('now') WHERE id = ?")
+        .run(goal.current_amount, payload.userId);
+
+      const txId = crypto.randomBytes(16).toString('hex');
+      db.prepare('INSERT INTO transactions (id, user_id, type, amount, method, status, reference_id) VALUES (?, ?, ?, ?, ?, ?, ?)').run(
+        txId, payload.userId, 'savings_refund', goal.current_amount, 'wallet', 'completed', req.params.id
+      );
+
+      db.prepare('INSERT INTO notifications (user_id, type, message, link) VALUES (?, ?, ?, ?)').run(
+        payload.userId, 'payment', `تم استرداد ${goal.current_amount.toLocaleString()} ج.م من حذف هدف "${goal.name}"`, '/wallet'
+      );
+
+      try {
+        const wsManager = (req.app as any).locals?.wsManager;
+        if (wsManager) {
+          wsManager.sendToUser(payload.userId, { type: "wallet:updated", data: { userId: payload.userId, amount: goal.current_amount } });
+        }
+      } catch {}
+    }
+
+    const result = db.prepare('DELETE FROM savings_goals WHERE id = ? AND user_id = ?').run(req.params.id, payload.userId);
+    if (result.changes === 0) { res.status(404).json({ error: 'الهدف غير موجود' }); return; }
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: 'فشل حذف هدف التوفير', details: err.message });
   }
 });
 

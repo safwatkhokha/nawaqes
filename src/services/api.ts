@@ -956,6 +956,11 @@ class ApiClient {
       method: 'POST', body: JSON.stringify({ amount }),
     });
   }
+  async withdrawFromSavingsGoal(id: string, amount: number) {
+    return this.request<any>(`/wallet/savings-goals/${id}/withdraw`, {
+      method: 'POST', body: JSON.stringify({ amount }),
+    });
+  }
 
   // ─── Phase 3: Push Notifications ─────────────────────────────────
   async registerDevice(token: string, platform: string) {

@@ -577,7 +577,11 @@
     "rejected": "مرفوض",
     "goalAddFailed": "فشل إضافة الهدف",
     "goalDeleteFailed": "فشل حذف الهدف",
-    "goalUpdateFailed": "فشل تحديث الهدف"
+    "goalUpdateFailed": "فشل تحديث الهدف",
+    "goalAmountAdded": "تم إضافة {{amount}} ج.م للهدف من محفظتك",
+    "goalAmountWithdrawn": "تم سحب {{amount}} ج.م من الهدف إلى محفظتك",
+    "withdrawFromGoal": "سحب من الهدف",
+    "addToGoal": "إضافة للهدف"
   },
   "settings": {
     "title": "الإعدادات",

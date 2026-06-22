@@ -63,7 +63,7 @@ export const WalletPage: React.FC = () => {
   const [receiptImage, setReceiptImage] = useState<string>('');
   const [receiptPreview, setReceiptPreview] = useState<string>('');
   const [additionalPhone, setAdditionalPhone] = useState('');
-  const [txFilter, setTxFilter] = useState<'all' | 'charge_request' | 'deposit' | 'promotion_debit' | 'promotion_refund' | 'withdrawal' | 'admin_deposit' | 'admin_withdrawal' | 'gift_sent' | 'gift_received'>('all');
+  const [txFilter, setTxFilter] = useState<'all' | 'charge_request' | 'deposit' | 'promotion_debit' | 'promotion_refund' | 'withdrawal' | 'admin_deposit' | 'admin_withdrawal' | 'gift_sent' | 'gift_received' | 'savings_debit' | 'savings_refund'>('all');
   const [showAnalytics, setShowAnalytics] = useState(true);
   const [showHistory, setShowHistory] = useState(true);
   const [activeWalletTab, setActiveWalletTab] = useState<'overview' | 'charge' | 'withdraw' | 'history' | 'savings'>('overview');
@@ -247,6 +247,14 @@ export const WalletPage: React.FC = () => {
 
   // Add amount to savings goal (persisted to DB)
   const handleAddToGoal = async (id: string, amount: number) => {
+    if (!amount || amount <= 0) {
+      toast.error(t('wallet.enterValidAmount'));
+      return;
+    }
+    if (amount > (currentUser?.walletBalance || 0)) {
+      toast.error(t('wallet.insufficientBalance', 'رصيد المحفظة غير كافٍ'));
+      return;
+    }
     try {
       const updated = await api.addToSavingsGoal(id, amount);
       setSavingsGoals(prev => prev.map(g =>
@@ -255,8 +263,32 @@ export const WalletPage: React.FC = () => {
           current: updated.current_amount || updated.current || g.current,
         } : g
       ));
-    } catch {
-      toast.error(t('wallet.goalUpdateFailed'));
+      toast.success(t('wallet.goalAmountAdded', { amount: amount.toLocaleString() }));
+      // Refresh wallet balance
+      await refreshCurrentUser();
+    } catch (err: any) {
+      toast.error(err.message || t('wallet.goalUpdateFailed'));
+    }
+  };
+
+  // Withdraw amount from savings goal back to wallet
+  const handleWithdrawFromGoal = async (id: string, amount: number) => {
+    if (!amount || amount <= 0) {
+      toast.error(t('wallet.enterValidAmount'));
+      return;
+    }
+    try {
+      const updated = await api.withdrawFromSavingsGoal(id, amount);
+      setSavingsGoals(prev => prev.map(g =>
+        g.id === id ? {
+          ...g,
+          current: updated.current_amount || updated.current || g.current,
+        } : g
+      ));
+      toast.success(t('wallet.goalAmountWithdrawn', { amount: amount.toLocaleString() }));
+      await refreshCurrentUser();
+    } catch (err: any) {
+      toast.error(err.message || t('wallet.goalUpdateFailed'));
     }
   };
 
@@ -361,9 +393,9 @@ export const WalletPage: React.FC = () => {
   };
 
   // Transaction type helpers
-  const isCreditTx = (type: string) => ['deposit', 'promotion_refund', 'admin_deposit', 'gift_received'].includes(type);
+  const isCreditTx = (type: string) => ['deposit', 'promotion_refund', 'admin_deposit', 'gift_received', 'savings_refund'].includes(type);
   const isPendingTx = (type: string) => type === 'charge_request'; // Pending requests — not yet credited
-  const isDebitTx = (type: string) => ['promotion_debit', 'admin_withdrawal', 'withdrawal', 'gift_sent'].includes(type);
+  const isDebitTx = (type: string) => ['promotion_debit', 'admin_withdrawal', 'withdrawal', 'gift_sent', 'savings_debit'].includes(type);
 
   const getTxLabel = (type: string) => {
     switch (type) {
@@ -376,6 +408,8 @@ export const WalletPage: React.FC = () => {
       case 'withdrawal': return t('wallet.withdrawal', 'سحب');
       case 'gift_sent': return t('wallet.giftSent', 'هدية مرسلة');
       case 'gift_received': return t('wallet.giftReceived', 'هدية مستلمة');
+      case 'savings_debit': return t('wallet.savingsDebit', 'إيداع في هدف توفير');
+      case 'savings_refund': return t('wallet.savingsRefund', 'سحب من هدف توفير');
       default: return type;
     }
   };
@@ -1434,15 +1468,30 @@ export const WalletPage: React.FC = () => {
                                 key={amt}
                                 onClick={() => {
                                   handleAddToGoal(goal.id, amt);
-                                  toast.success(t('wallet.amountAddedToGoal', { amount: amt.toLocaleString() }));
                                 }}
-                                className={`flex-1 py-1.5 rounded-lg text-[9px] font-bold transition-colors ${
-                                  darkMode ? 'bg-gray-800 text-gray-300 hover:bg-gray-700' : 'bg-white text-gray-600 hover:bg-gray-50'
+                                disabled={(currentUser?.walletBalance || 0) < amt}
+                                className={`flex-1 py-1.5 rounded-lg text-[9px] font-bold transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+                                  darkMode ? 'bg-gray-800 text-gray-300 hover:bg-gray-700 enabled:hover:bg-gray-700' : 'bg-white text-gray-600 enabled:hover:bg-gray-50'
                                 } border ${darkMode ? 'border-gray-600' : 'border-gray-200'}`}
+                                title={t('wallet.addToGoal')}
                               >
                                 +{amt}
                               </button>
                             ))}
+                          </div>
+                        )}
+                        {/* Withdraw from goal — visible if there's any money saved */}
+                        {goal.current > 0 && (
+                          <div className="mt-2">
+                            <button
+                              onClick={() => handleWithdrawFromGoal(goal.id, goal.current)}
+                              className={`w-full py-1.5 rounded-lg text-[9px] font-bold transition-colors ${
+                                darkMode ? 'bg-blue-900/20 text-blue-300 hover:bg-blue-900/40' : 'bg-blue-50 text-blue-700 hover:bg-blue-100'
+                              } border ${darkMode ? 'border-blue-800' : 'border-blue-200'}`}
+                              title={t('wallet.withdrawFromGoal')}
+                            >
+                              {t('wallet.withdrawFromGoal')} ({goal.current.toLocaleString()} ج.م)
+                            </button>
                           </div>
                         )}
                       </motion.div>
@@ -1551,6 +1600,10 @@ const WithdrawTab: React.FC<WithdrawTabProps> = ({ darkMode, currentUser, refres
     }
     if (!currentUser?.walletBalance || amount > currentUser.walletBalance) {
       toast.error(t('wallet.insufficientBalance', 'رصيد غير كافي'));
+      return;
+    }
+    if (!accountDetails || accountDetails.trim() === '') {
+      toast.error(t('wallet.accountDetailsRequired', 'تفاصيل الحساب مطلوبة'));
       return;
     }
     setShowConfirm(true);
