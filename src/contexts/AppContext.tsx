@@ -321,8 +321,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const handleWSPostCreated = useCallback((data: any) => {
     const newPost = mapApiPost(data);
     setPosts(prev => {
-      // Avoid duplicates
+      // Avoid duplicates by ID
       if (prev.some(p => p.id === newPost.id)) return prev;
+      // Also avoid content duplicates within 5 seconds (local optimistic + WS)
+      const isContentDup = prev.some(p =>
+        p.id !== newPost.id &&
+        p.author?.id === newPost.author?.id &&
+        p.content === newPost.content &&
+        Math.abs(new Date(p.timestamp).getTime() - new Date(newPost.timestamp).getTime()) < 5000
+      );
+      if (isContentDup) return prev;
       return [newPost, ...prev];
     });
   }, []);
@@ -650,7 +658,27 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     else document.documentElement.classList.remove('dark');
   }, [darkMode]);
 
-  const addPost = (post: Post) => setPosts(prev => [post, ...prev]);
+  const addPost = (post: Post) => setPosts(prev => {
+    // Avoid duplicates: check by id first, then by content+author+timestamp for optimistic posts
+    if (prev.some(p => p.id === post.id)) return prev;
+    // Also check for content duplicates (optimistic local post vs server post)
+    const isDuplicate = prev.some(p =>
+      p.id !== post.id &&
+      p.author?.id === post.author?.id &&
+      p.content === post.content &&
+      Math.abs(new Date(p.timestamp).getTime() - new Date(post.timestamp).getTime()) < 5000
+    );
+    if (isDuplicate) {
+      // Replace the optimistic local post with the server post (which has the real ID)
+      return prev.map(p =>
+        p.author?.id === post.author?.id &&
+        p.content === post.content &&
+        Math.abs(new Date(p.timestamp).getTime() - new Date(post.timestamp).getTime()) < 5000
+          ? post : p
+      );
+    }
+    return [post, ...prev];
+  });
   const toggleSavePost = (postId: string) => {
     setSavedPosts(prev => prev.includes(postId) ? prev.filter(id => id !== postId) : [...prev, postId]);
   };
