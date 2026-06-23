@@ -659,18 +659,34 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [contextMenu, showReactionPicker, showHeaderMenu]);
 
   // ─── Scroll tracking ───────────────────────────────────────────────
+  // Track if user is near the bottom (within 100px). When true, new messages
+  // auto-scroll to bottom. When false (user scrolled up to read history),
+  // we DON'T force-scroll — respect the user's position.
   const handleScroll = useCallback(() => {
     const container = messagesContainerRef.current;
     if (!container) return;
     const { scrollTop, scrollHeight, clientHeight } = container;
-    setShouldAutoScroll(scrollHeight - scrollTop - clientHeight < 100);
+    const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+    setShouldAutoScroll(distanceFromBottom < 100);
   }, []);
 
+  // Only auto-scroll when NEW messages arrive AND user is already at the bottom.
+  // We intentionally do NOT include shouldAutoScroll in the deps array, because
+  // including it would re-trigger the scroll every time the user scrolls to the
+  // bottom (causing a feedback loop where the page jumps back up).
+  // Instead, we read the current value of shouldAutoScroll via a ref.
+  const shouldAutoScrollRef = useRef(true);
+  useEffect(() => { shouldAutoScrollRef.current = shouldAutoScroll; }, [shouldAutoScroll]);
+
   useEffect(() => {
-    if (shouldAutoScroll) {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (!currentMessages || currentMessages.length === 0) return;
+    // Only scroll if user was already at the bottom before the new message
+    if (shouldAutoScrollRef.current) {
+      // Use 'auto' instead of 'smooth' — smooth scrolling during message
+      // arrival causes layout thrashing and makes the page feel janky.
+      messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
     }
-  }, [currentMessages, shouldAutoScroll]);
+  }, [currentMessages]);
 
   // ─── Send message ──────────────────────────────────────────────────
   const sendMessageFn = async (e?: React.FormEvent, overrideMessageType?: string, overrideImageUrl?: string, overrideVoiceUrl?: string, overrideVoiceDuration?: number) => {
