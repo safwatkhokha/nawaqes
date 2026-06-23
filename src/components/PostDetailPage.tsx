@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { useAppContext, mapApiPost } from '../contexts/AppContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
+import { formatRelativeTimeAr } from '../utils/time';
 import { api } from '../services/api';
 import { PromotionWizard } from './PromotionWizard';
 import { EditPostModal } from './EditPostModal';
@@ -548,7 +549,7 @@ export const PostDetailPage: React.FC = () => {
                 )}
               </div>
               <div className={`flex items-center gap-1.5 text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                <span>{post.timestamp}</span>
+                <span>{formatRelativeTimeAr(post.timestamp)}</span>
                 <span>·</span>
                 <Globe className="w-3 h-3" />
               </div>

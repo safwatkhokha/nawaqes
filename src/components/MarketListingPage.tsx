@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../contexts/AppContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
+import { parseDBTimestamp } from '../utils/time';
 import { api } from '../services/api';
 import { interestCategories } from '../config/interests';
 import { marketPromotionPackages } from '../data/marketPromotionPackages';
@@ -59,7 +60,7 @@ const paymentMethodLabels: Record<string, { key: string; icon: string; color: st
 // ─── Format Date ─────────────────────────────────────────────────────
 function formatDate(dateStr: string, t: (key: string) => string): string {
   try {
-    const date = new Date(dateStr);
+    const date = parseDBTimestamp(dateStr);
     const now = new Date();
     const diffMs = now.getTime() - date.getTime();
     const diffMins = Math.floor(diffMs / 60000);

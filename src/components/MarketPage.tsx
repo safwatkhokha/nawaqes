@@ -7,6 +7,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAppContext } from '../contexts/AppContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
+import { parseDBTimestamp } from '../utils/time';
 import { api } from '../services/api';
 import { interestCategories } from '../config/interests';
 import { marketPromotionPackages } from '../data/marketPromotionPackages';
@@ -114,7 +115,7 @@ function formatPrice(price: number | undefined, currency: string = ''): string {
 function timeAgo(dateStr: string | undefined, t: any): string {
   if (!dateStr) return '';
   try {
-    const date = new Date(dateStr);
+    const date = parseDBTimestamp(dateStr);
     const now = new Date();
     const diffMs = now.getTime() - date.getTime();
     const diffMins = Math.floor(diffMs / 60000);

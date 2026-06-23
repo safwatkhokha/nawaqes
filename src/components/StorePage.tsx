@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useAppContext } from '../contexts/AppContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
+import { formatRelativeTimeAr } from '../utils/time';
 import { useTranslation } from 'react-i18next';
 import { Store as StoreIcon, MapPin, Phone, MessageCircle, Star, Megaphone, Zap, Crown, TrendingUp, Plus, Edit, X, ArrowRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -656,7 +657,7 @@ export const StorePage: React.FC = () => {
                           </span>
                         )}
                         <span className={`text-[11px] ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
-                          {post.timestamp}
+                          {formatRelativeTimeAr(post.timestamp)}
                         </span>
                       </div>
                       <p className={`text-sm mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>

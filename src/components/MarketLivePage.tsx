@@ -46,6 +46,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 import { useLanguage } from '../contexts/LanguageContext';
+import { parseDBTimestamp } from '../utils/time';
 import { VideoRecorder } from './VideoRecorder';
 
 // ─── Category icons map ───────────────────────────────────────────
@@ -68,7 +69,7 @@ const formatCompact = (num: number): string => {
 const timeAgo = (dateStr: string): string => {
   if (!dateStr) return '';
   const now = new Date();
-  const date = new Date(dateStr);
+  const date = parseDBTimestamp(dateStr);
   const diff = Math.floor((now.getTime() - date.getTime()) / 1000);
   if (diff < 60) return 'الآن';
   if (diff < 3600) return `منذ ${Math.floor(diff / 60)} دقيقة`;
