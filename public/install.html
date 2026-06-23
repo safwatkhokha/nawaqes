@@ -250,7 +250,7 @@
       <p class="platform-desc">للأندرويد — حمّل ملف APK وثبّته يدوياً (بدون متجر)</p>
 
       <div id="apkAvailable" class="hidden">
-        <a href="/download/nawaqes-v2.0.0.apk" download class="install-btn">
+        <a href="https://huggingface.co/datasets/safwatkhokha/nawaqes-backup/resolve/main/nawaqes-v3.0.0.apk" download class="install-btn">
           ⬇️ تحميل APK (الإصدار 2.0.0)
         </a>
         <p style="text-align:center; margin-top:0.8rem; font-size:0.85rem; color:rgba(255,255,255,0.6);">
@@ -304,7 +304,7 @@
     const isMobile = isIOS || isAndroid;
 
     // ===== Check if APK exists =====
-    fetch('/download/nawaqes-v2.0.0.apk', { method: 'HEAD' })
+    fetch('https://huggingface.co/datasets/safwatkhokha/nawaqes-backup/resolve/main/nawaqes-v3.0.0.apk', { method: 'HEAD' })
       .then(r => {
         if (r.ok) {
           document.getElementById('apkAvailable').classList.remove('hidden');
