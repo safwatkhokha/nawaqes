@@ -649,14 +649,17 @@ router.post('/:id/comment', authMiddleware, (req: Request, res: Response) => {
       .run(req.params.id, payload.userId, user.name, user.avatar, comment_content, parent_id, image_url);
     db.prepare("UPDATE posts SET comments = comments + 1, updated_at = datetime('now') WHERE id = ?").run(req.params.id);
 
-    // Notify post author about the comment (only if not commenting on own post)
+    // Comment notifications DISABLED per user request (2026-06-23).
+    // All notifications go to the notifications page (bell icon) ONLY.
+    // No DB insert, no WebSocket emitNotification.
+    // The post:commented broadcast is kept so the comment appears in real-time
+    // on the post page (without a popup notification).
+    /*
     const post = db.prepare('SELECT author_id FROM posts WHERE id = ?').get(req.params.id) as any;
     if (post && post.author_id !== payload.userId) {
       db.prepare('INSERT INTO notifications (user_id, type, message, post_id, user_id_ref) VALUES (?, ?, ?, ?, ?)')
         .run(post.author_id, 'comment', `علق ${user.name} على منشورك`, req.params.id, payload.userId);
     }
-
-    // If this is a reply, notify the parent comment author too
     if (parent_id) {
       const parentComment = db.prepare('SELECT author_id FROM post_comments WHERE id = ?').get(parent_id) as any;
       if (parentComment && parentComment.author_id !== payload.userId) {
@@ -664,38 +667,14 @@ router.post('/:id/comment', authMiddleware, (req: Request, res: Response) => {
           .run(parentComment.author_id, 'comment', `رد ${user.name} على تعليقك`, req.params.id, payload.userId);
       }
     }
+    */
 
     const comment = db.prepare('SELECT * FROM post_comments WHERE post_id = ? ORDER BY created_at DESC LIMIT 1').get(req.params.id);
 
-    // Emit WebSocket events for real-time comment notifications
+    // Broadcast comment to all users viewing this post (real-time UI update, NOT a notification)
     try {
       const wsManager = (req.app.locals as any).wsManager;
       if (wsManager) {
-        if (post && post.author_id !== payload.userId) {
-          wsManager.emitNotification(post.author_id, {
-            type: 'comment',
-            message: `علق ${user.name} على منشورك`,
-            postId: req.params.id,
-            userId: payload.userId,
-            link: `/post/${req.params.id}`,
-            time: new Date().toISOString(),
-          });
-        }
-        // If reply, notify parent comment author
-        if (parent_id) {
-          const parentComment = db.prepare('SELECT author_id FROM post_comments WHERE id = ?').get(parent_id) as any;
-          if (parentComment && parentComment.author_id !== payload.userId) {
-            wsManager.emitNotification(parentComment.author_id, {
-              type: 'comment',
-              message: `رد ${user.name} على تعليقك`,
-              postId: req.params.id,
-              userId: payload.userId,
-              link: `/post/${req.params.id}`,
-              time: new Date().toISOString(),
-            });
-          }
-        }
-        // Broadcast comment to all users viewing this post
         wsManager.broadcast({ type: 'post:commented', data: { postId: req.params.id, comment } }, { excludeUserId: payload.userId });
       }
     } catch (wsErr: any) { console.error('[WS] Failed to emit comment notification:', wsErr.message); }

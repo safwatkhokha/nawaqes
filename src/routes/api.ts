@@ -680,7 +680,7 @@ router.get('/notifications', authMiddleware, (req: Request, res: Response) => {
     const notifications = db.prepare(
       `SELECT id, type, message, post_id, user_id_ref, link, read, created_at
        FROM notifications
-       WHERE user_id = ? AND type != 'like'
+       WHERE user_id = ? AND type NOT IN ('like', 'comment')
        ORDER BY created_at DESC LIMIT 50`
     ).all(payload.userId);
     res.json(notifications);
