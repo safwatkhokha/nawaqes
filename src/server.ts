@@ -111,13 +111,12 @@ async function startServer() {
     console.warn('[RESTORE] Failed:', err.message);
   }
 
-  // ─── One-time cleanup: delete all 'like' and 'comment' notifications from DB ───
-  // These were created before we disabled like/comment notifications.
+  // ─── One-time cleanup: delete old like/comment/friend notifications from DB ───
   try {
     const db = (await import('./database/index.js')).default;
-    const result = db.prepare("DELETE FROM notifications WHERE type IN ('like', 'comment')").run();
+    const result = db.prepare("DELETE FROM notifications WHERE type IN ('like', 'comment', 'friend')").run();
     if (result.changes > 0) {
-      console.log(`[CLEANUP] Deleted ${result.changes} old like/comment notifications`);
+      console.log(`[CLEANUP] Deleted ${result.changes} old like/comment/friend notifications`);
     }
   } catch {}
 

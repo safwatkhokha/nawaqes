@@ -680,7 +680,7 @@ router.get('/notifications', authMiddleware, (req: Request, res: Response) => {
     const notifications = db.prepare(
       `SELECT id, type, message, post_id, user_id_ref, link, read, created_at
        FROM notifications
-       WHERE user_id = ? AND type NOT IN ('like', 'comment')
+       WHERE user_id = ? AND type NOT IN ('like', 'comment', 'friend')
        ORDER BY created_at DESC LIMIT 50`
     ).all(payload.userId);
     res.json(notifications);
@@ -1133,51 +1133,33 @@ router.post('/friends/request', authMiddleware, async (req: Request, res: Respon
     db.prepare('INSERT OR IGNORE INTO friendships (requester_id, addressee_id, status) VALUES (?, ?, ?)')
       .run(payload.userId, userId, 'pending');
 
-    // Create notification for the addressee
+    // Friend request notifications DISABLED per user request (2026-06-23).
+    // All notifications go to the notifications page (bell icon) ONLY.
+    // No DB insert, no WebSocket emitNotification, no FCM push.
+    /*
     const sender = db.prepare('SELECT name, avatar, avatar_base64, is_verified FROM users WHERE id = ?').get(payload.userId) as any;
     if (sender) {
       db.prepare('INSERT INTO notifications (user_id, type, message, user_id_ref) VALUES (?, ?, ?, ?)')
         .run(userId, 'friend', `أرسل ${sender.name} طلب صداقة`, payload.userId);
     }
-
-    // Emit WebSocket event for real-time friend request notification
     try {
       const wsManager = (req.app.locals as any).wsManager;
       if (wsManager && sender) {
-        // Get the friendship ID
         const friendship = db.prepare('SELECT id FROM friendships WHERE requester_id = ? AND addressee_id = ? AND status = ?')
           .get(payload.userId, userId, 'pending') as any;
         wsManager.emitFriendRequest(userId, {
           id: friendship?.id,
-          user: {
-            id: payload.userId,
-            name: sender.name,
-            avatar: sender.avatar_base64 || sender.avatar || '',
-            isVerified: !!sender.is_verified,
-          },
+          user: { id: payload.userId, name: sender.name, avatar: sender.avatar_base64 || sender.avatar || '', isVerified: !!sender.is_verified },
           timestamp: new Date().toISOString(),
         });
-        // Also emit notification event
         wsManager.emitNotification(userId, {
-          type: 'friend',
-          message: `أرسل ${sender.name} طلب صداقة`,
-          userId: payload.userId,
-          link: `/user/${payload.userId}`,
-          time: new Date().toISOString(),
+          type: 'friend', message: `أرسل ${sender.name} طلب صداقة`,
+          userId: payload.userId, link: `/user/${payload.userId}`, time: new Date().toISOString(),
         });
       }
-    } catch (wsErr: any) {
-      console.error('[WS] Failed to emit friend request:', wsErr.message);
-    }
-
-    // Send FCM push notification for friend request
-    try {
-      if (sender) {
-        await notifyFriendRequest(userId, sender.name);
-      }
-    } catch (pushErr: any) {
-      console.error('[FCM] Failed to send friend request push:', pushErr.message);
-    }
+    } catch (wsErr: any) { console.error('[WS] Failed to emit friend request:', wsErr.message); }
+    try { if (sender) { await notifyFriendRequest(userId, sender.name); } } catch (pushErr: any) { console.error('[FCM] Failed to send friend request push:', pushErr.message); }
+    */
 
     res.json({ message: 'تم إرسال طلب الصداقة' });
   } catch (err: any) {
@@ -1193,46 +1175,23 @@ router.post('/friends/accept/:id', authMiddleware, async (req: Request, res: Res
 
     db.prepare("UPDATE friendships SET status = 'accepted' WHERE id = ?").run(req.params.id);
 
-    // Notify the requester that their friend request was accepted
+    // Friend acceptance notifications DISABLED per user request (2026-06-23).
+    // No DB insert, no WebSocket emitNotification, no FCM push.
+    /*
     const accepter = db.prepare('SELECT name, avatar, avatar_base64 FROM users WHERE id = ?').get(payload.userId) as any;
     if (accepter) {
       db.prepare('INSERT INTO notifications (user_id, type, message, user_id_ref) VALUES (?, ?, ?, ?)')
         .run(friendship.requester_id, 'friend', `قبل ${accepter.name} طلب الصداقة`, payload.userId);
     }
-
-    // Emit WebSocket events for real-time friend acceptance
     try {
       const wsManager = (req.app.locals as any).wsManager;
       if (wsManager) {
-        // Notify the requester
-        wsManager.emitFriendAccepted(friendship.requester_id, {
-          friendshipId: req.params.id,
-          user: {
-            id: payload.userId,
-            name: accepter?.name || '',
-            avatar: accepter?.avatar_base64 || accepter?.avatar || '',
-          },
-        });
-        wsManager.emitNotification(friendship.requester_id, {
-          type: 'friend',
-          message: `قبل ${accepter?.name || ''} طلب الصداقة`,
-          userId: payload.userId,
-          link: `/user/${payload.userId}`,
-          time: new Date().toISOString(),
-        });
+        wsManager.emitFriendAccepted(friendship.requester_id, { friendshipId: req.params.id, user: { id: payload.userId, name: accepter?.name || '', avatar: accepter?.avatar_base64 || accepter?.avatar || '' } });
+        wsManager.emitNotification(friendship.requester_id, { type: 'friend', message: `قبل ${accepter?.name || ''} طلب الصداقة`, userId: payload.userId, link: `/user/${payload.userId}`, time: new Date().toISOString() });
       }
-    } catch (wsErr: any) {
-      console.error('[WS] Failed to emit friend accepted:', wsErr.message);
-    }
-
-    // Send FCM push notification for friend request acceptance
-    try {
-      if (accepter) {
-        await sendPushToUser(friendship.requester_id, 'طلب صداقة مقبول', `قبل ${accepter.name} طلب الصداقة`, { type: 'friend_accepted', link: '/friends' });
-      }
-    } catch (pushErr: any) {
-      console.error('[FCM] Failed to send friend accepted push:', pushErr.message);
-    }
+    } catch (wsErr: any) { console.error('[WS] Failed to emit friend accepted:', wsErr.message); }
+    try { if (accepter) { await sendPushToUser(friendship.requester_id, 'طلب صداقة مقبول', `قبل ${accepter.name} طلب الصداقة`, { type: 'friend_accepted', link: '/friends' }); } } catch (pushErr: any) { console.error('[FCM] Failed to send friend accepted push:', pushErr.message); }
+    */
 
     res.json({ message: 'تم قبول طلب الصداقة' });
   } catch (err: any) {
