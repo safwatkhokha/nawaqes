@@ -426,7 +426,7 @@ export const LoginPage: React.FC = () => {
                 {/* ─── Download App Button ─── */}
                 <div className="pt-4 border-t border-gray-100">
                   <a
-                    href="https://huggingface.co/datasets/safwatkhokha/nawaqes-backup/resolve/main/nawaqes-v3.0.0.apk"
+                    href="https://huggingface.co/datasets/safwatkhokha/nawaqes-backup/resolve/main/nawaqes-v3.0.1.apk"
                     download
                     className="w-full flex items-center justify-center gap-2 bg-gray-900 text-white py-3.5 rounded-xl font-bold text-sm hover:bg-gray-800 active:scale-[0.98] transition-all shadow-md"
                   >
