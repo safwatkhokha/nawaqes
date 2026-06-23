@@ -175,33 +175,20 @@ async function registerTokenWithServer(token: string): Promise<void> {
   }
 }
 
-/** Show a local notification when app is in foreground */
-function showLocalNotification(payload: any): void {
-  const notification = payload.notification || payload.data || {};
-  const title = notification.title || 'نواقص';
-  const body = notification.body || '';
-  const url = payload.data?.url || '/';
-
-  if (Notification.permission === 'granted' && 'serviceWorker' in navigator) {
-    navigator.serviceWorker.ready.then((registration) => {
-      const notifOptions: any = {
-        body,
-        icon: '/icons/icon-192.png',
-        badge: '/icons/favicon-32.png',
-        vibrate: [100, 50, 100],
-        dir: 'rtl',
-        lang: 'ar',
-        tag: 'nawaqes-notification',
-        renotify: true,
-        data: { url },
-        actions: [
-          { action: 'open', title: 'فتح' },
-          { action: 'dismiss', title: 'إغلاق' },
-        ],
-      };
-      registration.showNotification(title, notifOptions);
-    });
-  }
+/** Show a local notification when app is in foreground.
+ *
+ * DISABLED per product decision (2026-06-23): OS-level FCM notifications
+ * that pop up over the app (like "أضفني إلى قائمتك / أعجبني") are no
+ * longer shown when the app is open in the foreground. The WebSocket
+ * real-time channel + in-app sonner toasts are the only notification
+ * surface now.
+ *
+ * Background notifications (when the app is closed) still work normally
+ * via the FCM service worker — those are useful and not intrusive.
+ */
+function showLocalNotification(_payload: any): void {
+  // Foreground OS notifications disabled.
+  return;
 }
 
 /** Unsubscribe from notifications (logout, settings) */

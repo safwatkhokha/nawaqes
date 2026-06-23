@@ -471,7 +471,7 @@ router.get('/:id', optionalAuth, (req: Request, res: Response) => {
 });
 
 // POST /api/posts
-router.post('/', authMiddleware, (req: Request, res: Response) => {
+router.post('/', authMiddleware, async (req: Request, res: Response) => {
   try {
     const payload = (req as any).user as JwtPayload;
     const { content, image, type, price, currency, location, payment_methods, category, feeling, activity, sender_phone } = req.body;
@@ -503,6 +503,13 @@ router.post('/', authMiddleware, (req: Request, res: Response) => {
         wsManager.broadcast({ type: 'post:created', data: postWithAuthor }, { excludeUserId: payload.userId });
       }
     } catch (wsErr: any) { console.error('[WS] Failed to emit post created:', wsErr.message); }
+
+    // 🔧 Trigger an event backup so new posts are saved to HF Datasets
+    // (prevents data loss if the container is rebuilt before the next periodic backup)
+    try {
+      const { createEventBackup } = await import('../database/backup-system.js');
+      createEventBackup('post_created');
+    } catch {}
 
     res.status(201).json(postWithAuthor);
   } catch (err: any) {

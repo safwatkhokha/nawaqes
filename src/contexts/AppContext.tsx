@@ -66,23 +66,31 @@ export function mapApiPost(data: any): Post {
 }
 
 // ─── Smart Notifications Utility ──────────────────────────────────────
-export const smartNotify = (title: string, body: string, icon?: string) => {
-  // Check if notifications are enabled and permitted
+// DISABLED per product decision (2026-06-23): OS-level notifications
+// (the popups that appear over the app like "أضفني إلى قائمتك / أعجبني")
+// are no longer shown. The in-app toast notifications (via sonner) are
+// the only notification channel now — they're less intrusive and stay
+// inside the app window.
+//
+// To re-enable in the future, set `nawaqes_smart_alerts` to 'true' in
+// localStorage and uncomment the body below.
+export const smartNotify = (_title: string, _body: string, _icon?: string) => {
+  // Intentionally disabled — no OS notifications.
+  return;
+  /* Original implementation preserved for reference:
   const enabled = localStorage.getItem('nawaqes_smart_alerts') === 'true';
   if (!enabled) return;
   if (typeof window === 'undefined') return;
   if (!('Notification' in window)) return;
   if (window.Notification.permission !== 'granted') return;
   try {
-    new window.Notification(title, {
-      body,
-      icon: icon || '/favicon.ico',
-      // Use unique tag per notification to avoid replacement
+    new window.Notification(_title, {
+      body: _body,
+      icon: _icon || '/favicon.ico',
       tag: `nawaqes-alert-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
     } as NotificationOptions);
-  } catch {
-    // Notification API may not be available in all contexts
-  }
+  } catch {}
+  */
 };
 
 interface AppContextType {
