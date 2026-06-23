@@ -446,3 +446,60 @@ Stage Summary:
 - commit: 8c3155a
 - المشكلة عادت بسبب commit v2.3.0 الذي حذف الإصلاحات
 - تمت إعادة تطبيق الإصلاح على 11 ملف
+
+---
+Task ID: 17
+Agent: Super Z (main)
+Task: تعطيل إشعارات OS المزعجة + التأكد من نظام النسخ الاحتياطي
+
+Work Log:
+- استخدمت VLM لتحليل لقطة الشاشة — الإشعار هو "أضفني إلى قائمتك / أعجبني"
+  مع أيقونة قلب وردي، يظهر فوق التطبيق (OS notification، ليس toast داخلي)
+- اكتشفت أن الإشعارات كانت تأتي من مصدرين:
+  1. smartNotify() في AppContext.tsx — يستدعي `new Notification(...)`
+     عبر Notification API (يظهر فوق التطبيق)
+  2. showLocalNotification() في src/lib/firebase.ts — يستدعيها
+     FCM onMessage handler عند وصول push notification أثناء فتح
+     التطبيق. تستدعي `registration.showNotification()` عبر service worker
+
+الإصلاحات المطبقة:
+
+1. src/contexts/AppContext.tsx smartNotify():
+   - عطّلتها بالكامل (return فوراً)
+   - أضفت تعليق يشرح السبب وكيفية إعادة التفعيل مستقبلاً
+   - الإشعارات الداخلية (sonner toasts) في handleWSNotification /
+     handleWSAdminAlert لا تزال تعمل (10 ثوانٍ ثم إخفاء تلقائي)
+
+2. src/lib/firebase.ts showLocalNotification():
+   - عطّلتها بالكامل (return فوراً)
+   - إشعارات FCM الخلفية (عندما التطبيق مغلق) لا تزال تعمل عبر
+     service worker — مفيدة وغير مزعجة
+
+3. src/routes/posts.ts POST /api/posts:
+   - جعلت الـ handler async
+   - أضفت createEventBackup('post_created') بعد كل منشور جديد
+   - يضمن حفظ المنشور الجديد في HF Datasets خلال 60 ثانية
+   - يطابق الـ trigger الموجود في auth.ts لـ user_registered
+
+التحقق من نظام النسخ الاحتياطي:
+- ✅ RESTORE يعمل عند الإقلاع: استرجع 815KB من البيانات من آخر backup
+- ✅ BACKUP يعمل كل 5 دقائق: تم رفع periodic_backup لـ HF Datasets
+- ✅ Startup backup بعد 30 ثانية من الإقلاع
+- ✅ Event backups على user_registered و post_created
+- ✅ الـ restore-standalone.mjs يعمل قبل db module (يمنع seeding)
+
+النتائج بعد النشر:
+- HF Space: RUNNING ✓
+- /api/health: HTTP 200 ✓
+- bundle: index-nm_grEgp.js
+- runtime logs تُظهر:
+  [RESTORE] ✅ Database restored! Size: 815104 bytes
+  [BACKUP] ✅ Uploaded to HF: backups/2026-06-23/startup_2026-06-23T00-24-18.db.gz
+
+Stage Summary:
+- النشر: HF Space (RUNNING)
+- commit: b3d1ee8
+- ❌ لا مزيد من إشعارات OS المزعجة فوق التطبيق
+- ✅ الإشعارات الداخلية (toasts) فقط — تختفي تلقائياً بعد 10 ثوانٍ
+- ✅ النسخ الاحتياطي يعمل كل 5 دقائق + عند كل منشور/مستخدم جديد
+- ✅ الاستعادة التلقائية تعمل عند كل rebuild
