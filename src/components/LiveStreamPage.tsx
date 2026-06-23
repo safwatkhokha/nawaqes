@@ -44,6 +44,24 @@ interface LiveChatMsg {
   isSelf?: boolean;
 }
 
+// ─── Memoized chat message row ─────────────────────────────────────
+// Extracted so React can skip re-rendering existing rows when only
+// new messages are added. Without memo, every new message causes all
+// previous rows to re-render, which is what freezes the page during
+// busy livestreams.
+const ChatMessageRow = React.memo<{ msg: LiveChatMsg; darkMode: boolean }>(({ msg, darkMode }) => {
+  return (
+    <div className="flex items-start gap-2">
+      <img src={msg.avatar} alt={msg.user} className="w-6 h-6 rounded-full shrink-0 mt-0.5" loading="lazy" />
+      <div className="min-w-0">
+        <span className={`text-[10px] font-black ${msg.isSelf ? 'text-blue-400' : (darkMode ? 'text-orange-400' : 'text-orange-600')}`}>{msg.user}</span>
+        <p className={`text-xs leading-relaxed ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>{msg.text}</p>
+      </div>
+    </div>
+  );
+});
+ChatMessageRow.displayName = 'ChatMessageRow';
+
 // ─── LiveStreamPage Component ─────────────────────────────────────
 export const LiveStreamPage: React.FC = () => {
   const { darkMode, posts } = useAppContext();
@@ -95,6 +113,47 @@ export const LiveStreamPage: React.FC = () => {
   // Stream ID = host user ID
   const streamId = effectiveHostId;
 
+  // ─── Chat throttling / batching ──────────────────────────────────
+  // Without throttling, every incoming chat message triggers a state update
+  // and a re-render. With many viewers chatting simultaneously, this can
+  // cause 10+ re-renders per second and freeze the page.
+  // Solution: batch incoming messages and flush to state at most once per 500ms.
+  const pendingChatBatchRef = useRef<LiveChatMsg[]>([]);
+  const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const flushChatBatch = useCallback(() => {
+    flushTimerRef.current = null;
+    const batch = pendingChatBatchRef.current;
+    if (batch.length === 0) return;
+    pendingChatBatchRef.current = [];
+    setChatMessages(prev => {
+      // Cap at 200 messages to keep the DOM light. Older messages drop off.
+      const MAX_MESSAGES = 200;
+      const merged = [...prev, ...batch];
+      return merged.length > MAX_MESSAGES ? merged.slice(-MAX_MESSAGES) : merged;
+    });
+  }, []);
+
+  const queueChatMessage = useCallback((msg: LiveChatMsg) => {
+    pendingChatBatchRef.current.push(msg);
+    if (flushTimerRef.current === null) {
+      // Flush within 500ms — fast enough to feel real-time, but coalesces
+      // bursts of many messages into a single state update + re-render.
+      flushTimerRef.current = setTimeout(flushChatBatch, 500);
+    }
+  }, [flushChatBatch]);
+
+  // Flush any pending messages on unmount
+  useEffect(() => {
+    return () => {
+      if (flushTimerRef.current) {
+        clearTimeout(flushTimerRef.current);
+        flushTimerRef.current = null;
+      }
+      pendingChatBatchRef.current = [];
+    };
+  }, []);
+
   // ─── WebSocket for livestream events ────────────────────────────
   const {
     sendLivestreamStart,
@@ -114,7 +173,9 @@ export const LiveStreamPage: React.FC = () => {
         time: new Date(data.time || Date.now()),
         isSelf: data.userId === currentUser?.id,
       };
-      setChatMessages(prev => [...prev, msg]);
+      // Queue instead of setChatMessages directly to prevent UI freeze
+      // when many messages arrive in a short burst.
+      queueChatMessage(msg);
     },
     onLivestreamViewerJoined: (data: any) => {
       setViewerCount(prev => prev + 1);
@@ -694,7 +755,19 @@ export const LiveStreamPage: React.FC = () => {
   }, [isLive]);
 
   useEffect(() => { if (viewerCount > peakViewers) setPeakViewers(viewerCount); }, [viewerCount, peakViewers]);
-  useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [chatMessages]);
+  // Auto-scroll to latest message. Use 'auto' (instant) instead of 'smooth'
+  // because smooth-scrolling on every message causes layout thrashing when
+  // many messages arrive quickly (the user reported the page "freezes").
+  // Also guard with rAF to coalesce multiple scroll triggers in one frame.
+  const scrollPendingRef = useRef(false);
+  useEffect(() => {
+    if (scrollPendingRef.current) return;
+    scrollPendingRef.current = true;
+    requestAnimationFrame(() => {
+      scrollPendingRef.current = false;
+      chatEndRef.current?.scrollIntoView({ behavior: 'auto' });
+    });
+  }, [chatMessages]);
 
   // ─── Send Chat Message ──────────────────────────────────────────
   const sendChatMessage = () => {
@@ -707,7 +780,9 @@ export const LiveStreamPage: React.FC = () => {
       time: new Date(),
       isSelf: true,
     };
-    setChatMessages(prev => [...prev, msg]);
+    // Queue our own message too — keeps behavior consistent and respects
+    // the same 200-message cap + batched re-render.
+    queueChatMessage(msg);
     sendLivestreamChat(streamId, chatInput.trim());
     setChatInput('');
   };
@@ -897,13 +972,7 @@ export const LiveStreamPage: React.FC = () => {
               {chatMessages.length === 0 ? (
                 <div className="flex items-center justify-center h-full"><p className={`text-xs ${textMuted}`}>{t('livestream.noMessagesYet')}</p></div>
               ) : chatMessages.map(msg => (
-                <div key={msg.id} className="flex items-start gap-2">
-                  <img src={msg.avatar} alt={msg.user} className="w-6 h-6 rounded-full shrink-0 mt-0.5" />
-                  <div className="min-w-0">
-                    <span className={`text-[10px] font-black ${msg.isSelf ? 'text-blue-400' : (darkMode ? 'text-orange-400' : 'text-orange-600')}`}>{msg.user}</span>
-                    <p className={`text-xs leading-relaxed ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>{msg.text}</p>
-                  </div>
-                </div>
+                <ChatMessageRow key={msg.id} msg={msg} darkMode={darkMode} />
               ))}
               <div ref={chatEndRef} />
             </div>
@@ -928,13 +997,7 @@ export const LiveStreamPage: React.FC = () => {
                 {chatMessages.length === 0 ? (
                   <div className="flex items-center justify-center h-20"><p className={`text-xs ${textMuted}`}>{t('livestream.noMessagesYet')}</p></div>
                 ) : chatMessages.map(msg => (
-                  <div key={msg.id} className="flex items-start gap-2">
-                    <img src={msg.avatar} alt={msg.user} className="w-6 h-6 rounded-full shrink-0 mt-0.5" />
-                    <div className="min-w-0">
-                      <span className={`text-[10px] font-black ${msg.isSelf ? 'text-blue-400' : (darkMode ? 'text-orange-400' : 'text-orange-600')}`}>{msg.user}</span>
-                      <p className={`text-xs leading-relaxed ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>{msg.text}</p>
-                    </div>
-                  </div>
+                  <ChatMessageRow key={msg.id} msg={msg} darkMode={darkMode} />
                 ))}
                 <div ref={chatEndRef} />
               </div>
@@ -1062,13 +1125,7 @@ export const LiveStreamPage: React.FC = () => {
                 {chatMessages.length === 0 ? (
                   <div className="flex items-center justify-center h-full"><p className={`text-xs ${textMuted}`}>{t('livestream.noMessagesYet')}</p></div>
                 ) : chatMessages.map(msg => (
-                  <div key={msg.id} className="flex items-start gap-2">
-                    <img src={msg.avatar} alt={msg.user} className="w-6 h-6 rounded-full shrink-0 mt-0.5" />
-                    <div className="min-w-0">
-                      <span className={`text-[10px] font-black ${msg.isSelf ? 'text-blue-400' : (darkMode ? 'text-orange-400' : 'text-orange-600')}`}>{msg.user}</span>
-                      <p className={`text-xs leading-relaxed ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>{msg.text}</p>
-                    </div>
-                  </div>
+                  <ChatMessageRow key={msg.id} msg={msg} darkMode={darkMode} />
                 ))}
                 <div ref={chatEndRef} />
               </div>
@@ -1092,13 +1149,7 @@ export const LiveStreamPage: React.FC = () => {
                     {chatMessages.length === 0 ? (
                       <div className="flex items-center justify-center h-20"><p className={`text-xs ${textMuted}`}>{t('livestream.noMessagesYet')}</p></div>
                     ) : chatMessages.map(msg => (
-                      <div key={msg.id} className="flex items-start gap-2">
-                        <img src={msg.avatar} alt={msg.user} className="w-6 h-6 rounded-full shrink-0 mt-0.5" />
-                        <div className="min-w-0">
-                          <span className={`text-[10px] font-black ${msg.isSelf ? 'text-blue-400' : (darkMode ? 'text-orange-400' : 'text-orange-600')}`}>{msg.user}</span>
-                          <p className={`text-xs leading-relaxed ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>{msg.text}</p>
-                        </div>
-                      </div>
+                      <ChatMessageRow key={msg.id} msg={msg} darkMode={darkMode} />
                     ))}
                     <div ref={chatEndRef} />
                   </div>
