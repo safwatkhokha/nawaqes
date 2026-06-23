@@ -3,7 +3,7 @@ import React from 'react';
 import { HashRouter, Routes, Route, Link, Navigate, useNavigate, useParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { Toaster, toast } from 'sonner';
-import { Filter, Plus, ArrowLeft, Wallet, Megaphone, MessageCircle, TrendingUp, Sparkles, Bell, ChevronLeft, Heart, Eye, Clock, Zap, Star, ArrowUpRight, Flame, Search, Crown, Target, Globe, Activity, ShoppingBag, BarChart3, Gift } from 'lucide-react';
+import { Filter, Plus, ArrowLeft, Wallet, Megaphone, MessageCircle, TrendingUp, Sparkles, Bell, ChevronLeft, Heart, Eye, Clock, Zap, Star, ArrowUpRight, Flame, Search, Crown, Target, Globe, Activity, ShoppingBag, BarChart3, Gift, Smartphone, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 // i18n & Language
@@ -539,6 +539,15 @@ const MainLayout = () => {
 
   const [searchQuery, setSearchQuery] = React.useState('');
   const [activeTab, setActiveTab] = React.useState<'all' | 'ads' | 'promoted' | 'trending'>('all');
+  // Download banner dismiss state — persisted in localStorage so it doesn't
+  // annoy users who already closed it or downloaded the app.
+  const [showDownloadBanner, setShowDownloadBanner] = React.useState(() => {
+    try { return localStorage.getItem('nawaqes_download_banner_dismissed') !== 'true'; } catch { return true; }
+  });
+  const dismissDownloadBanner = () => {
+    setShowDownloadBanner(false);
+    try { localStorage.setItem('nawaqes_download_banner_dismissed', 'true'); } catch {}
+  };
 
   // Listen for mobile bottom nav "Create Post" event
   React.useEffect(() => {
@@ -1049,6 +1058,56 @@ const MainLayout = () => {
 
             <CategoryNav categories={categories} selected={selectedCategory} onSelect={handleCategorySelect} />
             {!loading && stories.length > 0 && <div className="mb-4"><Stories stories={stories} currentUser={currentUser} /></div>}
+
+            {/* ─── Download App Banner ─── */}
+            {showDownloadBanner && (
+              <motion.div
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className={`mb-4 rounded-2xl overflow-hidden border ${
+                  darkMode
+                    ? 'bg-gradient-to-l from-orange-900/40 via-gray-800 to-gray-800 border-orange-800/50'
+                    : 'bg-gradient-to-l from-orange-50 via-white to-white border-orange-200'
+                }`}
+              >
+                <div className="flex items-center gap-3 p-3">
+                  {/* Icon */}
+                  <div className={`w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 ${
+                    darkMode ? 'bg-orange-600/30' : 'bg-orange-100'
+                  }`}>
+                    <Smartphone className={`w-6 h-6 ${darkMode ? 'text-orange-400' : 'text-orange-600'}`} />
+                  </div>
+                  {/* Text */}
+                  <div className="flex-1 min-w-0">
+                    <p className={`text-sm font-black ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                      {t('app.downloadApp', 'حمّل تطبيق نواقص')}
+                    </p>
+                    <p className={`text-[11px] ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                      {t('app.downloadAppDesc', 'تجربة أسرع + إشعارات + كاميرا مباشرة')}
+                    </p>
+                  </div>
+                  {/* Download button */}
+                  <a
+                    href="/install"
+                    onClick={() => dismissDownloadBanner()}
+                    className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold transition-colors active:scale-95 flex-shrink-0"
+                  >
+                    <Smartphone className="w-4 h-4" />
+                    <span className="hidden sm:inline">{t('app.download', 'تحميل')}</span>
+                  </a>
+                  {/* Dismiss button */}
+                  <button
+                    onClick={dismissDownloadBanner}
+                    className={`p-1.5 rounded-lg flex-shrink-0 transition-colors ${
+                      darkMode ? 'hover:bg-gray-700 text-gray-500' : 'hover:bg-gray-100 text-gray-400'
+                    }`}
+                    aria-label="إغلاق"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              </motion.div>
+            )}
 
             <FilterBar filters={filters} setFilters={setFilters} onClear={() => { setFilters({ minPrice: "", maxPrice: "", location: "", type: "all" }); toast.success(t('app.filtersCleared')); }} />
             <CreatePost user={currentUser} onPostCreated={() => { toast.success(t('app.postPublished')); setShowCreatePost(false); }} />
