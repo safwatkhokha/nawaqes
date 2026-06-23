@@ -985,29 +985,52 @@ export const LiveStreamPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Mobile Chat overlay */}
+        {/* Mobile Chat overlay — fixed bottom sheet that does NOT cover the video.
+            - maxHeight 45vh (was 60vh) so the video stays visible above
+            - Semi-transparent backdrop so the user can see the video through it
+            - tap backdrop to close
+        */}
         <AnimatePresence>
           {showMobileChat && (
-            <motion.div initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }} transition={{ type: 'spring', damping: 25, stiffness: 300 }} className="lg:hidden fixed inset-x-0 bottom-0 z-[200] flex flex-col" style={{ maxHeight: '60vh' }}>
-              <div className={`flex items-center justify-between px-4 py-2.5 border-b cursor-pointer ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`} onClick={() => setShowMobileChat(false)}>
-                <div className="flex items-center gap-2"><MessageCircle className={`w-4 h-4 ${textMuted}`} /><span className={`text-sm font-black ${textPrimary}`}>{t('livestream.liveChat')}</span></div>
-                <X className={`w-4 h-4 ${textMuted}`} />
-              </div>
-              <div className={`flex-1 overflow-y-auto p-3 space-y-2 ${darkMode ? 'bg-gray-900' : 'bg-gray-50'}`}>
-                {chatMessages.length === 0 ? (
-                  <div className="flex items-center justify-center h-20"><p className={`text-xs ${textMuted}`}>{t('livestream.noMessagesYet')}</p></div>
-                ) : chatMessages.map(msg => (
-                  <ChatMessageRow key={msg.id} msg={msg} darkMode={darkMode} />
-                ))}
-                <div ref={chatEndRef} />
-              </div>
-              <div className={`p-3 border-t ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
-                <div className="flex items-center gap-2">
-                  <input type="text" placeholder={t('livestream.typeMessage')} value={chatInput} onChange={e => setChatInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') sendChatMessage(); }} className={`flex-1 px-3 py-2 rounded-xl text-sm border focus:outline-none focus:ring-2 focus:ring-orange-400 ${darkMode ? 'bg-gray-700 text-white placeholder-gray-400 border-gray-600' : 'bg-gray-50 text-gray-900 placeholder-gray-400 border-gray-200'}`} />
-                  <button onClick={sendChatMessage} disabled={!chatInput.trim()} className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all ${chatInput.trim() ? 'bg-orange-500 text-white hover:bg-orange-600 active:scale-95' : darkMode ? 'bg-gray-700 text-gray-500' : 'bg-gray-100 text-gray-400'}`}><Send className="w-4 h-4" /></button>
+            <>
+              {/* Backdrop — click to close, semi-transparent so video is still visible */}
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={() => setShowMobileChat(false)}
+                className="lg:hidden fixed inset-0 z-[190] bg-black/30"
+              />
+              <motion.div
+                initial={{ y: '100%' }}
+                animate={{ y: 0 }}
+                exit={{ y: '100%' }}
+                transition={{ type: 'spring', damping: 30, stiffness: 350 }}
+                className="lg:hidden fixed inset-x-0 bottom-0 z-[200] flex flex-col rounded-t-2xl shadow-2xl"
+                style={{ maxHeight: '45vh' }}
+              >
+                <div className={`flex items-center justify-between px-4 py-2.5 border-b cursor-pointer ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`} onClick={() => setShowMobileChat(false)}>
+                  {/* Drag handle indicator */}
+                  <div className="absolute top-1 left-1/2 -translate-x-1/2 w-10 h-1 bg-gray-400/40 rounded-full" />
+                  <div className="flex items-center gap-2 mt-1.5"><MessageCircle className={`w-4 h-4 ${textMuted}`} /><span className={`text-sm font-black ${textPrimary}`}>{t('livestream.liveChat')}</span></div>
+                  <X className={`w-4 h-4 ${textMuted} mt-1.5`} />
                 </div>
-              </div>
-            </motion.div>
+                <div className={`flex-1 overflow-y-auto p-3 space-y-2 ${darkMode ? 'bg-gray-900' : 'bg-gray-50'}`}>
+                  {chatMessages.length === 0 ? (
+                    <div className="flex items-center justify-center h-20"><p className={`text-xs ${textMuted}`}>{t('livestream.noMessagesYet')}</p></div>
+                  ) : chatMessages.map(msg => (
+                    <ChatMessageRow key={msg.id} msg={msg} darkMode={darkMode} />
+                  ))}
+                  <div ref={chatEndRef} />
+                </div>
+                <div className={`p-3 border-t ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`} style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}>
+                  <div className="flex items-center gap-2">
+                    <input type="text" placeholder={t('livestream.typeMessage')} value={chatInput} onChange={e => setChatInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') sendChatMessage(); }} className={`flex-1 px-3 py-2 rounded-xl text-sm border focus:outline-none focus:ring-2 focus:ring-orange-400 ${darkMode ? 'bg-gray-700 text-white placeholder-gray-400 border-gray-600' : 'bg-gray-50 text-gray-900 placeholder-gray-400 border-gray-200'}`} />
+                    <button onClick={sendChatMessage} disabled={!chatInput.trim()} className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all ${chatInput.trim() ? 'bg-orange-500 text-white hover:bg-orange-600 active:scale-95' : darkMode ? 'bg-gray-700 text-gray-500' : 'bg-gray-100 text-gray-400'}`}><Send className="w-4 h-4" /></button>
+                  </div>
+                </div>
+              </motion.div>
+            </>
           )}
         </AnimatePresence>
       </div>
@@ -1137,29 +1160,49 @@ export const LiveStreamPage: React.FC = () => {
               </div>
             </div>
 
-            {/* Mobile Chat overlay */}
+            {/* Mobile Chat overlay — fixed bottom sheet that does NOT cover the video.
+                Same improvements as viewer mode: 45vh max, semi-transparent backdrop,
+                drag handle indicator, rounded top corners.
+            */}
             <AnimatePresence>
               {showMobileChat && (
-                <motion.div initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }} transition={{ type: 'spring', damping: 25, stiffness: 300 }} className="lg:hidden fixed inset-x-0 bottom-0 z-[200] flex flex-col" style={{ maxHeight: '60vh' }}>
-                  <div className={`flex items-center justify-between px-4 py-2.5 border-b cursor-pointer ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`} onClick={() => setShowMobileChat(false)}>
-                    <div className="flex items-center gap-2"><MessageCircle className={`w-4 h-4 ${textMuted}`} /><span className={`text-sm font-black ${textPrimary}`}>{t('livestream.liveChat')}</span></div>
-                    <X className={`w-4 h-4 ${textMuted}`} />
-                  </div>
-                  <div className={`flex-1 overflow-y-auto p-3 space-y-2 ${darkMode ? 'bg-gray-900' : 'bg-gray-50'}`}>
-                    {chatMessages.length === 0 ? (
-                      <div className="flex items-center justify-center h-20"><p className={`text-xs ${textMuted}`}>{t('livestream.noMessagesYet')}</p></div>
-                    ) : chatMessages.map(msg => (
-                      <ChatMessageRow key={msg.id} msg={msg} darkMode={darkMode} />
-                    ))}
-                    <div ref={chatEndRef} />
-                  </div>
-                  <div className={`p-3 border-t ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
-                    <div className="flex items-center gap-2">
-                      <input type="text" placeholder={t('livestream.typeMessage')} value={chatInput} onChange={e => setChatInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') sendChatMessage(); }} className={`flex-1 px-3 py-2 rounded-xl text-sm border focus:outline-none focus:ring-2 focus:ring-orange-400 ${darkMode ? 'bg-gray-700 text-white placeholder-gray-400 border-gray-600' : 'bg-gray-50 text-gray-900 placeholder-gray-400 border-gray-200'}`} />
-                      <button onClick={sendChatMessage} disabled={!chatInput.trim()} className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all ${chatInput.trim() ? 'bg-orange-500 text-white hover:bg-orange-600 active:scale-95' : darkMode ? 'bg-gray-700 text-gray-500' : 'bg-gray-100 text-gray-400'}`}><Send className="w-4 h-4" /></button>
+                <>
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    onClick={() => setShowMobileChat(false)}
+                    className="lg:hidden fixed inset-0 z-[190] bg-black/30"
+                  />
+                  <motion.div
+                    initial={{ y: '100%' }}
+                    animate={{ y: 0 }}
+                    exit={{ y: '100%' }}
+                    transition={{ type: 'spring', damping: 30, stiffness: 350 }}
+                    className="lg:hidden fixed inset-x-0 bottom-0 z-[200] flex flex-col rounded-t-2xl shadow-2xl"
+                    style={{ maxHeight: '45vh' }}
+                  >
+                    <div className={`flex items-center justify-between px-4 py-2.5 border-b cursor-pointer relative ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`} onClick={() => setShowMobileChat(false)}>
+                      <div className="absolute top-1 left-1/2 -translate-x-1/2 w-10 h-1 bg-gray-400/40 rounded-full" />
+                      <div className="flex items-center gap-2 mt-1.5"><MessageCircle className={`w-4 h-4 ${textMuted}`} /><span className={`text-sm font-black ${textPrimary}`}>{t('livestream.liveChat')}</span></div>
+                      <X className={`w-4 h-4 ${textMuted} mt-1.5`} />
                     </div>
-                  </div>
-                </motion.div>
+                    <div className={`flex-1 overflow-y-auto p-3 space-y-2 ${darkMode ? 'bg-gray-900' : 'bg-gray-50'}`}>
+                      {chatMessages.length === 0 ? (
+                        <div className="flex items-center justify-center h-20"><p className={`text-xs ${textMuted}`}>{t('livestream.noMessagesYet')}</p></div>
+                      ) : chatMessages.map(msg => (
+                        <ChatMessageRow key={msg.id} msg={msg} darkMode={darkMode} />
+                      ))}
+                      <div ref={chatEndRef} />
+                    </div>
+                    <div className={`p-3 border-t ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`} style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}>
+                      <div className="flex items-center gap-2">
+                        <input type="text" placeholder={t('livestream.typeMessage')} value={chatInput} onChange={e => setChatInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') sendChatMessage(); }} className={`flex-1 px-3 py-2 rounded-xl text-sm border focus:outline-none focus:ring-2 focus:ring-orange-400 ${darkMode ? 'bg-gray-700 text-white placeholder-gray-400 border-gray-600' : 'bg-gray-50 text-gray-900 placeholder-gray-400 border-gray-200'}`} />
+                        <button onClick={sendChatMessage} disabled={!chatInput.trim()} className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all ${chatInput.trim() ? 'bg-orange-500 text-white hover:bg-orange-600 active:scale-95' : darkMode ? 'bg-gray-700 text-gray-500' : 'bg-gray-100 text-gray-400'}`}><Send className="w-4 h-4" /></button>
+                      </div>
+                    </div>
+                  </motion.div>
+                </>
               )}
             </AnimatePresence>
           </>
