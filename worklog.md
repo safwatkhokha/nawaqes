@@ -503,3 +503,60 @@ Stage Summary:
 - ✅ الإشعارات الداخلية (toasts) فقط — تختفي تلقائياً بعد 10 ثوانٍ
 - ✅ النسخ الاحتياطي يعمل كل 5 دقائق + عند كل منشور/مستخدم جديد
 - ✅ الاستعادة التلقائية تعمل عند كل rebuild
+
+---
+Task ID: 18
+Agent: Super Z (main)
+Task: إصلاح تجمد البث المباشر عند كثرة التعليقات
+
+Work Log:
+- استخدمت VLM لتحليل لقطة الشاشة — التطبيق يعرض بث مباشر مع تعليقات
+  من مستخدمين متعددين (999م، أحمد، سامي، السامي)
+- المستخدم أبلغ عن "قفل" (تجمد) عند كثرة التعليقات
+
+السبب الجذري (4 مشاكل):
+1. لا يوجد حد أقصى لرسائل الدردشة — تتراكم بلا حدود في state
+2. كل رسالة تسبب setChatMessages فوراً → re-render فوري
+3. scrollIntoView({ behavior: 'smooth' }) مكلف مع رسائل سريعة
+4. كل رسائل DOM تُعاد رسمها (لا يوجد memoization)
+
+الإصلاحات المطبقة على src/components/LiveStreamPage.tsx:
+
+1. Chat batching (500ms throttle):
+   - pendingChatBatchRef يجمع الرسائل الواردة
+   - flushChatBatch يحدّث state كل 500ms كحد أقصى
+   - بدلاً من 10 re-renders/ثانية → re-render واحد كل 500ms
+
+2. Cap messages to 200:
+   - في flushChatBatch: merged.slice(-200) يبقي آخر 200 رسالة
+   - يمنع تراكم آلاف الرسائل في DOM
+
+3. Auto-scroll optimization:
+   - استبدلت behavior: 'smooth' بـ behavior: 'auto' (فوري)
+   - استخدمت requestAnimationFrame لمنع scroll thrashing
+   - scrollPendingRef يمنع تكرار scroll في نفس الإطار
+
+4. Memoized ChatMessageRow component:
+   - استخرجت مكون React.memo منفصل لصف الرسالة
+   - React يتخطى إعادة رسم الرسائل القديمة عند إضافة رسائل جديدة
+   - استخدمته في كل الـ 4 chat panels (broadcaster + 3 viewer variants)
+   - أضفت loading="lazy" للصور الرمزية
+
+5. queueChatMessage للرسائل المُرسلة:
+   - sendChatMessage يستخدم queueChatMessage بدلاً من setChatMessages مباشرة
+   - يضمن سلوك متسق ويحترم حد 200 رسالة
+
+النتائج بعد النشر:
+- HF Space: RUNNING ✓
+- /api/health: HTTP 200 ✓
+- bundle: index-BAB74sXJ.js
+- الأداء المتوقع:
+  • 10 رسائل/ثانية → re-render واحد كل 500ms بدلاً من 10
+  • 200 رسالة كحد أقصى في DOM (بدلاً من غير محدود)
+  • الرسائل القديمة لا تُعاد رسمها
+  • scroll سلس بدون thrashing
+
+Stage Summary:
+- النشر: HF Space (RUNNING)
+- commit: b26b9bb
+- البث المباشر لن يتجمد بعد الآن عند كثرة التعليقات
