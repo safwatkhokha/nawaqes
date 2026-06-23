@@ -281,13 +281,17 @@ router.post('/send', authMiddleware, (req: Request, res: Response) => {
     // Generate a TEXT id manually
     const messageId = crypto.randomBytes(16).toString('hex').toLowerCase();
 
-    const actualReceiverId = isGroupMsg ? 'group' : receiverId;
+    // For group messages, receiver_id must be NULL (not 'group') because
+    // chat_messages.receiver_id has a FOREIGN KEY REFERENCES users(id).
+    // Setting it to 'group' would violate the FK constraint.
+    // For DMs, receiver_id is the actual user ID.
+    const actualReceiverId = isGroupMsg ? null : receiverId;
 
     db.prepare(`
       INSERT INTO chat_messages (id, sender_id, receiver_id, text, post_id, message_type, image_url, reply_to_id, reactions, deleted_for, voice_url, voice_duration, group_id, is_forwarded, forwarded_from)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
-      messageId, payload.userId, actualReceiverId,
+      messageId, payload.userId, actualReceiverId as any,
       text || '', postId || null,
       msgType, imageUrl || '', replyToId || null,
       '{}', '', voiceUrl || '', voiceDuration || 0,
