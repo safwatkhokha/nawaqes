@@ -78,7 +78,16 @@ export function getFCMStatus(): { available: boolean; appName: string | null; pr
   };
 }
 
-// Send push notification to a specific user
+// Send push notification to a specific user.
+//
+// DISABLED FCM push (2026-06-23): per user request, OS-level push
+// notifications are no longer sent. The only notification surfaces are:
+//   1. WebSocket real-time events (for online users)
+//   2. In-app sonner toasts (rendered by AppContext handleWSNotification)
+//   3. The notifications page (saved in the notifications table)
+//
+// This function still saves the notification to the DB and emits via
+// WebSocket, but skips the FCM multicast entirely.
 export async function sendPushToUser(userId: string, title: string, body: string, data?: Record<string, string>): Promise<{ sent: number; push: number; ws: number }> {
   initializeFirebase();
   let pushSent = 0;
@@ -101,7 +110,10 @@ export async function sendPushToUser(userId: string, title: string, body: string
       wsSent = 1;
     } catch {}
 
-    // 3. Send FCM push (for offline/mobile users)
+    // 3. FCM push — DISABLED. No more OS-level notifications.
+    // (The code below is intentionally commented out. To re-enable FCM,
+    // uncomment this block.)
+    /*
     if (firebaseApp && fcmAvailable) {
       try {
         const devices = db.prepare('SELECT token FROM devices WHERE user_id = ?').all(userId) as any[];
@@ -133,6 +145,7 @@ export async function sendPushToUser(userId: string, title: string, body: string
         console.warn('[FCM] Push send failed:', fcmErr.message);
       }
     }
+    */
   } catch (err: any) {
     console.error('[Push] Error:', err.message);
   }
@@ -140,94 +153,15 @@ export async function sendPushToUser(userId: string, title: string, body: string
   return { sent: pushSent + wsSent, push: pushSent, ws: wsSent };
 }
 
-// Send to multiple users (with batch optimization for FCM)
+// Send to multiple users — FCM DISABLED (2026-06-23).
+// Only saves to DB + sends via WebSocket. No OS-level push.
 export async function sendPushToUsers(userIds: string[], title: string, body: string, data?: Record<string, string>): Promise<{ sent: number }> {
   let totalSent = 0;
-
-  // Batch FCM: collect all tokens at once for efficiency
-  initializeFirebase();
-  if (firebaseApp && fcmAvailable && userIds.length > 0) {
-    try {
-      // Save in-app notifications and get WS count
-      const notifId = crypto.randomBytes(16).toString('hex');
-      const stmt = db.prepare('INSERT INTO notifications (id, user_id, type, message, link) VALUES (?, ?, ?, ?, ?)');
-      let wsSent = 0;
-      for (const userId of userIds) {
-        const nid = crypto.randomBytes(16).toString('hex');
-        stmt.run(nid, userId, data?.type || 'system', body, data?.link || null);
-        try {
-          const { wsManager } = await import('../websocket/index.js');
-          wsManager.sendToUser(userId, JSON.stringify({
-            type: 'notification:new',
-            notification: { id: nid, type: data?.type || 'system', message: body, time: new Date().toISOString(), link: data?.link }
-          }));
-          wsSent++;
-        } catch {}
-      }
-
-      // Collect all tokens for all users at once
-      const allTokens: string[] = [];
-      const tokenToUserId = new Map<string, string>();
-      for (const userId of userIds) {
-        const devices = db.prepare('SELECT token FROM devices WHERE user_id = ?').all(userId) as any[];
-        for (const d of devices) {
-          allTokens.push(d.token);
-          tokenToUserId.set(d.token, userId);
-        }
-      }
-
-      // FCM allows up to 500 tokens per multicast
-      if (allTokens.length > 0) {
-        const BATCH_SIZE = 500;
-        let pushSent = 0;
-        for (let i = 0; i < allTokens.length; i += BATCH_SIZE) {
-          const batch = allTokens.slice(i, i + BATCH_SIZE);
-          const message: MulticastMessage = {
-            tokens: batch,
-            notification: { title, body },
-            data: data || {},
-            android: { priority: 'high' },
-            webpush: {
-              notification: { title, body, icon: '/icons/icon-192.png', badge: '/icons/favicon-32.png', vibrate: [100, 50, 100] }
-            }
-          };
-          try {
-            const messaging = getMessaging(firebaseApp);
-            const response = await messaging.sendEachForMulticast(message);
-            pushSent += response.successCount;
-
-            // Clean invalid tokens
-            if (response.failureCount > 0) {
-              response.responses.forEach((resp: any, idx: number) => {
-                if (!resp.success && batch[idx]) {
-                  try { db.prepare('DELETE FROM devices WHERE token = ?').run(batch[idx]); } catch {}
-                }
-              });
-            }
-          } catch (fcmErr: any) {
-            console.warn('[FCM] Batch send failed:', fcmErr.message);
-          }
-        }
-        totalSent = pushSent + wsSent;
-      } else {
-        totalSent = wsSent;
-      }
-    } catch (err: any) {
-      console.error('[Push] Batch error:', err.message);
-      // Fallback to individual sends
-      for (const userId of userIds) {
-        const result = await sendPushToUser(userId, title, body, data);
-        totalSent += result.sent;
-      }
-    }
-  } else {
-    // No FCM - fallback to individual sends (WebSocket + in-app only)
-    for (const userId of userIds) {
-      const result = await sendPushToUser(userId, title, body, data);
-      totalSent += result.sent;
-    }
+  // Just delegate to individual sends (which now only do DB + WebSocket)
+  for (const userId of userIds) {
+    const result = await sendPushToUser(userId, title, body, data);
+    totalSent += result.sent;
   }
-
   return { sent: totalSent };
 }
 
