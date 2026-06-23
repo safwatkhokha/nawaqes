@@ -1178,13 +1178,40 @@ const MainLayout = () => {
                           )}
                         </div>
                         <div className={`relative h-28 overflow-hidden ${darkMode ? 'bg-gray-700' : 'bg-gray-100'}`}>
-                          {post.image ? (
-                            <img src={post.image} alt="" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" loading="lazy" />
-                          ) : (
-                            <div className={`w-full h-full flex items-center justify-center ${darkMode ? 'bg-gradient-to-br from-gray-700 to-gray-800' : 'bg-gradient-to-br from-amber-50 to-orange-50'}`}>
-                              <Megaphone className={`w-10 h-10 ${darkMode ? 'text-gray-600' : 'text-amber-200'}`} />
-                            </div>
-                          )}
+                          {(() => {
+                            // Parse post.image — supports JSON array (multi-image) or single URL
+                            let imgSrc = '';
+                            const rawImage = post.image || '';
+                            try {
+                              const parsed = JSON.parse(rawImage);
+                              imgSrc = Array.isArray(parsed) ? (parsed[0] || '') : rawImage;
+                            } catch {
+                              imgSrc = rawImage;
+                            }
+                            if (!imgSrc) return (
+                              <div className={`w-full h-full flex items-center justify-center ${darkMode ? 'bg-gradient-to-br from-gray-700 to-gray-800' : 'bg-gradient-to-br from-amber-50 to-orange-50'}`}>
+                                <Megaphone className={`w-10 h-10 ${darkMode ? 'text-gray-600' : 'text-amber-200'}`} />
+                              </div>
+                            );
+                            return (
+                              <img
+                                src={imgSrc}
+                                alt=""
+                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                                loading="lazy"
+                                onError={(e) => {
+                                  (e.target as HTMLImageElement).style.display = 'none';
+                                  const parent = (e.target as HTMLImageElement).parentElement;
+                                  if (parent) {
+                                    parent.className = `w-full h-full flex items-center justify-center ${darkMode ? 'bg-gradient-to-br from-gray-700 to-gray-800' : 'bg-gradient-to-br from-amber-50 to-orange-50'}`;
+                                    const fallback = document.createElement('div');
+                                    fallback.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="opacity:0.3"><path d="M3 11l18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 11-5.8-1.6"/></svg>';
+                                    parent.appendChild(fallback.firstChild!);
+                                  }
+                                }}
+                              />
+                            );
+                          })()}
                           {isNewPost(post.timestamp) && (
                             <span className="absolute top-2 right-2 px-2 py-0.5 rounded-full text-[8px] font-black bg-green-500 text-white shadow-sm">
                               {t('home.new')}
