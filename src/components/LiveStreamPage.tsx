@@ -871,11 +871,44 @@ export const LiveStreamPage: React.FC = () => {
                 <span className="text-white text-[10px] font-bold">{viewerCount}</span>
               </div>
 
-              {/* Mobile Chat toggle */}
-              <button onClick={() => setShowMobileChat(!showMobileChat)} className={`lg:hidden absolute bottom-3 right-3 flex items-center gap-1.5 px-3 py-2 rounded-xl shadow-lg transition-all active:scale-95 ${showMobileChat ? 'bg-orange-500 text-white' : 'bg-black/60 backdrop-blur-sm text-white'}`}>
-                <MessageCircle className="w-4 h-4" />
-                <span className="text-[10px] font-bold">{chatMessages.length}</span>
-              </button>
+              {/* ─── TikTok-style floating chat (mobile only) ─── */}
+              {/* Messages float over the video (bottom-left, semi-transparent).
+                  Input is a small pill at the bottom — always visible, no open/close. */}
+              <div className="lg:hidden absolute bottom-2 left-2 right-2 pointer-events-none">
+                {/* Floating messages — last 5 only, stacked upward */}
+                <div className="flex flex-col-reverse gap-1 mb-2 max-w-[75%]">
+                  {chatMessages.slice(-5).map((msg, idx, arr) => (
+                    <motion.div
+                      key={msg.id}
+                      initial={{ opacity: 0, x: -20 }}
+                      animate={{ opacity: idx === arr.length - 1 ? 1 : Math.max(0.4, 1 - (arr.length - 1 - idx) * 0.2) }}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-2xl bg-black/50 backdrop-blur-sm max-w-full"
+                    >
+                      <img src={msg.avatar} alt="" className="w-5 h-5 rounded-full shrink-0" loading="lazy" />
+                      <span className="text-[10px] font-bold text-orange-400 shrink-0">{msg.user}:</span>
+                      <span className="text-[11px] text-white truncate">{msg.text}</span>
+                    </motion.div>
+                  ))}
+                </div>
+                {/* Input pill — small, always visible, doesn't block video */}
+                <div className="pointer-events-auto flex items-center gap-1.5">
+                  <input
+                    type="text"
+                    placeholder={t('livestream.typeMessage')}
+                    value={chatInput}
+                    onChange={e => setChatInput(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') sendChatMessage(); }}
+                    className="flex-1 px-3 py-2 rounded-full text-xs bg-black/50 backdrop-blur-sm text-white placeholder-gray-400 border border-white/10 focus:outline-none focus:border-orange-400/50"
+                  />
+                  <button
+                    onClick={sendChatMessage}
+                    disabled={!chatInput.trim()}
+                    className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 transition-all ${chatInput.trim() ? 'bg-orange-500 text-white active:scale-90' : 'bg-black/40 text-gray-500'}`}
+                  >
+                    <Send className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
             </div>
 
             {/* Viewer controls */}
@@ -915,38 +948,6 @@ export const LiveStreamPage: React.FC = () => {
             </div>
           </div>
         </div>
-
-        {/* Mobile Chat overlay */}
-        <AnimatePresence>
-          {showMobileChat && (
-            <motion.div initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }} transition={{ type: 'spring', damping: 25, stiffness: 300 }} className="lg:hidden fixed inset-x-0 bottom-0 z-[200] flex flex-col" style={{ maxHeight: '60vh' }}>
-              <div className={`flex items-center justify-between px-4 py-2.5 border-b cursor-pointer ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`} onClick={() => setShowMobileChat(false)}>
-                <div className="flex items-center gap-2"><MessageCircle className={`w-4 h-4 ${textMuted}`} /><span className={`text-sm font-black ${textPrimary}`}>{t('livestream.liveChat')}</span></div>
-                <X className={`w-4 h-4 ${textMuted}`} />
-              </div>
-              <div className={`flex-1 overflow-y-auto p-3 space-y-2 ${darkMode ? 'bg-gray-900' : 'bg-gray-50'}`}>
-                {chatMessages.length === 0 ? (
-                  <div className="flex items-center justify-center h-20"><p className={`text-xs ${textMuted}`}>{t('livestream.noMessagesYet')}</p></div>
-                ) : chatMessages.map(msg => (
-                  <div key={msg.id} className="flex items-start gap-2">
-                    <img src={msg.avatar} alt={msg.user} className="w-6 h-6 rounded-full shrink-0 mt-0.5" />
-                    <div className="min-w-0">
-                      <span className={`text-[10px] font-black ${msg.isSelf ? 'text-blue-400' : (darkMode ? 'text-orange-400' : 'text-orange-600')}`}>{msg.user}</span>
-                      <p className={`text-xs leading-relaxed ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>{msg.text}</p>
-                    </div>
-                  </div>
-                ))}
-                <div ref={chatEndRef} />
-              </div>
-              <div className={`p-3 border-t ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
-                <div className="flex items-center gap-2">
-                  <input type="text" placeholder={t('livestream.typeMessage')} value={chatInput} onChange={e => setChatInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') sendChatMessage(); }} className={`flex-1 px-3 py-2 rounded-xl text-sm border focus:outline-none focus:ring-2 focus:ring-orange-400 ${darkMode ? 'bg-gray-700 text-white placeholder-gray-400 border-gray-600' : 'bg-gray-50 text-gray-900 placeholder-gray-400 border-gray-200'}`} />
-                  <button onClick={sendChatMessage} disabled={!chatInput.trim()} className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all ${chatInput.trim() ? 'bg-orange-500 text-white hover:bg-orange-600 active:scale-95' : darkMode ? 'bg-gray-700 text-gray-500' : 'bg-gray-100 text-gray-400'}`}><Send className="w-4 h-4" /></button>
-                </div>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
       </div>
     );
   }
@@ -1016,9 +1017,44 @@ export const LiveStreamPage: React.FC = () => {
                 <div className="absolute top-3 left-3 lg:top-4 lg:left-4 flex items-center gap-1.5 bg-black/50 backdrop-blur-sm px-2.5 py-1 rounded-lg">
                   <Eye className="w-3 h-3 text-white" /><span className="text-white text-[10px] font-bold">{viewerCount}</span>
                 </div>
-                <button onClick={() => setShowMobileChat(!showMobileChat)} className={`lg:hidden absolute bottom-3 right-3 flex items-center gap-1.5 px-3 py-2 rounded-xl shadow-lg transition-all active:scale-95 ${showMobileChat ? 'bg-orange-500 text-white' : 'bg-black/60 backdrop-blur-sm text-white'}`}>
-                  <MessageCircle className="w-4 h-4" /><span className="text-[10px] font-bold">{chatMessages.length}</span>
-                </button>
+
+                {/* ─── TikTok-style floating chat (mobile only) ─── */}
+                <div className="lg:hidden absolute bottom-2 left-2 right-2 pointer-events-none z-10">
+                  {/* Floating messages — last 5 only */}
+                  <div className="flex flex-col-reverse gap-1 mb-2 max-w-[75%]">
+                    {chatMessages.slice(-5).map((msg, idx, arr) => (
+                      <motion.div
+                        key={msg.id}
+                        initial={{ opacity: 0, x: -20 }}
+                        animate={{ opacity: idx === arr.length - 1 ? 1 : Math.max(0.4, 1 - (arr.length - 1 - idx) * 0.2) }}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-2xl bg-black/50 backdrop-blur-sm max-w-full"
+                      >
+                        <img src={msg.avatar} alt="" className="w-5 h-5 rounded-full shrink-0" loading="lazy" />
+                        <span className="text-[10px] font-bold text-orange-400 shrink-0">{msg.user}:</span>
+                        <span className="text-[11px] text-white truncate">{msg.text}</span>
+                      </motion.div>
+                    ))}
+                  </div>
+                  {/* Input pill */}
+                  <div className="pointer-events-auto flex items-center gap-1.5">
+                    <input
+                      type="text"
+                      placeholder={t('livestream.typeMessage')}
+                      value={chatInput}
+                      onChange={e => setChatInput(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') sendChatMessage(); }}
+                      className="flex-1 px-3 py-2 rounded-full text-xs bg-black/50 backdrop-blur-sm text-white placeholder-gray-400 border border-white/10 focus:outline-none focus:border-orange-400/50"
+                    />
+                    <button
+                      onClick={sendChatMessage}
+                      disabled={!chatInput.trim()}
+                      className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 transition-all ${chatInput.trim() ? 'bg-orange-500 text-white active:scale-90' : 'bg-black/40 text-gray-500'}`}
+                    >
+                      <Send className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+
                 {linkedAdId && (
                   <div className="absolute bottom-3 left-3 flex items-center gap-1.5 bg-orange-600/80 backdrop-blur-sm px-2.5 py-1.5 rounded-lg">
                     <Link2 className="w-3.5 h-3.5 text-white" /><span className="text-white text-[10px] font-bold">{t('livestream.linkedAd')}</span>
@@ -1079,38 +1115,6 @@ export const LiveStreamPage: React.FC = () => {
                 </div>
               </div>
             </div>
-
-            {/* Mobile Chat overlay */}
-            <AnimatePresence>
-              {showMobileChat && (
-                <motion.div initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }} transition={{ type: 'spring', damping: 25, stiffness: 300 }} className="lg:hidden fixed inset-x-0 bottom-0 z-[200] flex flex-col" style={{ maxHeight: '60vh' }}>
-                  <div className={`flex items-center justify-between px-4 py-2.5 border-b cursor-pointer ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`} onClick={() => setShowMobileChat(false)}>
-                    <div className="flex items-center gap-2"><MessageCircle className={`w-4 h-4 ${textMuted}`} /><span className={`text-sm font-black ${textPrimary}`}>{t('livestream.liveChat')}</span></div>
-                    <X className={`w-4 h-4 ${textMuted}`} />
-                  </div>
-                  <div className={`flex-1 overflow-y-auto p-3 space-y-2 ${darkMode ? 'bg-gray-900' : 'bg-gray-50'}`}>
-                    {chatMessages.length === 0 ? (
-                      <div className="flex items-center justify-center h-20"><p className={`text-xs ${textMuted}`}>{t('livestream.noMessagesYet')}</p></div>
-                    ) : chatMessages.map(msg => (
-                      <div key={msg.id} className="flex items-start gap-2">
-                        <img src={msg.avatar} alt={msg.user} className="w-6 h-6 rounded-full shrink-0 mt-0.5" />
-                        <div className="min-w-0">
-                          <span className={`text-[10px] font-black ${msg.isSelf ? 'text-blue-400' : (darkMode ? 'text-orange-400' : 'text-orange-600')}`}>{msg.user}</span>
-                          <p className={`text-xs leading-relaxed ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>{msg.text}</p>
-                        </div>
-                      </div>
-                    ))}
-                    <div ref={chatEndRef} />
-                  </div>
-                  <div className={`p-3 border-t ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
-                    <div className="flex items-center gap-2">
-                      <input type="text" placeholder={t('livestream.typeMessage')} value={chatInput} onChange={e => setChatInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') sendChatMessage(); }} className={`flex-1 px-3 py-2 rounded-xl text-sm border focus:outline-none focus:ring-2 focus:ring-orange-400 ${darkMode ? 'bg-gray-700 text-white placeholder-gray-400 border-gray-600' : 'bg-gray-50 text-gray-900 placeholder-gray-400 border-gray-200'}`} />
-                      <button onClick={sendChatMessage} disabled={!chatInput.trim()} className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all ${chatInput.trim() ? 'bg-orange-500 text-white hover:bg-orange-600 active:scale-95' : darkMode ? 'bg-gray-700 text-gray-500' : 'bg-gray-100 text-gray-400'}`}><Send className="w-4 h-4" /></button>
-                    </div>
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
           </>
         )}
       </div>
