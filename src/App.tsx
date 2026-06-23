@@ -535,7 +535,7 @@ const MainLayout = () => {
   const { currentUser } = useAuth();
   const { t } = useTranslation();
   const { dir } = useLanguage();
-  const { posts, promotedFeedPosts, categories, notifications, newsItems, stories, loading, selectedCategory, setSelectedCategory, filters, setFilters, showCreatePost, setShowCreatePost, darkMode, chatUnreadCount, readNotificationIds } = ctx;
+  const { posts, promotedFeedPosts, categories, notifications, newsItems, stories, loading, selectedCategory, setSelectedCategory, filters, setFilters, showCreatePost, setShowCreatePost, darkMode, chatUnreadCount, readNotificationIds, deletePost } = ctx;
 
   const [searchQuery, setSearchQuery] = React.useState('');
   const [activeTab, setActiveTab] = React.useState<'all' | 'ads' | 'promoted' | 'trending'>('all');
@@ -1318,7 +1318,7 @@ const MainLayout = () => {
                         onImpression={trackPromotedImpression}
                         onClick={trackPromotedClick}
                       >
-                        <PostCard post={post} />
+                        <PostCard post={post} onHidePost={deletePost} />
                       </PromotedPostWrapper>
                     </div>
                   )) : (

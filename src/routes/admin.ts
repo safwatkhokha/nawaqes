@@ -1331,6 +1331,14 @@ router.post('/reports/:id/action', (req: Request, res: Response) => {
 
       if (action === 'delete_post') {
         db.prepare("UPDATE posts SET status = 'deleted', updated_at = datetime('now') WHERE id = ?").run(postId);
+        // Broadcast to ALL users so feeds sync (website + app)
+        try {
+          const wsManager = (req.app.locals as any).wsManager;
+          if (wsManager) {
+            wsManager.broadcast({ type: 'post:deleted', data: { postId } });
+            wsManager.broadcast({ type: 'data:refresh', data: { reason: 'post-deleted' } });
+          }
+        } catch {}
         res.json({ message: 'تم حذف المنشور المخالف' });
         return;
       }
@@ -1352,6 +1360,14 @@ router.post('/reports/:id/action', (req: Request, res: Response) => {
           db.prepare('UPDATE users SET is_deactivated = 1, updated_at = datetime(\'now\') WHERE id = ?').run(post.author_id);
         }
         db.prepare("DELETE FROM posts WHERE id = ?").run(postId);
+        // Broadcast to sync all clients
+        try {
+          const wsManager = (req.app.locals as any).wsManager;
+          if (wsManager) {
+            wsManager.broadcast({ type: 'post:deleted', data: { postId } });
+            wsManager.broadcast({ type: 'data:refresh', data: { reason: 'user-banned' } });
+          }
+        } catch {}
         res.json({ message: 'تم حظر المستخدم وحذف المنشور' });
         return;
       }

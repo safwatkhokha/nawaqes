@@ -563,11 +563,13 @@ router.delete('/:id', authMiddleware, (req: Request, res: Response) => {
 
     db.prepare("UPDATE posts SET status = 'deleted', updated_at = datetime('now') WHERE id = ?").run(req.params.id);
 
-    // Emit WebSocket event so other users' feeds update in real-time
+    // Emit WebSocket event so ALL users' feeds update (including the deleter).
+    // We broadcast WITHOUT excludeUserId so the deleting user's own feed
+    // removes the post immediately via handleWSPostDeleted.
     try {
       const wsManager = (req.app.locals as any).wsManager;
       if (wsManager) {
-        wsManager.broadcast({ type: 'post:deleted', data: { postId: req.params.id } }, { excludeUserId: payload.userId });
+        wsManager.broadcast({ type: 'post:deleted', data: { postId: req.params.id } });
       }
     } catch (wsErr: any) { console.error('[WS] Failed to emit post deleted:', wsErr.message); }
 

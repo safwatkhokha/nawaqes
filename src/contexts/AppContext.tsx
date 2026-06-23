@@ -109,6 +109,7 @@ interface AppContextType {
   showCreatePost: boolean;
   setShowCreatePost: (show: boolean) => void;
   addPost: (post: Post) => void;
+  deletePost: (postId: string) => void;
   toggleSavePost: (postId: string) => void;
   savedPosts: string[];
   updateWalletBalance: (amount?: number) => void;
@@ -171,7 +172,7 @@ export const AppContext = createContext<AppContextType>({
   user: null, posts: [], promotedFeedPosts: [], categories: [], notifications: [], newsItems: [], stories: [],
   loading: true, selectedCategory: null, setSelectedCategory: () => {},
   filters: { minPrice: '', maxPrice: '', location: '', type: 'all' }, setFilters: () => {},
-  showCreatePost: false, setShowCreatePost: () => {}, addPost: () => {},
+  showCreatePost: false, setShowCreatePost: () => {}, addPost: () => {}, deletePost: () => {},
   toggleSavePost: () => {}, savedPosts: [], updateWalletBalance: () => {},
   darkMode: false, toggleDarkMode: () => {},
   depositConfirmation: null, showDepositConfirmation: () => {}, hideDepositConfirmation: () => {},
@@ -761,6 +762,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
     return [post, ...prev];
   });
+
+  // Remove a post from local state (used after delete)
+  const deletePost = (postId: string) => {
+    setPosts(prev => prev.filter(p => p.id !== postId));
+    setPromotedFeedPosts(prev => prev.filter(p => p.id !== postId));
+  };
+
   const toggleSavePost = (postId: string) => {
     setSavedPosts(prev => prev.includes(postId) ? prev.filter(id => id !== postId) : [...prev, postId]);
   };
@@ -965,7 +973,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     <AppContext.Provider value={{
       user: currentUser, posts, promotedFeedPosts, categories, notifications, newsItems, stories, loading,
       selectedCategory, setSelectedCategory, filters, setFilters,
-      showCreatePost, setShowCreatePost, addPost, toggleSavePost, savedPosts,
+      showCreatePost, setShowCreatePost, addPost, deletePost, toggleSavePost, savedPosts,
       updateWalletBalance, darkMode, toggleDarkMode,
       depositConfirmation, showDepositConfirmation, hideDepositConfirmation,
       chatUnreadCount, clearChatUnread, readNotificationIds, markAllNotificationsRead, markNotificationRead, deleteNotification,
