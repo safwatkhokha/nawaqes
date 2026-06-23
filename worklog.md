@@ -387,3 +387,62 @@ Stage Summary:
 - ✅ التنبيهات تظهر كـ Toast (10 ثوانٍ) ثم تختفي
 - ✅ كل الأنواع (admin/friend/payment/promotion/system) لها toast مخصص
 - ✅ Toast قابل للنقر للانتقال للصفحة ذات الصلة
+
+---
+Task ID: 16
+Agent: Super Z (main)
+Task: إصلاح مشكلة "منذ 3 ساعات" التي عادت بعد التحديث
+
+Work Log:
+- اكتشفت أن الـ commit "v2.3.0: fix all TypeScript errors" (3516885)
+  الصادر في 21 يونيو **أعاد** إصلاح التوقيت الذي قمت به في d80e000.
+- الـ commit 3516885:
+  • حذف `import { formatRelativeTimeAr } from '../utils/time'`
+  • استبدل `<span>{formatRelativeTimeAr(post.timestamp)}</span>` بـ
+    `<span>{post.timestamp}</span>` (نص خام!)
+- النتيجة: كل المكونات تعرض `post.timestamp` كـ raw text مثل
+  "2026-06-22 23:48:46" (UTC). في القاهرة (UTC+3)، إذا فسّرها المتصفح
+  كـ local time، يظهر الفرق 3 ساعات.
+
+إعادة تطبيق الإصلاح على جميع المكونات المتأثرة:
+
+1. src/components/PostCard.tsx:
+   • أعدت `import { formatRelativeTimeAr } from '../utils/time'`
+   • استبدلت `{post.timestamp}` بـ `{formatRelativeTimeAr(post.timestamp)}`
+
+2. src/components/PostDetailPage.tsx: نفس الإصلاح
+
+3. src/components/MyPage.tsx (3 مواضع): نفس الإصلاح
+
+4. src/components/StorePage.tsx: نفس الإصلاح
+
+5. src/components/ProfilePage.tsx: نفس الإصلاح
+
+6. src/components/FriendsPage.tsx: نفس الإصلاح
+
+7. src/components/UserProfilePage.tsx: نفس الإصلاح
+
+8. src/components/MarketPage.tsx: استبدلت `new Date(dateStr)` بـ
+   `parseDBTimestamp(dateStr)` في دالة timeAgo
+
+9. src/components/MarketListingPage.tsx: نفس الإصلاح في formatDate
+
+10. src/components/MyMarketListings.tsx: نفس الإصلاح في timeAgo
+
+11. src/components/MarketLivePage.tsx: نفس الإصلاح في timeAgo
+
+النتائج بعد النشر:
+- HF Space: RUNNING ✓
+- /api/health: HTTP 200 ✓
+- bundle: index-DceJH8ji.js
+- ✅ يحتوي على `replace(" ","T")+"Z"` (parseDBTimestamp) ✓
+- ✅ الوقت الآن سيُعرض بشكل صحيح:
+  • "الآن" للمنشورات الجديدة
+  • "منذ X دقيقة" بدلاً من "منذ 3 ساعات"
+  • "منذ X ساعة" للتوقيت الحقيقي
+
+Stage Summary:
+- النشر: HF Space (RUNNING)
+- commit: 8c3155a
+- المشكلة عادت بسبب commit v2.3.0 الذي حذف الإصلاحات
+- تمت إعادة تطبيق الإصلاح على 11 ملف
