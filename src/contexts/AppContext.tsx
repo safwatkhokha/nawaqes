@@ -227,14 +227,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
     // Update unread count
     setChatUnreadCount(prev => prev + 1);
-    // Show browser notification if smart alerts enabled
-    smartNotify('Nawaqes', `رسالة جديدة من ${data.senderName || 'مستخدم'}`);
-    // Show toast
-    toast.info(`رسالة جديدة من ${data.senderName || 'مستخدم'}`);
+    // No toast — notifications stay in the notifications page only.
   }, []);
 
   const handleWSNotification = useCallback((data: any) => {
-    // Incoming real-time notification (admin message, friend activity, etc.)
+    // Incoming real-time notification — save to state ONLY.
+    // No toast popups. User sees notifications in the bell icon / notifications page.
     const newNotif: AppNotification = {
       id: data.id || `ws_${Date.now()}_${Math.random().toString(36).slice(2)}`,
       type: data.type || 'system',
@@ -245,78 +243,26 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       link: data.link || undefined,
     };
     setNotifications(prev => {
-      // Avoid duplicates
       if (prev.some(n => n.id === newNotif.id)) return prev;
       return [newNotif, ...prev];
     });
-    // Display a toast notification that auto-hides after 10 seconds.
-    // smartNotify() handles native Notification API (when permitted); the
-    // toast is the in-app visual cue for users who don't have OS notifications.
-    const icon = data.type === 'friend' ? '👥' :
-                 data.type === 'payment' ? '💰' :
-                 data.type === 'promotion' ? '🚀' :
-                 data.type === 'alert' ? '⚠️' :
-                 data.type === 'system' ? '📢' : '🔔';
-    toast.custom(
-      () => (
-        <div
-          style={{
-            background: 'linear-gradient(90deg, #1e40af, #2563eb)',
-            color: 'white',
-            padding: '12px 16px',
-            borderRadius: '12px',
-            boxShadow: '0 10px 25px -5px rgba(0,0,0,0.25)',
-            display: 'flex',
-            alignItems: 'flex-start',
-            gap: '10px',
-            maxWidth: '380px',
-            border: '1px solid rgba(255,255,255,0.15)',
-            cursor: 'pointer',
-          }}
-          onClick={() => {
-            if (newNotif.link) {
-              window.location.hash = '#' + newNotif.link;
-            }
-          }}
-        >
-          <span style={{ fontSize: '18px', flexShrink: 0 }}>{icon}</span>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: '12px', opacity: 0.9, marginBottom: '2px' }}>
-              {data.type === 'friend' ? 'إشعار صديق' :
-               data.type === 'payment' ? 'إشعار محفظة' :
-               data.type === 'promotion' ? 'إشعار ترويج' :
-               data.type === 'alert' ? 'تنبيه هام' : 'إشعار'}
-            </div>
-            <div style={{ fontWeight: 700, fontSize: '13px', wordBreak: 'break-word' }}>
-              {newNotif.message.length > 140 ? newNotif.message.substring(0, 140) + '…' : newNotif.message}
-            </div>
-          </div>
-        </div>
-      ),
-      { duration: 10000 }
-    );
-    smartNotify('Nawaqes', newNotif.message);
   }, []);
 
   const handleWSFriendRequest = useCallback((data: any) => {
-    // Incoming real-time friend request
+    // Incoming real-time friend request — save to state ONLY. No toast.
     const newReq: FriendRequest = {
       id: data.id || `ws_fr_${Date.now()}`,
       user: data.user || { id: '', name: '', avatar: '' },
       timestamp: data.timestamp || new Date().toISOString(),
     };
     setFriendRequests(prev => {
-      // Avoid duplicates
       if (prev.some(r => r.id === newReq.id)) return prev;
       return [newReq, ...prev];
     });
-    toast.info(`طلب صداقة جديد من ${data.user?.name || 'مستخدم'}`);
   }, []);
 
   const handleWSFriendAccepted = useCallback((data: any) => {
-    // Friend request was accepted - refresh data
-    toast.success(`تم قبول طلب الصداقة من ${data.user?.name || 'مستخدم'}`);
-    // Mark that we need to refresh user data (will be handled in useEffect)
+    // Friend request was accepted — refresh data. No toast.
     setWsRefreshFlag(prev => prev + 1);
   }, []);
 
@@ -415,47 +361,22 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }).catch(() => {});
   }, []);
 
-  // Handle admin alert pushed via WebSocket.
-  // The old behavior added the alert to `adminAlerts` state which fed the
-  // always-visible AdminAlertBar. Per product decision (2026-06-22), the
-  // persistent bar is removed — admin alerts now show as a toast that
-  // auto-hides after 10 seconds.
+  // Handle admin alert — save to notifications state ONLY. No toast popup.
   const handleWSAdminAlert = useCallback((data: any) => {
     const title = data.title || 'تنبيه من الإدارة';
     const content = data.content || '';
-    // Display a custom toast with red styling for admin alerts.
-    // Duration is 10 seconds — long enough to read, short enough not to annoy.
-    toast.custom(
-      () => (
-        <div
-          style={{
-            background: 'linear-gradient(90deg, #991b1b, #b91c1c)',
-            color: 'white',
-            padding: '12px 16px',
-            borderRadius: '12px',
-            boxShadow: '0 10px 25px -5px rgba(0,0,0,0.3)',
-            display: 'flex',
-            alignItems: 'flex-start',
-            gap: '10px',
-            maxWidth: '380px',
-            border: '1px solid rgba(255,255,255,0.15)',
-          }}
-        >
-          <span style={{ fontSize: '18px', flexShrink: 0 }}>⚠️</span>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontWeight: 800, fontSize: '13px', marginBottom: '2px' }}>
-              {title}
-            </div>
-            {content && (
-              <div style={{ fontSize: '12px', opacity: 0.9, wordBreak: 'break-word' }}>
-                {content.length > 120 ? content.substring(0, 120) + '…' : content}
-              </div>
-            )}
-          </div>
-        </div>
-      ),
-      { duration: 10000 }
-    );
+    // Save as a notification so it appears in the notifications page
+    const newNotif: AppNotification = {
+      id: data.id || `ws_alert_${Date.now()}`,
+      type: 'alert',
+      message: content ? `${title}: ${content}` : title,
+      time: data.createdAt || new Date().toISOString(),
+      link: '/notifications',
+    };
+    setNotifications(prev => {
+      if (prev.some(n => n.id === newNotif.id)) return prev;
+      return [newNotif, ...prev];
+    });
   }, []);
 
   // Connect WebSocket and register all handlers
@@ -489,20 +410,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       // 🔧 FIX: Real-time updates when admin approves something
       if (event.type === 'data:refresh') {
         console.log('[WS] Data refresh requested:', event.data?.reason);
-        // Refresh all data (posts, promoted posts, market listings, etc.)
         refreshData();
-        // Show toast notification
-        if (event.data?.reason === 'promotion-approved') {
-          toast.success('تم الموافقة على ترويج جديد! 🎉');
-        } else if (event.data?.reason === 'market-promotion-approved') {
-          toast.success('تم الموافقة على ترويج إعلان جديد! 🎉');
-        }
+        // No toast — notifications stay in the notifications page only.
       }
       if (event.type === 'wallet:updated') {
         console.log('[WS] Wallet updated:', event.data);
-        // Refresh user data to get updated wallet balance
         refreshCurrentUser();
-        toast.success('💰 تم تحديث رصيد محفظتك!');
+        // No toast — user sees the updated balance in the wallet page.
       }
     },
     autoConnect: true,
