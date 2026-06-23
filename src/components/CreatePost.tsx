@@ -240,6 +240,9 @@ export const CreatePost: React.FC<CreatePostProps> = ({ user, onPostCreated, isM
       };
       addPost(newPost);
       toast.success(t('app.postPublished'));
+      // 🔧 CRITICAL: Refresh from server to sync the real post data
+      // (the optimistic local post may have different ID/structure than server)
+      refreshData();
     } catch (err: any) {
       // Fallback: add post with local ID if API fails, so user doesn't lose content
       const fallbackPost: Post = {
@@ -261,6 +264,8 @@ export const CreatePost: React.FC<CreatePostProps> = ({ user, onPostCreated, isM
       };
       addPost(fallbackPost);
       toast.error(err.message || t('common.error'));
+      // Still try to refresh — maybe the post was actually saved on the server
+      refreshData();
     } finally {
       setIsSubmitting(false);
     }

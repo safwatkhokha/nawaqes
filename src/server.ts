@@ -158,6 +158,16 @@ async function startServer() {
   // 3. Parse JSON bodies (increased limit for base64-encoded media)
   app.use(express.json({ limit: '50mb' }));
 
+  // 3b. Disable caching for ALL API responses.
+  // Without this, the Android WebView caches API responses and serves
+  // stale data (different posts on app vs website).
+  app.use('/api', (_req: express.Request, res: express.Response, next: express.NextFunction) => {
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    next();
+  });
+
   // JSON parse error handler
   app.use((err: any, _req: express.Request, res: express.Response, next: express.NextFunction) => {
     if (err.type === 'entity.parse.failed') {

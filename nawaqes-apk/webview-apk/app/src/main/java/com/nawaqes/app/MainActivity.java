@@ -131,7 +131,9 @@ public class MainActivity extends AppCompatActivity {
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);          // localStorage
         settings.setDatabaseEnabled(true);            // IndexedDB
-        settings.setCacheMode(WebSettings.LOAD_DEFAULT);
+        // 🔧 CRITICAL: Disable WebView HTTP cache so API responses are always fresh.
+        // Without this, the WebView serves stale posts/data from cache.
+        settings.setCacheMode(WebSettings.LOAD_NO_CACHE);
         settings.setAllowFileAccess(true);
         settings.setAllowContentAccess(true);
         settings.setMediaPlaybackRequiresUserGesture(false);  // autoplay videos
