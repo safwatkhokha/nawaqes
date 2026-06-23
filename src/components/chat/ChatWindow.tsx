@@ -35,7 +35,7 @@ export const ChatWindow: React.FC = () => {
     const currentPinned = messages.filter(m => m.isPinned && m.deletedFor !== 'everyone');
 
     return (
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex flex-col min-h-0 min-w-0">
         <ChatHeader />
         <ContactInfo />
 

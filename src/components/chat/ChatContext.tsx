@@ -671,20 +671,19 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   // Only auto-scroll when NEW messages arrive AND user is already at the bottom.
-  // We intentionally do NOT include shouldAutoScroll in the deps array, because
-  // including it would re-trigger the scroll every time the user scrolls to the
-  // bottom (causing a feedback loop where the page jumps back up).
-  // Instead, we read the current value of shouldAutoScroll via a ref.
   const shouldAutoScrollRef = useRef(true);
   useEffect(() => { shouldAutoScrollRef.current = shouldAutoScroll; }, [shouldAutoScroll]);
 
   useEffect(() => {
     if (!currentMessages || currentMessages.length === 0) return;
-    // Only scroll if user was already at the bottom before the new message
     if (shouldAutoScrollRef.current) {
-      // Use 'auto' instead of 'smooth' — smooth scrolling during message
-      // arrival causes layout thrashing and makes the page feel janky.
-      messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
+      // Use direct scrollTop on the container — NOT scrollIntoView.
+      // scrollIntoView scrolls ALL ancestor containers (including the page body),
+      // which is what causes the page to jump to the top.
+      const container = messagesContainerRef.current;
+      if (container) {
+        container.scrollTop = container.scrollHeight;
+      }
     }
   }, [currentMessages]);
 

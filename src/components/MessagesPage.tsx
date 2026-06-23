@@ -91,7 +91,7 @@ const ChatLayout: React.FC = () => {
         </div>
 
         {/* Chat Area - hidden on mobile when no contact selected */}
-        <div className={`flex-1 flex flex-col ${!selectedContact ? 'hidden md:flex' : 'flex'}`}>
+        <div className={`flex-1 flex flex-col min-h-0 ${!selectedContact ? 'hidden md:flex' : 'flex'}`}>
           <ChatWindow />
         </div>
       </div>
