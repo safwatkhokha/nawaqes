@@ -111,6 +111,17 @@ async function startServer() {
     console.warn('[RESTORE] Failed:', err.message);
   }
 
+  // ─── One-time cleanup: delete all 'like' notifications from DB ───
+  // These were created before we disabled like notifications. They keep
+  // showing up on page refresh because they're still in the DB.
+  try {
+    const db = (await import('./database/index.js')).default;
+    const result = db.prepare("DELETE FROM notifications WHERE type = 'like'").run();
+    if (result.changes > 0) {
+      console.log(`[CLEANUP] Deleted ${result.changes} old like notifications`);
+    }
+  } catch {}
+
   const app = express();
   const PORT = parseInt(process.env.PORT || '3000', 10);
   const isDev = process.env.NODE_ENV !== 'production';

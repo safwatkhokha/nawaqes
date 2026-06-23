@@ -675,7 +675,14 @@ router.get('/market-pulse/overview', optionalAuth, (_req: Request, res: Response
 router.get('/notifications', authMiddleware, (req: Request, res: Response) => {
   try {
     const payload = (req as any).user as JwtPayload;
-    const notifications = db.prepare('SELECT id, type, message, post_id, user_id_ref, link, read, created_at FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 50').all(payload.userId);
+    // Filter out 'like' type notifications — they're disabled per user request.
+    // Also fetch only the latest 50 to keep the response small.
+    const notifications = db.prepare(
+      `SELECT id, type, message, post_id, user_id_ref, link, read, created_at
+       FROM notifications
+       WHERE user_id = ? AND type != 'like'
+       ORDER BY created_at DESC LIMIT 50`
+    ).all(payload.userId);
     res.json(notifications);
   } catch (err: any) {
     res.status(500).json({ error: 'فشل جلب الإشعارات', details: err.message });
