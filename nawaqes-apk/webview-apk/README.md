@@ -1,45 +1,58 @@
-# Nawaqes — WebView APK Build
+# 📱 Nawaqes Android App v3.0.0
 
-Generated project. Build APK from command line:
+تطبيق أندرويد محسّن لنواقص — متزامن بالكامل مع الموقع.
 
+## ✅ المميزات
+
+| الميزة | الوصف |
+|--------|------|
+| 📷 **كاميرا مباشرة** | التقاط الصور والفيديو مباشرة من الكاميرا |
+| 📁 **رفع ملفات** | رفع صور متعددة من معرض الصور |
+| 💾 **تخزين دائم** | حفظ بيانات المستخدم محلياً (يبقى بعد إغلاق التطبيق) |
+| 🎤 **ميكروفون** | رسائل صوتية + مكالمات WebRTC |
+| 📍 **موقع** | للأ nearby ads feature |
+| 🔔 **إشعارات FCM** | Firebase Cloud Messaging (يتطلب google-services.json) |
+| 🔄 **Pull-to-refresh** | اسحب لأسفل للتحديث |
+| ⬅️ **زر رجوع ذكي** | يرجع في تاريخ WebView أولاً قبل الخروج |
+| 🌐 **Deep linking** | `nawaqes://` scheme |
+| 📡 **صفحة offline** | تظهر عند انقطاع الإنترنت |
+| 🎨 **Splash screen** | شاشة بداية أثناء التحميل |
+
+## 🔧 البناء
+
+### الطريقة 1: GitHub Actions (موصى بها)
 ```bash
-# Install Android SDK + JDK 17 first
-cd /home/z/my-project/nawaqes-apk/webview-apk
-./gradlew assembleDebug
-
-# Output: app/build/outputs/apk/debug/app-debug.apk
+# Push الكود إلى GitHub، ثم اذهب إلى:
+# https://github.com/safwatkhokha/nawaqes/actions
+# سيتم بناء APK تلقائياً وتحميله كـ artifact
 ```
 
-Or open in Android Studio:
-1. Open this folder in Android Studio
-2. Wait for Gradle sync
-3. Build > Build Bundle(s)/APK(s) > Build APK(s)
-
-## Configuration
-
-- App ID: `com.nawaqes.app`
-- App name: `نواقص`
-- PWA URL: `https://safwatkhokha-nawaqes.hf.space`
-- Version: 2.0.0 (1)
-- Min SDK: 24 (Android 7.0)
-- Target SDK: 34 (Android 14)
-
-## Firebase Push Notifications
-
-1. Download `google-services.json` from Firebase Console
-2. Place it at: `app/google-services.json`
-3. Rebuild APK
-
-## Generate keystore for release builds
-
+### الطريقة 2: بناء محلي
 ```bash
-keytool -genkey -v -keystore nawaqes.keystore -alias nawaqes \
-  -keyalg RSA -keysize 2048 -validity 10000
-```
-
-## Build release APK
-
-```bash
+cd nawaqes-apk/webview-apk
 ./gradlew assembleRelease
-# Output: app/build/outputs/apk/release/app-release.apk
+# APK سيكون في:
+# app/build/outputs/apk/release/app-release.apk
 ```
+
+## 📋 المتطلبات
+
+- Android 5.0+ (API 24+)
+- Chrome WebView (موجود افتراضياً على كل أجهزة أندرويد)
+- اتصال بالإنترنت
+
+## 🔗 الروابط
+
+- **الموقع:** https://safwatkhokha-nawaqes.hf.space
+- **GitHub:** https://github.com/safwatkhokha/nawaqes
+- **Package ID:** `com.nawaqes.app`
+
+## 📝 معلومات الإصدار
+
+| الحقل | القيمة |
+|-------|--------|
+| Version | 3.0.0 |
+| Version Code | 3 |
+| Min SDK | 24 (Android 5.0) |
+| Target SDK | 34 (Android 14) |
+| Package | com.nawaqes.app |
