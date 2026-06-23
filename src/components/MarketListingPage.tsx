@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../contexts/AppContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
+import { parseDBTimestamp } from '../utils/time';
 import { api } from '../services/api';
 import { interestCategories } from '../config/interests';
 import { marketPromotionPackages } from '../data/marketPromotionPackages';
@@ -40,7 +41,6 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'sonner';
 import type { MarketListing } from '../types';
-import { parseDBTimestamp } from '../utils/time';
 
 // ─── Condition Labels ────────────────────────────────────────────────
 const conditionLabels: Record<string, { key: string; color: string; darkColor: string }> = {
@@ -67,7 +67,6 @@ function formatDate(dateStr: string, t: (key: string) => string): string {
     const diffHours = Math.floor(diffMs / 3600000);
     const diffDays = Math.floor(diffMs / 86400000);
 
-    if (diffMs < 0) return t('common.now');
     if (diffMins < 1) return t('common.now');
     if (diffMins < 60) return `${diffMins} ${t('marketListing.minutesAgo')}`;
     if (diffHours < 24) return `${diffHours} ${t('marketListing.hoursAgo')}`;

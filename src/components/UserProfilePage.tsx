@@ -387,7 +387,11 @@ export const UserProfilePage: React.FC = () => {
                   <div key={ad.id} onClick={() => navigate(`/post/${ad.id}`)}
                     className={`rounded-xl border p-4 cursor-pointer transition-colors ${darkMode ? 'bg-gray-800 border-gray-700 hover:border-gray-600' : 'bg-white border-gray-100 hover:border-gray-200'}`}>
                     <div className="flex items-start gap-3">
-                      {ad.image && <img src={ad.image} alt="" className="w-20 h-20 rounded-xl object-cover flex-shrink-0" />}
+                      {ad.image && (() => {
+                        let imgs: string[] = [];
+                        try { const p = JSON.parse(ad.image); imgs = Array.isArray(p) ? p : [ad.image]; } catch { imgs = [ad.image]; }
+                        return imgs.length > 0 ? <img src={imgs[0]} alt="" className="w-20 h-20 rounded-xl object-cover flex-shrink-0" /> : null;
+                      })()}
                       <div className="flex-1 min-w-0">
                         <p className={`text-sm leading-relaxed mb-2 line-clamp-2 ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>{ad.content}</p>
                         <div className="flex items-center gap-2 flex-wrap">

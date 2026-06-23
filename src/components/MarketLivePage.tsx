@@ -46,8 +46,8 @@ import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 import { useLanguage } from '../contexts/LanguageContext';
-import { VideoRecorder } from './VideoRecorder';
 import { parseDBTimestamp } from '../utils/time';
+import { VideoRecorder } from './VideoRecorder';
 
 // ─── Category icons map ───────────────────────────────────────────
 const categoryIcons: Record<string, string> = {
@@ -71,7 +71,7 @@ const timeAgo = (dateStr: string): string => {
   const now = new Date();
   const date = parseDBTimestamp(dateStr);
   const diff = Math.floor((now.getTime() - date.getTime()) / 1000);
-  if (diff < 0 || diff < 60) return 'الآن';
+  if (diff < 60) return 'الآن';
   if (diff < 3600) return `منذ ${Math.floor(diff / 60)} دقيقة`;
   if (diff < 86400) return `منذ ${Math.floor(diff / 3600)} ساعة`;
   if (diff < 604800) return `منذ ${Math.floor(diff / 86400)} يوم`;
@@ -1304,7 +1304,7 @@ export const MarketLivePage: React.FC = () => {
   }, [t]);
 
   return (
-    <div className="max-w-md mx-auto" dir={dir}>
+    <div className="max-w-md mx-auto overflow-x-hidden" dir={dir}>
       {/* Header */}
       <div className="flex items-center gap-3 mb-3 px-1">
         <button

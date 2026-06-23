@@ -48,6 +48,7 @@
     "dotenv": "^17.2.3",
     "express": "4",
     "firebase": "^10.14.1",
+    "firebase-admin": "^14.0.0",
     "i18next": "^26.2.0",
     "i18next-browser-languagedetector": "^8.2.1",
     "jsonwebtoken": "^9.0.3",

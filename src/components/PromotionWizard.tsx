@@ -63,17 +63,17 @@ export const PromotionWizard: React.FC<PromotionWizardProps> = ({ post, onClose,
 
   // Effective price/reach (for city_target, use tier; otherwise use package)
   const effectivePrice = useMemo(() => {
-    if (selectedPackage === 'city_target' && cityTier) return cityTier.price;
+    if (selectedPackage === 'city_target' && cityTier) return cityTier.price || 0;
     return pkg?.price || 0;
   }, [selectedPackage, cityTier, pkg]);
 
   const effectiveReach = useMemo(() => {
-    if (selectedPackage === 'city_target' && cityTier) return cityTier.estimatedReach;
+    if (selectedPackage === 'city_target' && cityTier) return cityTier.estimatedReach || 0;
     return pkg?.estimatedReach || 0;
   }, [selectedPackage, cityTier, pkg]);
 
   const effectiveNotifications = useMemo(() => {
-    if (selectedPackage === 'city_target' && cityTier) return cityTier.maxNotifications;
+    if (selectedPackage === 'city_target' && cityTier) return cityTier.maxNotifications || 0;
     return pkg?.maxNotifications || 0;
   }, [selectedPackage, cityTier, pkg]);
 
@@ -352,7 +352,7 @@ export const PromotionWizard: React.FC<PromotionWizardProps> = ({ post, onClose,
                             <div className="grid grid-cols-2 gap-1.5">
                               {cityTiers.map((tier, i) => (
                                 <div key={i} className={`text-[9px] px-2 py-1.5 rounded-lg ${darkMode ? 'bg-gray-700/50 text-gray-300' : 'bg-orange-50 text-gray-700'}`}>
-                                  <span className="font-bold">{tier.label}:</span> {t('promotion.currencyPerReach', { price: tier.price, reach: tier.estimatedReach.toLocaleString() })}
+                                  <span className="font-bold">{tier.label || tier.nameAr}:</span> {t('promotion.currencyPerReach', { price: tier.price || 0, reach: (tier.estimatedReach || 0).toLocaleString() })}
                                 </div>
                               ))}
                             </div>
@@ -572,8 +572,8 @@ export const PromotionWizard: React.FC<PromotionWizardProps> = ({ post, onClose,
                         <span className={`text-xs ${textMuted}`}> — {formatSelectedCities(selectedCities)}</span>
                       </div>
                       <div className="text-left">
-                        <p className={`font-black text-sm ${darkMode ? 'text-teal-300' : 'text-teal-700'}`}>{t('promotion.currency', { amount: cityTier.price })}</p>
-                        <p className={`text-[10px] ${textMuted}`}>{t('promotion.reachCount', { count: cityTier.estimatedReach.toLocaleString() })}</p>
+                        <p className={`font-black text-sm ${darkMode ? 'text-teal-300' : 'text-teal-700'}`}>{t('promotion.currency', { amount: cityTier.price || 0 })}</p>
+                        <p className={`text-[10px] ${textMuted}`}>{t('promotion.reachCount', { count: (cityTier.estimatedReach || 0).toLocaleString() })}</p>
                       </div>
                     </div>
                   </motion.div>

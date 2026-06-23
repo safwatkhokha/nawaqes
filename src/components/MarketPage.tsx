@@ -7,6 +7,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAppContext } from '../contexts/AppContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
+import { parseDBTimestamp } from '../utils/time';
 import { api } from '../services/api';
 import { interestCategories } from '../config/interests';
 import { marketPromotionPackages } from '../data/marketPromotionPackages';
@@ -43,7 +44,6 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
-import { parseDBTimestamp } from '../utils/time';
 
 // ─── Types ──────────────────────────────────────────────────────────────
 type SortOption = 'newest' | 'cheapest' | 'expensive' | 'featured';
@@ -118,7 +118,6 @@ function timeAgo(dateStr: string | undefined, t: any): string {
     const date = parseDBTimestamp(dateStr);
     const now = new Date();
     const diffMs = now.getTime() - date.getTime();
-    if (diffMs < 0) return t('common.now');
     const diffMins = Math.floor(diffMs / 60000);
     if (diffMins < 1) return t('common.now');
     if (diffMins < 60) return t('common.minutesAgo', { count: diffMins });
@@ -527,7 +526,7 @@ export const MarketPage: React.FC = () => {
 
   // ─── Render ───────────────────────────────────────────────────────
   return (
-    <div className="max-w-4xl mx-auto pb-24" dir={dir}>
+    <div className="max-w-4xl mx-auto overflow-x-hidden pb-24 overflow-x-hidden" dir={dir}>
       {/* ═══════════════════════════════════════════════════════════════
           1. MARKET HEADER
           ═══════════════════════════════════════════════════════════════ */}

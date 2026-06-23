@@ -207,9 +207,9 @@ class ApiClient {
     return this.request<any[]>(`/chat/messages/${contactId}${query}`);
   }
 
-  async sendMessage(receiverId: string, text: string, postId?: string, messageType?: string, imageUrl?: string, replyToId?: string) {
+  async sendMessage(receiverId: string, text: string, postId?: string, messageType?: string, imageUrl?: string, replyToId?: string, voiceUrl?: string, voiceDuration?: number, groupId?: string) {
     return this.request<any>('/chat/send', {
-      method: 'POST', body: JSON.stringify({ receiverId, text, postId, messageType, imageUrl, replyToId }),
+      method: 'POST', body: JSON.stringify({ receiverId, text, postId, messageType, imageUrl, replyToId, voiceUrl, voiceDuration, groupId }),
     });
   }
 
@@ -236,6 +236,118 @@ class ApiClient {
       throw new Error(data.error);
     }
     return res.json();
+  }
+
+  async editMessage(messageId: string, text: string) {
+    return this.request<any>(`/chat/messages/${messageId}`, {
+      method: 'PUT', body: JSON.stringify({ text }),
+    });
+  }
+
+  async deleteMessageForEveryone(messageId: string) {
+    return this.request<{ message: string }>(`/chat/messages/${messageId}/everyone`, { method: 'DELETE' });
+  }
+
+  async searchMessages(contactId: string, query: string) {
+    return this.request<any[]>(`/chat/messages/${contactId}/search?q=${encodeURIComponent(query)}`);
+  }
+
+  async togglePinMessage(messageId: string) {
+    return this.request<{ message: string; isPinned: boolean }>(`/chat/messages/${messageId}/pin`, { method: 'POST' });
+  }
+
+  async getSharedMedia(contactId: string) {
+    return this.request<any[]>(`/chat/messages/${contactId}/media`);
+  }
+
+  async uploadChatVoice(file: File): Promise<{ url: string; filename: string }> {
+    const formData = new FormData();
+    formData.append('voice', file);
+    const headers: Record<string, string> = {};
+    if (this.token) headers['Authorization'] = `Bearer ${this.token}`;
+    const res = await fetch(`${API_BASE}/chat/upload-voice`, {
+      method: 'POST', headers, body: formData,
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({ error: 'Voice upload failed' }));
+      throw new Error(data.error);
+    }
+    return res.json();
+  }
+
+  // ─── Phase 3: Group Chat ────────────────────────────────────────────
+  async createGroup(name: string, avatar: string, description: string, memberIds: string[]) {
+    return this.request<any>('/chat/groups', {
+      method: 'POST',
+      body: JSON.stringify({ name, avatar, description, memberIds }),
+    });
+  }
+
+  async getGroups() {
+    return this.request<any[]>('/chat/groups');
+  }
+
+  async getGroupDetails(groupId: string) {
+    return this.request<any>(`/chat/groups/${groupId}`);
+  }
+
+  async updateGroup(groupId: string, data: { name?: string; avatar?: string; description?: string }) {
+    return this.request<any>(`/chat/groups/${groupId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async addGroupMember(groupId: string, userId: string, role?: string) {
+    return this.request<{ message: string }>(`/chat/groups/${groupId}/members`, {
+      method: 'POST',
+      body: JSON.stringify({ userId, role }),
+    });
+  }
+
+  async removeGroupMember(groupId: string, userId: string) {
+    return this.request<{ message: string }>(`/chat/groups/${groupId}/members/${userId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async deleteGroup(groupId: string) {
+    return this.request<{ message: string }>(`/chat/groups/${groupId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async leaveGroup(groupId: string) {
+    return this.request<{ message: string }>(`/chat/groups/${groupId}/leave`, {
+      method: 'POST',
+    });
+  }
+
+  // ─── Phase 3: Forward Message ──────────────────────────────────────
+  async forwardMessage(messageId: string, targetId: string, isGroup?: boolean) {
+    return this.request<any>(`/chat/messages/${messageId}/forward`, {
+      method: 'POST',
+      body: JSON.stringify({ targetId, isGroup: !!isGroup }),
+    });
+  }
+
+  // ─── Phase 3: Mute Notifications ───────────────────────────────────
+  async toggleMuteChat(targetId: string, isGroup?: boolean) {
+    return this.request<{ message: string; isMuted: boolean }>(`/chat/mute/${targetId}`, {
+      method: 'POST',
+      body: JSON.stringify({ isGroup: !!isGroup }),
+    });
+  }
+
+  async getMutedChats() {
+    return this.request<any[]>('/chat/mutes');
+  }
+
+  // ─── Phase 3: Block User ───────────────────────────────────────────
+  async toggleBlockUser(userId: string) {
+    return this.request<{ message: string; isBlocked: boolean }>(`/chat/block/${userId}`, {
+      method: 'POST',
+    });
   }
 
   // ─── Wallet ────────────────────────────────────────────────────────
@@ -290,6 +402,10 @@ class ApiClient {
     return this.request<any[]>('/admin/users');
   }
 
+  async getActiveAdminAlerts() {
+    return this.request<{ alerts: any[] }>('/alerts/active');
+  }
+
   async createAlert(title: string, content: string, source?: string) {
     return this.request<any>('/admin/alerts', {
       method: 'POST', body: JSON.stringify({ title, content, source }),
@@ -325,7 +441,15 @@ class ApiClient {
   async rejectFriendRequest(id: string) { return this.request<{ message: string }>(`/friends/reject/${id}`, { method: 'POST' }); }
   async cancelSentFriendRequest(id: string) { return this.request<{ message: string }>(`/friends/cancel/${id}`, { method: 'POST' }); }
   async unfriend(friendshipId: string) { return this.request<{ message: string }>(`/friends/unfriend/${friendshipId}`, { method: 'POST' }); }
+  async unfriendByUserId(userId: string) { return this.request<{ message: string }>(`/friends/unfriend-by-user/${userId}`, { method: 'POST' }); }
+  async setFriendLabel(userId: string, label: string) { return this.request<{ message: string }>(`/friends/label-by-user/${userId}`, { method: 'POST', body: JSON.stringify({ label }) }); }
+  async getMutualFriends(userId: string) { return this.request<{ mutualFriends: any[]; count: number }>(`/friends/mutual/${userId}`); }
   async getFriendshipStatus(userId: string) { return this.request<{ friendshipStatus: string | null; lastSeenAt?: string | null }>(`/friends/status/${userId}`); }
+  async getFriendStats() { return this.request<{ totalFriends: number; pendingIncoming: number; pendingSent: number; onlineFriends: number; friendsByLabel: Record<string, number>; friendsThisWeek: number; nearbyFriends: number }>('/friends/stats'); }
+  // Block / Unblock
+  async blockUser(userId: string, reason?: string) { return this.request<{ message: string }>(`/block/${userId}`, { method: 'POST', body: JSON.stringify({ reason }) }); }
+  async unblockUser(userId: string) { return this.request<{ message: string }>(`/unblock/${userId}`, { method: 'POST' }); }
+  async getBlockedUsers() { return this.request<any[]>('/blocked'); }
   async notifyFriendsLivestream(streamTitle: string) { return this.request<{ success: boolean; notifiedFriends: number }>('/livestream/notify-friends', { method: 'POST', body: JSON.stringify({ streamTitle }) }); }
   async getActiveLivestreams() { return this.request<any[]>('/livestream/active'); }
   async searchUsers(query: string) { return this.request<any[]>(`/users/search?q=${encodeURIComponent(query)}`); }
@@ -785,6 +909,123 @@ class ApiClient {
     const query = params.toString() ? `?${params.toString()}` : '';
     return this.request<{ success: boolean; data: any }>(`/ai/placement-analytics${query}`);
   }
+
+  // ─── Phase 3: Story Interactions ─────────────────────────────────
+  async viewStory(storyId: string) { return this.request<{ success: boolean }>(`/stories/${storyId}/view`, { method: 'POST' }); }
+  async replyToStory(storyId: string, text: string) { return this.request<{ success: boolean; id: string }>(`/stories/${storyId}/reply`, { method: 'POST', body: JSON.stringify({ text }) }); }
+  async reactToStory(storyId: string, emoji: string) { return this.request<{ success: boolean; reacted: boolean }>(`/stories/${storyId}/react`, { method: 'POST', body: JSON.stringify({ emoji }) }); }
+  async getStoryViewers(storyId: string) { return this.request<any[]>(`/stories/${storyId}/viewers`); }
+  async deleteExpiredStories() { return this.request<{ success: boolean; deleted: number }>('/stories/expired', { method: 'DELETE' }); }
+  async getUserHighlights(userId: string) { return this.request<any[]>(`/users/${userId}/highlights`); }
+  async createHighlight(name: string, storyIds: string[]) { return this.request<{ success: boolean; id: string }>('/highlights', { method: 'POST', body: JSON.stringify({ name, storyIds }) }); }
+
+  // ─── Phase 3: Wallet Withdrawal ─────────────────────────────────
+  async requestWithdrawal(amount: number, method: string, accountDetails?: string) {
+    return this.request<{ success: boolean; id: string; message: string }>('/wallet/withdraw', {
+      method: 'POST', body: JSON.stringify({ amount, method, accountDetails }),
+    });
+  }
+  async getWithdrawals() { return this.request<any[]>('/wallet/withdrawals'); }
+  async processWithdrawal(id: string, action: 'approve' | 'reject', adminNote?: string) {
+    return this.request<{ success: boolean; action: string }>(`/wallet/withdrawals/${id}/${action}`, {
+      method: 'POST', body: JSON.stringify({ adminNote }),
+    });
+  }
+
+  // ─── Savings Goals ────────────────────────────────────────────────
+  async getSavingsGoals() {
+    return this.request<any[]>('/wallet/savings-goals');
+  }
+  async createSavingsGoal(name: string, target: number, deadline?: string) {
+    return this.request<any>('/wallet/savings-goals', {
+      method: 'POST', body: JSON.stringify({ name, target, deadline }),
+    });
+  }
+  async updateSavingsGoal(id: string, data: { name?: string; target?: number; current?: number; deadline?: string }) {
+    return this.request<any>(`/wallet/savings-goals/${id}`, {
+      method: 'PUT', body: JSON.stringify(data),
+    });
+  }
+  async deleteSavingsGoal(id: string) {
+    return this.request<{ success: boolean }>(`/wallet/savings-goals/${id}`, {
+      method: 'DELETE',
+    });
+  }
+  async addToSavingsGoal(id: string, amount: number) {
+    return this.request<any>(`/wallet/savings-goals/${id}/add`, {
+      method: 'POST', body: JSON.stringify({ amount }),
+    });
+  }
+  async withdrawFromSavingsGoal(id: string, amount: number) {
+    return this.request<any>(`/wallet/savings-goals/${id}/withdraw`, {
+      method: 'POST', body: JSON.stringify({ amount }),
+    });
+  }
+
+  // ─── Phase 3: Push Notifications ─────────────────────────────────
+  async registerDevice(token: string, platform: string) {
+    return this.request<{ success: boolean; registered: boolean }>('/notifications/register-device', {
+      method: 'POST', body: JSON.stringify({ token, platform }),
+    });
+  }
+  async sendNotification(userId: string, title: string, body: string, data?: Record<string, string>) {
+    return this.request<{ success: boolean; sent: number }>('/notifications/send', {
+      method: 'POST', body: JSON.stringify({ userId, title, body, data }),
+    });
+  }
+  async broadcastNotification(title: string, body: string, data?: Record<string, string>) {
+    return this.request<{ success: boolean; broadcast: boolean; totalUsers: number; sent: number }>('/notifications/send', {
+      method: 'POST', body: JSON.stringify({ userId: 'all', title, body, data }),
+    });
+  }
+  async sendNotificationToUsers(userIds: string[], title: string, body: string, data?: Record<string, string>) {
+    return this.request<{ success: boolean; sent: number }>('/notifications/send', {
+      method: 'POST', body: JSON.stringify({ userIds, title, body, data }),
+    });
+  }
+  async sendNotificationToTopic(topic: string, title: string, body: string, data?: Record<string, string>) {
+    return this.request<{ success: boolean; sent: number }>('/notifications/send', {
+      method: 'POST', body: JSON.stringify({ topic, title, body, data }),
+    });
+  }
+  async getFCMStatus() {
+    return this.request<{ available: boolean; appName: string | null; projectId: string | null; registeredDevices: number }>('/notifications/fcm-status');
+  }
+
+  // ─── Phase 3: Report User ──────────────────────────────────────
+  async reportUser(targetUserId: string, reason: string, details?: string) {
+    return this.request<{ success: boolean; id: string }>('/report', {
+      method: 'POST', body: JSON.stringify({ targetUserId, reason, details }),
+    });
+  }
+
+  // ─── Phase 3+: Email Verification ─────────────────────────────────
+  async sendEmailVerification() {
+    return this.request<{ message: string; code?: string }>('/auth/send-verification', { method: 'POST' });
+  }
+  async verifyEmail(email: string, code: string) {
+    return this.request<{ message: string; user: any; token: string }>('/auth/verify-email', { method: 'POST', body: JSON.stringify({ email, code }) });
+  }
+
+  // ─── Phase 3+: Scheduled Streams ─────────────────────────────────
+  async getScheduledStreams() { return this.request<any[]>('/livestream/scheduled'); }
+  async scheduleStream(data: { title: string; description?: string; scheduledAt: string; durationMinutes?: number; category?: string }) {
+    return this.request<{ success: boolean; id: string }>('/livestream/schedule', { method: 'POST', body: JSON.stringify(data) });
+  }
+  async setStreamReminder(streamId: string) {
+    return this.request<{ success: boolean }>(`/livestream/schedule/${streamId}/remind`, { method: 'POST' });
+  }
+  async cancelScheduledStream(streamId: string) {
+    return this.request<{ success: boolean }>(`/livestream/schedule/${streamId}`, { method: 'DELETE' });
+  }
+
+  // ─── Phase 3+: Stream Gifts ───────────────────────────────────────
+  async getGiftTypes() { return this.request<any[]>('/livestream/gifts'); }
+  async sendStreamGift(data: { streamId: string; receiverId: string; giftType: string; message?: string }) {
+    return this.request<{ success: boolean; id: string; amount: number; giftName: string }>('/livestream/gift', { method: 'POST', body: JSON.stringify(data) });
+  }
+  async getStreamGifts(streamId: string) { return this.request<any[]>(`/livestream/${streamId}/gifts`); }
+  async getStreamGiftStats(streamId: string) { return this.request<{ stats: any[]; total: number }>(`/livestream/${streamId}/gift-stats`); }
 }
 
 export const api = new ApiClient();

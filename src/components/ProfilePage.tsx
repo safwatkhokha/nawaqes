@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAppContext } from '../contexts/AppContext';
 import { useAuth } from '../contexts/AuthContext';
 import { api } from '../services/api';
+import { EmailBadge } from './EmailVerification';
 import {
   ArrowRight, CheckCircle2, ShieldCheck, MapPin, Phone, Edit3, ShoppingBag,
   FileText, User as UserIcon, Calendar, Award, Camera, X, Image as ImageIcon,
@@ -183,7 +184,7 @@ export const ProfilePage: React.FC = () => {
   ];
 
   return (
-    <div className="max-w-2xl mx-auto" dir={dir}>
+    <div className="max-w-2xl mx-auto overflow-x-hidden" dir={dir}>
       <input id="avatarInputRef-input" ref={avatarInputRef} type="file" accept="image/*,.jpg,.jpeg,.png,.gif,.webp,.bmp,.svg,.tiff,.avif,.heic,.heif,.ico,.jfif" className="sr-only" onChange={handleAvatarChange} />
       <input id="coverInputRef-input" ref={coverInputRef} type="file" accept="image/*,.jpg,.jpeg,.png,.gif,.webp,.bmp,.svg,.tiff,.avif,.heic,.heif,.ico,.jfif" className="sr-only" onChange={handleCoverChange} />
 
@@ -272,6 +273,7 @@ export const ProfilePage: React.FC = () => {
               {t('profile.verified')}
             </div>
           )}
+          <EmailBadge emailVerified={currentUser.email_verified} />
         </div>
 
         {/* Info Items */}
@@ -543,9 +545,21 @@ export const ProfilePage: React.FC = () => {
                 {userPosts.map(post => (
                   <div key={post.id} onClick={() => navigate(`/post/${post.id}`)}
                     className={`rounded-2xl border p-4 cursor-pointer transition-all hover:shadow-md ${darkMode ? 'bg-gray-800 border-gray-700 hover:border-gray-600' : 'bg-white border-gray-100 hover:border-gray-200'}`}>
-                    {post.image && (
-                      <img src={post.image} alt="" className="w-full h-40 object-cover rounded-xl mb-3" />
-                    )}
+                    {post.image && (() => {
+                      let imgs: string[] = [];
+                      try { const p = JSON.parse(post.image); imgs = Array.isArray(p) ? p : [post.image]; } catch { imgs = [post.image]; }
+                      if (imgs.length === 0) return null;
+                      return (
+                        <div className="relative mb-3">
+                          <img src={imgs[0]} alt="" className="w-full h-40 object-cover rounded-xl" loading="lazy" />
+                          {imgs.length > 1 && (
+                            <span className="absolute top-2 right-2 bg-black/60 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
+                              +{imgs.length - 1}
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })()}
                     <p className={`text-sm leading-relaxed mb-3 ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>{post.content}</p>
                     <div className={`flex items-center gap-4 text-[11px] ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
                       <span className="flex items-center gap-1"><Heart className="w-3 h-3" /> {post.likes}</span>
@@ -577,9 +591,11 @@ export const ProfilePage: React.FC = () => {
                   <div key={ad.id} onClick={() => navigate(`/post/${ad.id}`)}
                     className={`rounded-2xl border p-4 cursor-pointer transition-all hover:shadow-md ${darkMode ? 'bg-gray-800 border-gray-700 hover:border-gray-600' : 'bg-white border-gray-100 hover:border-gray-200'}`}>
                     <div className="flex items-start gap-3">
-                      {ad.image && (
-                        <img src={ad.image} alt="" className="w-24 h-24 rounded-xl object-cover flex-shrink-0" />
-                      )}
+                      {ad.image && (() => {
+                        let imgs: string[] = [];
+                        try { const p = JSON.parse(ad.image); imgs = Array.isArray(p) ? p : [ad.image]; } catch { imgs = [ad.image]; }
+                        return imgs.length > 0 ? <img src={imgs[0]} alt="" className="w-24 h-24 rounded-xl object-cover flex-shrink-0" /> : null;
+                      })()}
                       <div className="flex-1 min-w-0">
                         <p className={`text-sm leading-relaxed mb-2 line-clamp-2 ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>{ad.content}</p>
                         <div className="flex items-center gap-2 flex-wrap">

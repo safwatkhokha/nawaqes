@@ -407,6 +407,14 @@ router.post('/users/:id/adjust-wallet', (req: Request, res: Response) => {
     db.prepare('INSERT INTO notifications (user_id, type, message, link) VALUES (?, ?, ?, ?)')
       .run(req.params.id, 'payment', notifyMsg, '/wallet');
 
+    // Broadcast wallet update to user via WebSocket
+    try {
+      const wsManager = (req.app as any).locals?.wsManager;
+      if (wsManager) {
+        wsManager.sendToUser(req.params.id, { type: "wallet:updated", data: { userId: req.params.id, amount } });
+      }
+    } catch {}
+
     res.json({
       message: amount > 0 ? `تم إضافة ${amount} ج.م للمحفظة` : `تم خصم ${Math.abs(amount)} ج.م من المحفظة`,
       newBalance,

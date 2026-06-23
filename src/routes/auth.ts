@@ -35,7 +35,7 @@ function parseUser(row: any) {
 }
 
 // POST /api/auth/register
-router.post('/register', (req: Request, res: Response) => {
+router.post('/register', async (req: Request, res: Response) => {
   try {
     const { name, email, password, phone, interests, gender, dateOfBirth } = req.body;
     if (!name || !email || !password) {
@@ -124,6 +124,13 @@ router.post('/register', (req: Request, res: Response) => {
 
     const user = db.prepare('SELECT * FROM users WHERE email = ?').get(normalizedEmail) as any;
     const token = generateToken({ userId: user.id, email: user.email, isAdmin: !!user.is_admin });
+
+    // ─── Trigger an event backup so new users are saved to HF Datasets ───
+    // This prevents user loss if the container is rebuilt before the next periodic backup
+    try {
+      const { createEventBackup } = await import('../database/backup-system.js');
+      createEventBackup('user_registered');
+    } catch {}
 
     res.status(201).json({ user: parseUser(user), token });
   } catch (err: any) {
@@ -326,6 +333,68 @@ router.put('/change-password', authMiddleware, (req: Request, res: Response) => 
     res.json({ message: 'تم تغيير كلمة المرور بنجاح' });
   } catch (err: any) {
     res.status(500).json({ error: 'فشل تغيير كلمة المرور', details: err.message });
+  }
+});
+
+// POST /api/auth/send-verification - Send email verification code
+router.post('/send-verification', authMiddleware, (req: Request, res: Response) => {
+  try {
+    const payload = (req as any).user as JwtPayload;
+    const user = db.prepare('SELECT email, email_verified FROM users WHERE id = ?').get(payload.userId) as any;
+    if (!user) { res.status(404).json({ error: 'المستخدم غير موجود' }); return; }
+    if (user.email_verified) { res.status(400).json({ error: 'البريد الإلكتروني مفعل بالفعل' }); return; }
+
+    // Generate 6-digit verification code
+    const code = crypto.randomInt(100000, 999999).toString();
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(); // 24 hours
+
+    db.prepare("UPDATE users SET email_verification_code = ?, email_verification_expires = ? WHERE id = ?")
+      .run(code, expiresAt, payload.userId);
+
+    // In production, send via email service (SMTP/SendGrid/etc.)
+    // For now, log it and return in dev mode
+    console.log(`[EMAIL-VERIFY] Code for ${user.email}: ${code}`);
+
+    res.json({
+      message: 'تم إرسال رمز التحقق إلى بريدك الإلكتروني',
+      // Development only: include the code
+      ...(process.env.NODE_ENV !== 'production' && { code }),
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: 'فشل إرسال رمز التحقق' });
+  }
+});
+
+// POST /api/auth/verify-email - Verify email with code
+router.post('/verify-email', (req: Request, res: Response) => {
+  try {
+    const { email, code } = req.body;
+    if (!email || !code) {
+      res.status(400).json({ error: 'البريد الإلكتروني والرمز مطلوبان' });
+      return;
+    }
+
+    const normalizedEmail = email.toLowerCase().trim();
+    const user = db.prepare('SELECT id, email_verification_code, email_verification_expires FROM users WHERE email = ?').get(normalizedEmail) as any;
+
+    if (!user) { res.status(404).json({ error: 'المستخدم غير موجود' }); return; }
+    if (user.email_verification_code !== code) {
+      res.status(400).json({ error: 'رمز التحقق غير صحيح' }); return;
+    }
+    if (user.email_verification_expires && new Date(user.email_verification_expires) < new Date()) {
+      res.status(400).json({ error: 'رمز التحقق منتهي الصلاحية' }); return;
+    }
+
+    // Mark email as verified
+    db.prepare("UPDATE users SET email_verified = 1, email_verification_code = '', email_verification_expires = '', is_verified = 1 WHERE id = ?")
+      .run(user.id);
+
+    const updatedUser = db.prepare('SELECT * FROM users WHERE id = ?').get(user.id);
+    const token = generateToken({ userId: (updatedUser as any).id, email: (updatedUser as any).email, isAdmin: !!(updatedUser as any).is_admin });
+
+    res.json({ message: 'تم تفعيل البريد الإلكتروني بنجاح', user: parseUser(updatedUser), token });
+  } catch (err: any) {
+    res.status(500).json({ error: 'فشل التحقق من البريد' });
   }
 });
 

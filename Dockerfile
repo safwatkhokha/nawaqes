@@ -1,8 +1,11 @@
 FROM node:20-slim
 WORKDIR /app
 
+# Install: openssl (for bcrypt), python3 + pip (for huggingface_hub backup uploads),
+# make + g++ (for native modules like better-sqlite3), sqlite3 (for DB maintenance if needed)
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends openssl python3 make g++ \
+    && apt-get install -y --no-install-recommends openssl python3 python3-pip make g++ sqlite3 gzip \
+    && pip3 install --no-cache-dir --break-system-packages huggingface_hub \
     && rm -rf /var/lib/apt/lists/*
 
 # Higher memory limit (HF free tier has 16GB)
@@ -17,6 +20,12 @@ RUN cp .env.example .env || true
 ENV GENERATE_SOURCEMAP=false
 RUN sed -i 's/--sourcemap//g' package.json
 RUN npm run build
+
+# Build the standalone pre-startup restore script
+# This MUST run before the server starts, so the db module's
+# schema initialization (which runs on import) doesn't wipe the
+# restored DB with a fresh seed.
+RUN npx esbuild src/database/restore-standalone.ts --bundle --platform=node --format=esm --packages=external --outfile=dist/restore.mjs
 
 RUN npm prune --production --no-audit --no-fund
 
@@ -38,4 +47,6 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
   CMD node -e "fetch('http://localhost:7860/api/health').then(r=>r.ok?process.exit(0):process.exit(1)).catch(()=>process.exit(1))"
 
 ENTRYPOINT ["/app/entrypoint.sh"]
-CMD ["node", "dist/server.mjs"]
+# Run restore BEFORE the server starts (see restore-standalone.ts for why).
+# If restore fails, continue starting the server (it'll use whatever DB exists).
+CMD ["sh", "-c", "node dist/restore.mjs; node dist/server.mjs"]

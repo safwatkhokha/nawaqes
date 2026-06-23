@@ -227,6 +227,21 @@ export const PostCard: React.FC<PostCardProps> = ({ post, onHidePost }) => {
     }
   };
 
+  const handleDeletePost = async () => {
+    if (!window.confirm('هل أنت متأكد من حذف هذا المنشور؟ لا يمكن التراجع.')) return;
+    try {
+      await api.deletePost(post.id);
+      toast.success('تم حذف المنشور');
+      onHidePost?.(post.id);
+      // Navigate away if on post detail page
+      if (window.location.hash.includes(`/post/${post.id}`)) {
+        window.location.hash = '#/';
+      }
+    } catch (err: any) {
+      toast.error(err.message || 'فشل حذف المنشور');
+    }
+  };
+
   const handleDeleteComment = async (commentId: string) => {
     if (!window.confirm(t('postCard.confirmDeleteComment'))) return;
     try {
@@ -514,6 +529,12 @@ export const PostCard: React.FC<PostCardProps> = ({ post, onHidePost }) => {
                       <Edit3 className="w-4 h-4" />{t('common.edit')}
                     </button>
                   )}
+                  {isMyPost && (
+                    <button onClick={(e) => { e.stopPropagation(); setShowMoreMenu(false); handleDeletePost(); }}
+                      className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium transition-colors ${darkMode ? 'text-red-400 hover:bg-gray-700' : 'text-red-600 hover:bg-red-50'}`}>
+                      <Trash2 className="w-4 h-4" />حذف المنشور
+                    </button>
+                  )}
                   {isMyPost && !post.isPromoted && post.promotionStatus !== 'pending' && (
                     <button onClick={(e) => { e.stopPropagation(); setPromotingPost(post); setShowMoreMenu(false); }}
                       className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium transition-colors ${darkMode ? 'text-orange-400 hover:bg-gray-700' : 'text-orange-600 hover:bg-orange-50'}`}>
@@ -579,12 +600,41 @@ export const PostCard: React.FC<PostCardProps> = ({ post, onHidePost }) => {
           </div>
         )}
 
-        {/* Image */}
-        {post.image && (
-          <div className={`max-h-[280px] overflow-hidden border-y cursor-pointer ${darkMode ? 'bg-gray-700 border-gray-700' : 'bg-gray-50 border-gray-100'}`}>
-            <img src={post.image} alt="Post content" className="w-full h-full object-contain" loading="lazy" />
-          </div>
-        )}
+        {/* Image — supports multiple images (JSON array) or single image */}
+        {post.image && (() => {
+          let images: string[] = [];
+          try {
+            const parsed = JSON.parse(post.image);
+            images = Array.isArray(parsed) ? parsed : [post.image];
+          } catch {
+            images = [post.image];
+          }
+          if (images.length === 0) return null;
+          if (images.length === 1) {
+            return (
+              <div className={`max-h-[280px] overflow-hidden border-y cursor-pointer ${darkMode ? 'bg-gray-700 border-gray-700' : 'bg-gray-50 border-gray-100'}`}>
+                <img src={images[0]} alt="Post content" className="w-full h-full object-contain" loading="lazy" />
+              </div>
+            );
+          }
+          // Multiple images — grid layout (2 columns)
+          return (
+            <div className={`border-y ${darkMode ? 'border-gray-700' : 'border-gray-100'}`}>
+              <div className="grid grid-cols-2 gap-0.5 p-0.5">
+                {images.slice(0, 4).map((img, idx) => (
+                  <div key={idx} className="relative overflow-hidden bg-gray-100 dark:bg-gray-800" style={{ aspectRatio: '1', maxHeight: '200px' }}>
+                    <img src={img} alt={'صورة ' + (idx+1)} className="w-full h-full object-cover" loading="lazy" />
+                    {idx === 3 && images.length > 4 && (
+                      <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+                        <span className="text-white text-xl font-bold">+{images.length - 4}</span>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Stats */}
         <div className={`px-3 py-1.5 flex items-center justify-between text-[10px] ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>

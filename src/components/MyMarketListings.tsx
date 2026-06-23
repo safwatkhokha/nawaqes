@@ -7,6 +7,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAppContext } from '../contexts/AppContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
+import { parseDBTimestamp } from '../utils/time';
 import { api } from '../services/api';
 import { marketPromotionPackages } from '../data/marketPromotionPackages';
 import { interestCategories } from '../config/interests';
@@ -43,7 +44,6 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
-import { parseDBTimestamp } from '../utils/time';
 
 // ─── Types ──────────────────────────────────────────────────────────────
 type TabType = 'active' | 'promoted' | 'expired';
@@ -115,7 +115,6 @@ function timeAgo(t: (key: string, options?: Record<string, unknown>) => string, 
     const date = parseDBTimestamp(dateStr);
     const now = new Date();
     const diffMs = now.getTime() - date.getTime();
-    if (diffMs < 0) return t('common.now');
     const diffMins = Math.floor(diffMs / 60000);
     if (diffMins < 1) return t('common.now');
     if (diffMins < 60) return t('common.minutesAgo', { count: diffMins });

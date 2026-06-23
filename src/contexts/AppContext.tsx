@@ -12,11 +12,12 @@ import { useWebSocket, disconnectWebSocket, connectWebSocket } from '../hooks/us
 
 export interface Transaction {
   id: string;
-  type: 'deposit' | 'charge_request' | 'promotion_debit' | 'promotion_refund';
+  type: 'deposit' | 'charge_request' | 'promotion_debit' | 'promotion_refund' | 'admin_deposit' | 'admin_withdrawal' | 'withdrawal' | 'gift_sent' | 'gift_received';
   amount: number;
   method: string;
   timestamp: string;
-  status: 'completed' | 'pending' | 'approved' | 'rejected';
+  status: 'completed' | 'pending' | 'approved' | 'rejected' | 'failed';
+  referenceId?: string;
 }
 
 // ─── API Data Mapper (snake_case → camelCase) ──────────────────────────
@@ -65,23 +66,31 @@ export function mapApiPost(data: any): Post {
 }
 
 // ─── Smart Notifications Utility ──────────────────────────────────────
-export const smartNotify = (title: string, body: string, icon?: string) => {
-  // Check if notifications are enabled and permitted
+// DISABLED per product decision (2026-06-23): OS-level notifications
+// (the popups that appear over the app like "أضفني إلى قائمتك / أعجبني")
+// are no longer shown. The in-app toast notifications (via sonner) are
+// the only notification channel now — they're less intrusive and stay
+// inside the app window.
+//
+// To re-enable in the future, set `nawaqes_smart_alerts` to 'true' in
+// localStorage and uncomment the body below.
+export const smartNotify = (_title: string, _body: string, _icon?: string) => {
+  // Intentionally disabled — no OS notifications.
+  return;
+  /* Original implementation preserved for reference:
   const enabled = localStorage.getItem('nawaqes_smart_alerts') === 'true';
   if (!enabled) return;
   if (typeof window === 'undefined') return;
   if (!('Notification' in window)) return;
   if (window.Notification.permission !== 'granted') return;
   try {
-    new window.Notification(title, {
-      body,
-      icon: icon || '/favicon.ico',
-      // Use unique tag per notification to avoid replacement
+    new window.Notification(_title, {
+      body: _body,
+      icon: _icon || '/favicon.ico',
       tag: `nawaqes-alert-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
     } as NotificationOptions);
-  } catch {
-    // Notification API may not be available in all contexts
-  }
+  } catch {}
+  */
 };
 
 interface AppContextType {
@@ -224,7 +233,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const handleWSNotification = useCallback((data: any) => {
-    // Incoming real-time notification
+    // Incoming real-time notification (admin message, friend activity, etc.)
     const newNotif: AppNotification = {
       id: data.id || `ws_${Date.now()}_${Math.random().toString(36).slice(2)}`,
       type: data.type || 'system',
@@ -239,6 +248,52 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (prev.some(n => n.id === newNotif.id)) return prev;
       return [newNotif, ...prev];
     });
+    // Display a toast notification that auto-hides after 10 seconds.
+    // smartNotify() handles native Notification API (when permitted); the
+    // toast is the in-app visual cue for users who don't have OS notifications.
+    const icon = data.type === 'friend' ? '👥' :
+                 data.type === 'payment' ? '💰' :
+                 data.type === 'promotion' ? '🚀' :
+                 data.type === 'alert' ? '⚠️' :
+                 data.type === 'system' ? '📢' : '🔔';
+    toast.custom(
+      () => (
+        <div
+          style={{
+            background: 'linear-gradient(90deg, #1e40af, #2563eb)',
+            color: 'white',
+            padding: '12px 16px',
+            borderRadius: '12px',
+            boxShadow: '0 10px 25px -5px rgba(0,0,0,0.25)',
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: '10px',
+            maxWidth: '380px',
+            border: '1px solid rgba(255,255,255,0.15)',
+            cursor: 'pointer',
+          }}
+          onClick={() => {
+            if (newNotif.link) {
+              window.location.hash = '#' + newNotif.link;
+            }
+          }}
+        >
+          <span style={{ fontSize: '18px', flexShrink: 0 }}>{icon}</span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: '12px', opacity: 0.9, marginBottom: '2px' }}>
+              {data.type === 'friend' ? 'إشعار صديق' :
+               data.type === 'payment' ? 'إشعار محفظة' :
+               data.type === 'promotion' ? 'إشعار ترويج' :
+               data.type === 'alert' ? 'تنبيه هام' : 'إشعار'}
+            </div>
+            <div style={{ fontWeight: 700, fontSize: '13px', wordBreak: 'break-word' }}>
+              {newNotif.message.length > 140 ? newNotif.message.substring(0, 140) + '…' : newNotif.message}
+            </div>
+          </div>
+        </div>
+      ),
+      { duration: 10000 }
+    );
     smartNotify('Nawaqes', newNotif.message);
   }, []);
 
@@ -297,12 +352,40 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     window.dispatchEvent(new CustomEvent('ws:call-signal', { detail: data }));
   }, []);
 
+  const handleWSChatMessageEdited = useCallback((data: any) => {
+    // Dispatch a custom event for message edited
+    window.dispatchEvent(new CustomEvent('ws:chat:message-edited', { detail: data }));
+  }, []);
+
+  const handleWSChatMessageDeleted = useCallback((data: any) => {
+    // Dispatch a custom event for message deleted for everyone
+    window.dispatchEvent(new CustomEvent('ws:chat:message-deleted', { detail: data }));
+  }, []);
+
+  const handleWSChatGroupCreated = useCallback((data: any) => {
+    // Dispatch a custom event for group created
+    window.dispatchEvent(new CustomEvent('ws:chat:group-created', { detail: data }));
+  }, []);
+
+  const handleWSChatGroupDeleted = useCallback((data: any) => {
+    // Dispatch a custom event for group deleted
+    window.dispatchEvent(new CustomEvent('ws:chat:group-deleted', { detail: data }));
+  }, []);
+
   // ─── New WebSocket handlers for post/story real-time updates ─────
   const handleWSPostCreated = useCallback((data: any) => {
     const newPost = mapApiPost(data);
     setPosts(prev => {
-      // Avoid duplicates
+      // Avoid duplicates by ID
       if (prev.some(p => p.id === newPost.id)) return prev;
+      // Also avoid content duplicates within 5 seconds (local optimistic + WS)
+      const isContentDup = prev.some(p =>
+        p.id !== newPost.id &&
+        p.author?.id === newPost.author?.id &&
+        p.content === newPost.content &&
+        Math.abs(new Date(p.timestamp).getTime() - new Date(newPost.timestamp).getTime()) < 5000
+      );
+      if (isContentDup) return prev;
       return [newPost, ...prev];
     });
   }, []);
@@ -331,23 +414,47 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }).catch(() => {});
   }, []);
 
-  // Handle admin alert pushed via WebSocket (real-time alert bar)
+  // Handle admin alert pushed via WebSocket.
+  // The old behavior added the alert to `adminAlerts` state which fed the
+  // always-visible AdminAlertBar. Per product decision (2026-06-22), the
+  // persistent bar is removed — admin alerts now show as a toast that
+  // auto-hides after 10 seconds.
   const handleWSAdminAlert = useCallback((data: any) => {
-    // Add the alert to adminAlerts state immediately for real-time display
-    const newAlert: NewsItem = {
-      id: data.id || `ws_alert_${Date.now()}`,
-      title: data.title || '',
-      content: data.content || '',
-      source: data.source || '',
-      isAlert: true,
-      category: data.category || 'urgent',
-      createdAt: data.createdAt || new Date().toISOString(),
-    };
-    setAdminAlerts(prev => {
-      // Avoid duplicates
-      if (prev.some(a => a.id === newAlert.id)) return prev;
-      return [newAlert, ...prev];
-    });
+    const title = data.title || 'تنبيه من الإدارة';
+    const content = data.content || '';
+    // Display a custom toast with red styling for admin alerts.
+    // Duration is 10 seconds — long enough to read, short enough not to annoy.
+    toast.custom(
+      () => (
+        <div
+          style={{
+            background: 'linear-gradient(90deg, #991b1b, #b91c1c)',
+            color: 'white',
+            padding: '12px 16px',
+            borderRadius: '12px',
+            boxShadow: '0 10px 25px -5px rgba(0,0,0,0.3)',
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: '10px',
+            maxWidth: '380px',
+            border: '1px solid rgba(255,255,255,0.15)',
+          }}
+        >
+          <span style={{ fontSize: '18px', flexShrink: 0 }}>⚠️</span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontWeight: 800, fontSize: '13px', marginBottom: '2px' }}>
+              {title}
+            </div>
+            {content && (
+              <div style={{ fontSize: '12px', opacity: 0.9, wordBreak: 'break-word' }}>
+                {content.length > 120 ? content.substring(0, 120) + '…' : content}
+              </div>
+            )}
+          </div>
+        </div>
+      ),
+      { duration: 10000 }
+    );
   }, []);
 
   // Connect WebSocket and register all handlers
@@ -362,6 +469,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     onChatTyping: handleWSChatTyping,
     onChatRead: handleWSChatRead,
     onCallSignal: handleWSCallSignal,
+    onChatMessageEdited: handleWSChatMessageEdited,
+    onChatMessageDeleted: handleWSChatMessageDeleted,
+    onChatGroupCreated: handleWSChatGroupCreated,
+    onChatGroupDeleted: handleWSChatGroupDeleted,
     onPostCreated: handleWSPostCreated,
     onPostDeleted: handleWSPostDeleted,
     onPostCommented: handleWSPostCommented,
@@ -506,14 +617,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       })) : [];
       setNotifications(mappedNotifs);
       // Map transactions from snake_case API format
-      const mappedTxns = Array.isArray(txns) ? (txns as any[]).map((t: any) => ({
+      // Handle both old format (array) and new format ({ transactions, total })
+      const txnsArray: any[] = Array.isArray(txns) ? txns : ((txns as any)?.transactions || []);
+      const mappedTxns = txnsArray.map((t: any) => ({
         id: t.id,
         type: t.type,
         amount: t.amount,
         method: t.method,
         timestamp: t.created_at || t.timestamp || '',
         status: t.status,
-      })) : [];
+        referenceId: t.reference_id || t.referenceId || undefined,
+      }));
       setTransactions(mappedTxns);
       // Map friend requests
       const mappedFriendReqs = Array.isArray(friends) ? (friends as any[]).map((r: any) => ({
@@ -626,7 +740,27 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     else document.documentElement.classList.remove('dark');
   }, [darkMode]);
 
-  const addPost = (post: Post) => setPosts(prev => [post, ...prev]);
+  const addPost = (post: Post) => setPosts(prev => {
+    // Avoid duplicates: check by id first, then by content+author+timestamp for optimistic posts
+    if (prev.some(p => p.id === post.id)) return prev;
+    // Also check for content duplicates (optimistic local post vs server post)
+    const isDuplicate = prev.some(p =>
+      p.id !== post.id &&
+      p.author?.id === post.author?.id &&
+      p.content === post.content &&
+      Math.abs(new Date(p.timestamp).getTime() - new Date(post.timestamp).getTime()) < 5000
+    );
+    if (isDuplicate) {
+      // Replace the optimistic local post with the server post (which has the real ID)
+      return prev.map(p =>
+        p.author?.id === post.author?.id &&
+        p.content === post.content &&
+        Math.abs(new Date(p.timestamp).getTime() - new Date(post.timestamp).getTime()) < 5000
+          ? post : p
+      );
+    }
+    return [post, ...prev];
+  });
   const toggleSavePost = (postId: string) => {
     setSavedPosts(prev => prev.includes(postId) ? prev.filter(id => id !== postId) : [...prev, postId]);
   };
