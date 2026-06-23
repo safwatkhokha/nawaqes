@@ -1342,9 +1342,24 @@ function AppInner() {
   const { dir } = useLanguage();
   const { t } = useTranslation();
 
-  // Initialize Firebase Push Notifications on first user interaction
+  // Firebase Push Notifications auto-init is DISABLED per user request.
+  // The user reported unwanted OS-level notifications appearing on every
+  // page refresh. FCM auto-init was registering a service worker that
+  // showed push notifications as OS popups.
+  // In-app toast notifications (via sonner) are the only notification channel now.
+
+  // Also unregister any existing service workers that might show push notifications.
   React.useEffect(() => {
-    setupFirebase();
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations().then(registrations => {
+        for (const reg of registrations) {
+          // Unregister all service workers — they may be showing FCM push notifications
+          reg.unregister().then(() => {
+            console.log('[SW] Unregistered service worker:', reg.scope);
+          });
+        }
+      }).catch(() => {});
+    }
   }, []);
 
   return (
