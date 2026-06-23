@@ -598,7 +598,11 @@ router.post('/:id/like', authMiddleware, (req: Request, res: Response) => {
       db.prepare("UPDATE posts SET likes = likes + 1, updated_at = datetime('now') WHERE id = ?").run(req.params.id);
       liked = true;
 
-      // Notify post author about the like (only if not liking own post)
+      // Like notifications DISABLED per user request (2026-06-23).
+      // The "أعجب X بمنشورك" notification was too frequent and annoying.
+      // The like count on the post itself is still updated.
+      // (The code below is commented out but preserved for reference.)
+      /*
       const post = db.prepare('SELECT likes, author_id FROM posts WHERE id = ?').get(req.params.id) as any;
       if (post && post.author_id !== payload.userId) {
         const user = db.prepare('SELECT name FROM users WHERE id = ?').get(payload.userId) as any;
@@ -606,7 +610,6 @@ router.post('/:id/like', authMiddleware, (req: Request, res: Response) => {
           db.prepare('INSERT INTO notifications (user_id, type, message, post_id, user_id_ref) VALUES (?, ?, ?, ?, ?)')
             .run(post.author_id, 'like', `أعجب ${user.name} بمنشورك`, req.params.id, payload.userId);
         }
-        // Emit WebSocket notification for real-time like notification
         try {
           const wsManager = (req.app.locals as any).wsManager;
           if (wsManager) {
@@ -621,6 +624,7 @@ router.post('/:id/like', authMiddleware, (req: Request, res: Response) => {
           }
         } catch (wsErr: any) { console.error('[WS] Failed to emit like notification:', wsErr.message); }
       }
+      */
     }
 
     const post = db.prepare('SELECT likes FROM posts WHERE id = ?').get(req.params.id) as any;
@@ -722,7 +726,9 @@ router.post('/:id/comment/:commentId/like', authMiddleware, (req: Request, res: 
       db.prepare('INSERT INTO comment_likes (comment_id, user_id) VALUES (?, ?)').run(commentId, payload.userId);
       db.prepare('UPDATE post_comments SET likes = likes + 1 WHERE id = ?').run(commentId);
 
-      // Notify comment author
+      // Comment like notifications DISABLED per user request (2026-06-23).
+      // The like count on the comment is still updated.
+      /*
       const comment = db.prepare('SELECT author_id FROM post_comments WHERE id = ?').get(commentId) as any;
       if (comment && comment.author_id !== payload.userId) {
         const user = db.prepare('SELECT name FROM users WHERE id = ?').get(payload.userId) as any;
@@ -730,7 +736,6 @@ router.post('/:id/comment/:commentId/like', authMiddleware, (req: Request, res: 
           db.prepare('INSERT INTO notifications (user_id, type, message, post_id, user_id_ref) VALUES (?, ?, ?, ?, ?)')
             .run(comment.author_id, 'like', `أعجب ${user.name} بتعليقك`, req.params.id, payload.userId);
         }
-        // Emit WebSocket notification for real-time comment like notification
         try {
           const wsManager = (req.app.locals as any).wsManager;
           if (wsManager) {
@@ -745,6 +750,7 @@ router.post('/:id/comment/:commentId/like', authMiddleware, (req: Request, res: 
           }
         } catch (wsErr: any) { console.error('[WS] Failed to emit comment like notification:', wsErr.message); }
       }
+      */
 
       const updated = db.prepare('SELECT likes FROM post_comments WHERE id = ?').get(commentId) as any;
       res.json({ liked: true, likes: updated?.likes || 1 });
